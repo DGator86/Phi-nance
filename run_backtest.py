@@ -16,14 +16,24 @@ from datetime import datetime
 
 from lumibot.backtesting import YahooDataBacktesting
 
+from strategies.bollinger import BollingerBands
+from strategies.breakout import ChannelBreakout
 from strategies.buy_and_hold import BuyAndHold
+from strategies.dual_sma import DualSMACrossover
+from strategies.macd import MACDStrategy
 from strategies.mean_reversion import MeanReversion
 from strategies.momentum import MomentumRotation
+from strategies.rsi import RSIStrategy
 
 STRATEGIES = {
     "buy_and_hold": BuyAndHold,
     "momentum": MomentumRotation,
     "mean_reversion": MeanReversion,
+    "rsi": RSIStrategy,
+    "bollinger": BollingerBands,
+    "macd": MACDStrategy,
+    "dual_sma": DualSMACrossover,
+    "breakout": ChannelBreakout,
 }
 
 

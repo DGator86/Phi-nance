@@ -21,10 +21,15 @@ import streamlit as st
 
 from lumibot.backtesting import YahooDataBacktesting
 
+from strategies.bollinger import BollingerBands
+from strategies.breakout import ChannelBreakout
 from strategies.buy_and_hold import BuyAndHold
+from strategies.dual_sma import DualSMACrossover
+from strategies.macd import MACDStrategy
 from strategies.mean_reversion import MeanReversion
 from strategies.momentum import MomentumRotation
 from strategies.prediction_tracker import compute_prediction_accuracy
+from strategies.rsi import RSIStrategy
 
 # ---------------------------------------------------------------------------
 # Strategy registry — add new strategies here
@@ -34,7 +39,7 @@ STRATEGY_CATALOG = {
         "class": BuyAndHold,
         "description": (
             "Always predicts UP (permanent bull). "
-            "This is the naive baseline every other strategy should beat."
+            "Naive baseline every other strategy should beat."
         ),
         "params": {
             "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
@@ -81,6 +86,133 @@ STRATEGY_CATALOG = {
                 "default": 20,
                 "min": 5,
                 "max": 200,
+            },
+        },
+    },
+    "RSI": {
+        "class": RSIStrategy,
+        "description": (
+            "Predicts UP when RSI < oversold (bounce expected), "
+            "DOWN when RSI > overbought (pullback expected)."
+        ),
+        "params": {
+            "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
+            "rsi_period": {
+                "label": "RSI Period",
+                "type": "number",
+                "default": 14,
+                "min": 2,
+                "max": 50,
+            },
+            "oversold": {
+                "label": "Oversold threshold",
+                "type": "number",
+                "default": 30,
+                "min": 10,
+                "max": 50,
+            },
+            "overbought": {
+                "label": "Overbought threshold",
+                "type": "number",
+                "default": 70,
+                "min": 50,
+                "max": 95,
+            },
+        },
+    },
+    "Bollinger Bands": {
+        "class": BollingerBands,
+        "description": (
+            "Predicts UP below lower band (oversold), "
+            "DOWN above upper band (overbought)."
+        ),
+        "params": {
+            "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
+            "bb_period": {
+                "label": "BB Period",
+                "type": "number",
+                "default": 20,
+                "min": 5,
+                "max": 100,
+            },
+            "num_std": {
+                "label": "Std Deviations",
+                "type": "number",
+                "default": 2,
+                "min": 1,
+                "max": 4,
+            },
+        },
+    },
+    "MACD": {
+        "class": MACDStrategy,
+        "description": (
+            "Predicts UP on bullish MACD/signal crossover, "
+            "DOWN on bearish crossover."
+        ),
+        "params": {
+            "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
+            "fast_period": {
+                "label": "Fast EMA",
+                "type": "number",
+                "default": 12,
+                "min": 2,
+                "max": 50,
+            },
+            "slow_period": {
+                "label": "Slow EMA",
+                "type": "number",
+                "default": 26,
+                "min": 10,
+                "max": 100,
+            },
+            "signal_period": {
+                "label": "Signal EMA",
+                "type": "number",
+                "default": 9,
+                "min": 2,
+                "max": 30,
+            },
+        },
+    },
+    "Dual SMA Crossover": {
+        "class": DualSMACrossover,
+        "description": (
+            "Golden cross (fast > slow) = UP, "
+            "death cross (fast < slow) = DOWN. Trend-following."
+        ),
+        "params": {
+            "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
+            "fast_period": {
+                "label": "Fast SMA",
+                "type": "number",
+                "default": 10,
+                "min": 2,
+                "max": 100,
+            },
+            "slow_period": {
+                "label": "Slow SMA",
+                "type": "number",
+                "default": 50,
+                "min": 10,
+                "max": 300,
+            },
+        },
+    },
+    "Channel Breakout": {
+        "class": ChannelBreakout,
+        "description": (
+            "Donchian-style: predicts UP on new high breakout, "
+            "DOWN on new low breakdown."
+        ),
+        "params": {
+            "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
+            "channel_period": {
+                "label": "Channel Period",
+                "type": "number",
+                "default": 20,
+                "min": 5,
+                "max": 100,
             },
         },
     },
@@ -150,9 +282,15 @@ def resolve_params(name, raw_params):
         resolved["symbols"] = [
             s.strip() for s in resolved["symbols"].split(",") if s.strip()
         ]
-    for key in ("lookback_days", "rebalance_days", "sma_period"):
+    int_keys = (
+        "lookback_days", "rebalance_days", "sma_period", "rsi_period",
+        "oversold", "overbought", "bb_period", "fast_period", "slow_period",
+        "signal_period", "channel_period",
+    )
+    for key in int_keys:
         if key in resolved:
             resolved[key] = int(resolved[key])
+    # num_std stays float
     return resolved
 
 
@@ -292,20 +430,24 @@ def main():
 
     config = build_sidebar()
 
-    # --- Strategy cards ---
+    # --- Strategy cards (rows of 4) ---
     st.header("Strategies")
     selected = {}
-    columns = st.columns(len(STRATEGY_CATALOG))
+    catalog_items = list(STRATEGY_CATALOG.items())
+    cols_per_row = 4
 
-    for col, (name, info) in zip(columns, STRATEGY_CATALOG.items()):
-        with col:
-            with st.container(border=True):
-                enabled, params = render_strategy_card(name, info)
-                if enabled and params is not None:
-                    selected[name] = {
-                        "class": info["class"],
-                        "params": resolve_params(name, params),
-                    }
+    for row_start in range(0, len(catalog_items), cols_per_row):
+        row_items = catalog_items[row_start:row_start + cols_per_row]
+        columns = st.columns(cols_per_row)
+        for col, (name, info) in zip(columns, row_items):
+            with col:
+                with st.container(border=True):
+                    enabled, params = render_strategy_card(name, info)
+                    if enabled and params is not None:
+                        selected[name] = {
+                            "class": info["class"],
+                            "params": resolve_params(name, params),
+                        }
 
     # --- Run button ---
     st.markdown("---")
