@@ -31,6 +31,7 @@ from strategies.momentum import MomentumRotation
 from strategies.prediction_tracker import compute_prediction_accuracy
 from strategies.rsi import RSIStrategy
 from strategies.wyckoff import WyckoffStrategy
+from strategies.liquidity_pools import LiquidityPoolStrategy
 
 # ---------------------------------------------------------------------------
 # Strategy registry — add new strategies here
@@ -234,6 +235,30 @@ STRATEGY_CATALOG = {
             },
         },
     },
+    "Liquidity Pools": {
+        "class": LiquidityPoolStrategy,
+        "description": (
+            "Finds resting liquidity above swing highs / below swing lows. "
+            "Predicts price drawn toward nearest pool, reversal after sweep."
+        ),
+        "params": {
+            "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
+            "lookback": {
+                "label": "Lookback (days)",
+                "type": "number",
+                "default": 40,
+                "min": 15,
+                "max": 120,
+            },
+            "swing_strength": {
+                "label": "Swing strength (bars)",
+                "type": "number",
+                "default": 3,
+                "min": 2,
+                "max": 10,
+            },
+        },
+    },
 }
 
 
@@ -303,7 +328,7 @@ def resolve_params(name, raw_params):
     int_keys = (
         "lookback_days", "rebalance_days", "sma_period", "rsi_period",
         "oversold", "overbought", "bb_period", "fast_period", "slow_period",
-        "signal_period", "channel_period", "lookback",
+        "signal_period", "channel_period", "lookback", "swing_strength",
     )
     for key in int_keys:
         if key in resolved:

@@ -25,6 +25,7 @@ from strategies.mean_reversion import MeanReversion
 from strategies.momentum import MomentumRotation
 from strategies.rsi import RSIStrategy
 from strategies.wyckoff import WyckoffStrategy
+from strategies.liquidity_pools import LiquidityPoolStrategy
 
 STRATEGIES = {
     "buy_and_hold": BuyAndHold,
@@ -36,6 +37,7 @@ STRATEGIES = {
     "dual_sma": DualSMACrossover,
     "breakout": ChannelBreakout,
     "wyckoff": WyckoffStrategy,
+    "liquidity_pools": LiquidityPoolStrategy,
 }
 
 
