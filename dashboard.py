@@ -30,6 +30,7 @@ from strategies.mean_reversion import MeanReversion
 from strategies.momentum import MomentumRotation
 from strategies.prediction_tracker import compute_prediction_accuracy
 from strategies.rsi import RSIStrategy
+from strategies.wyckoff import WyckoffStrategy
 
 # ---------------------------------------------------------------------------
 # Strategy registry — add new strategies here
@@ -216,6 +217,23 @@ STRATEGY_CATALOG = {
             },
         },
     },
+    "Wyckoff": {
+        "class": WyckoffStrategy,
+        "description": (
+            "Accumulation (low in range + volume on up-days) = UP. "
+            "Distribution (high in range + volume on down-days) = DOWN."
+        ),
+        "params": {
+            "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
+            "lookback": {
+                "label": "Lookback (days)",
+                "type": "number",
+                "default": 30,
+                "min": 10,
+                "max": 120,
+            },
+        },
+    },
 }
 
 
@@ -285,7 +303,7 @@ def resolve_params(name, raw_params):
     int_keys = (
         "lookback_days", "rebalance_days", "sma_period", "rsi_period",
         "oversold", "overbought", "bb_period", "fast_period", "slow_period",
-        "signal_period", "channel_period",
+        "signal_period", "channel_period", "lookback",
     )
     for key in int_keys:
         if key in resolved:
