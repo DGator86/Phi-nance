@@ -1,0 +1,75 @@
+"""
+Mean Reversion (SMA Crossover) Strategy
+----------------------------------------
+Buys when the asset's price drops below its simple moving average
+(oversold) and sells when it rises above (overbought). A classic
+mean-reversion / trend-following hybrid.
+
+Usage:
+    python strategies/mean_reversion.py
+"""
+
+from datetime import datetime
+
+from lumibot.backtesting import YahooDataBacktesting
+from lumibot.strategies.strategy import Strategy
+
+
+class MeanReversion(Strategy):
+    parameters = {
+        "symbol": "SPY",
+        "sma_period": 20,
+    }
+
+    def initialize(self):
+        self.sleeptime = "1D"
+
+    def on_trading_iteration(self):
+        symbol = self.parameters["symbol"]
+        sma_period = self.parameters["sma_period"]
+
+        bars = self.get_bars([symbol], sma_period + 1, timestep="day")
+        if not bars or symbol not in [a.symbol for a in bars]:
+            return
+
+        asset_key = [a for a in bars if a.symbol == symbol][0]
+        df = bars[asset_key].df
+        if len(df) < sma_period:
+            return
+
+        sma = df["close"].rolling(window=sma_period).mean().iloc[-1]
+        current_price = self.get_last_price(symbol)
+        position = self.get_position(symbol)
+
+        if current_price < sma and position is None:
+            quantity = int(self.portfolio_value * 0.95 // current_price)
+            if quantity > 0:
+                order = self.create_order(symbol, quantity, "buy")
+                self.submit_order(order)
+                self.log_message(
+                    f"BUY {symbol}: price ${current_price:.2f} < SMA ${sma:.2f}"
+                )
+
+        elif current_price > sma and position is not None:
+            self.sell_all()
+            self.log_message(
+                f"SELL {symbol}: price ${current_price:.2f} > SMA ${sma:.2f}"
+            )
+
+    def trace_stats(self, context, snapshot_before):
+        return {
+            "portfolio_value": self.portfolio_value,
+            "cash": self.cash,
+        }
+
+
+if __name__ == "__main__":
+    backtesting_start = datetime(2020, 1, 1)
+    backtesting_end = datetime(2024, 12, 31)
+
+    MeanReversion.backtest(
+        YahooDataBacktesting,
+        backtesting_start,
+        backtesting_end,
+        benchmark_asset="SPY",
+    )

@@ -17,11 +17,13 @@ from datetime import datetime
 from lumibot.backtesting import YahooDataBacktesting
 
 from strategies.buy_and_hold import BuyAndHold
+from strategies.mean_reversion import MeanReversion
 from strategies.momentum import MomentumRotation
 
 STRATEGIES = {
     "buy_and_hold": BuyAndHold,
     "momentum": MomentumRotation,
+    "mean_reversion": MeanReversion,
 }
 
 
