@@ -3,25 +3,28 @@
 Phi-nance Backtesting Dashboard
 --------------------------------
 Interactive Streamlit UI for toggling strategies on/off, configuring
-parameters, running backtests, and comparing results side-by-side.
+parameters, running backtests, and comparing **prediction accuracy**.
+
+The primary success metric is how well each strategy predicts the
+next-day price direction — not P&L.
 
 Launch:
     streamlit run dashboard.py
 """
 
 import io
-import sys
-import threading
 from contextlib import redirect_stdout, redirect_stderr
 from datetime import datetime, date
 
+import pandas as pd
 import streamlit as st
 
 from lumibot.backtesting import YahooDataBacktesting
 
 from strategies.buy_and_hold import BuyAndHold
-from strategies.momentum import MomentumRotation
 from strategies.mean_reversion import MeanReversion
+from strategies.momentum import MomentumRotation
+from strategies.prediction_tracker import compute_prediction_accuracy
 
 # ---------------------------------------------------------------------------
 # Strategy registry — add new strategies here
@@ -29,16 +32,19 @@ from strategies.mean_reversion import MeanReversion
 STRATEGY_CATALOG = {
     "Buy & Hold": {
         "class": BuyAndHold,
-        "icon": "B",
-        "description": "Buys a single asset on day 1 and holds for the entire period.",
+        "description": (
+            "Always predicts UP (permanent bull). "
+            "This is the naive baseline every other strategy should beat."
+        ),
         "params": {
             "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
         },
     },
     "Momentum Rotation": {
         "class": MomentumRotation,
-        "icon": "M",
-        "description": "Rotates into whichever asset has the strongest recent momentum.",
+        "description": (
+            "Predicts UP for the strongest-momentum asset, DOWN for the rest."
+        ),
         "params": {
             "symbols": {
                 "label": "Universe (comma-separated)",
@@ -63,8 +69,10 @@ STRATEGY_CATALOG = {
     },
     "Mean Reversion (SMA)": {
         "class": MeanReversion,
-        "icon": "R",
-        "description": "Buys below the SMA, sells above — a classic mean-reversion signal.",
+        "description": (
+            "Predicts UP when price < SMA (oversold), "
+            "DOWN when price > SMA (overbought)."
+        ),
         "params": {
             "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
             "sma_period": {
@@ -79,8 +87,10 @@ STRATEGY_CATALOG = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Sidebar
+# ---------------------------------------------------------------------------
 def build_sidebar():
-    """Render sidebar with global settings and return config dict."""
     st.sidebar.title("Backtest Settings")
 
     start_date = st.sidebar.date_input(
@@ -105,8 +115,10 @@ def build_sidebar():
     }
 
 
+# ---------------------------------------------------------------------------
+# Strategy cards
+# ---------------------------------------------------------------------------
 def render_strategy_card(name, info):
-    """Render a toggle card for one strategy. Returns (enabled, params) or (False, None)."""
     enabled = st.toggle(f"**{name}**", key=f"toggle_{name}")
 
     if enabled:
@@ -133,7 +145,6 @@ def render_strategy_card(name, info):
 
 
 def resolve_params(name, raw_params):
-    """Convert UI strings into the types each strategy expects."""
     resolved = dict(raw_params)
     if name == "Momentum Rotation" and "symbols" in resolved:
         resolved["symbols"] = [
@@ -145,8 +156,10 @@ def resolve_params(name, raw_params):
     return resolved
 
 
+# ---------------------------------------------------------------------------
+# Backtest runner
+# ---------------------------------------------------------------------------
 def run_single_backtest(strategy_class, params, config):
-    """Run one strategy backtest and return (results, strategy_instance)."""
     results, strat = strategy_class.run_backtest(
         datasource_class=YahooDataBacktesting,
         backtesting_start=config["start"],
@@ -164,29 +177,100 @@ def run_single_backtest(strategy_class, params, config):
     return results, strat
 
 
-def display_results(name, results):
-    """Show key metrics for a completed backtest."""
-    if results is None:
-        st.warning(f"{name}: backtest returned no results.")
+# ---------------------------------------------------------------------------
+# Accuracy display helpers
+# ---------------------------------------------------------------------------
+def display_accuracy_metrics(name, scorecard):
+    """Show prediction accuracy metrics for a single strategy."""
+    if scorecard["total_predictions"] == 0:
+        st.warning(f"{name}: no predictions recorded.")
         return
 
-    metrics = {
-        "Total Return": results.get("total_return"),
-        "CAGR": results.get("cagr"),
-        "Sharpe Ratio": results.get("sharpe"),
-        "Max Drawdown": results.get("max_drawdown"),
-        "Volatility": results.get("volatility"),
-    }
+    # Top-level accuracy gauge
+    acc = scorecard["accuracy"]
+    total = scorecard["total_predictions"]
+    hits = scorecard["hits"]
+    misses = scorecard["misses"]
 
-    cols = st.columns(len(metrics))
-    for col, (label, value) in zip(cols, metrics.items()):
-        if value is not None:
-            if label in ("Total Return", "CAGR", "Max Drawdown", "Volatility"):
-                col.metric(label, f"{value:,.2%}")
-            else:
-                col.metric(label, f"{value:,.2f}")
-        else:
-            col.metric(label, "N/A")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Accuracy", f"{acc:.1%}")
+    col2.metric("Predictions", f"{total:,}")
+    col3.metric("Correct", f"{hits:,}")
+    col4.metric("Wrong", f"{misses:,}")
+
+    # Directional breakdown
+    col_up, col_down, col_edge = st.columns(3)
+    col_up.metric(
+        "UP Accuracy",
+        f"{scorecard['up_accuracy']:.1%}",
+        help=f"{scorecard['up_predictions']} UP predictions total",
+    )
+    col_down.metric(
+        "DOWN Accuracy",
+        f"{scorecard['down_accuracy']:.1%}",
+        help=f"{scorecard['down_predictions']} DOWN predictions total",
+    )
+    col_edge.metric(
+        "Edge (avg magnitude)",
+        f"${scorecard['edge']:.4f}",
+        help=(
+            f"Avg correct move: ${scorecard['avg_correct_magnitude']:.4f} | "
+            f"Avg incorrect move: ${scorecard['avg_incorrect_magnitude']:.4f}"
+        ),
+    )
+
+    # Rolling accuracy chart
+    scored = scorecard["scored_log"]
+    if len(scored) > 10:
+        df = pd.DataFrame(scored)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date")
+        df["rolling_accuracy"] = (
+            df["correct"].rolling(window=50, min_periods=10).mean()
+        )
+        chart_df = df[["date", "rolling_accuracy"]].dropna().set_index("date")
+        st.line_chart(chart_df, y="rolling_accuracy", use_container_width=True)
+        st.caption("50-day rolling prediction accuracy")
+
+    # Prediction log (collapsed)
+    with st.expander("View prediction log"):
+        if scored:
+            log_df = pd.DataFrame(scored)
+            log_df["date"] = pd.to_datetime(log_df["date"]).dt.date
+            log_df["actual_move"] = log_df["actual_move"].map(lambda x: f"${x:+.2f}")
+            log_df["correct"] = log_df["correct"].map(
+                lambda x: "Yes" if x else "No"
+            )
+            st.dataframe(
+                log_df[
+                    ["date", "symbol", "signal", "price", "next_price",
+                     "actual_move", "correct"]
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
+def display_comparison_table(all_scorecards):
+    """Side-by-side comparison of all strategies by accuracy."""
+    rows = []
+    for name, sc in all_scorecards.items():
+        if sc["total_predictions"] > 0:
+            rows.append({
+                "Strategy": name,
+                "Accuracy": f"{sc['accuracy']:.1%}",
+                "Predictions": sc["total_predictions"],
+                "UP Acc.": f"{sc['up_accuracy']:.1%}",
+                "DOWN Acc.": f"{sc['down_accuracy']:.1%}",
+                "Edge": f"${sc['edge']:.4f}",
+                "Correct": sc["hits"],
+                "Wrong": sc["misses"],
+            })
+
+    if rows:
+        # Sort by accuracy descending
+        rows.sort(key=lambda r: float(r["Accuracy"].strip("%")) / 100, reverse=True)
+        st.table(rows)
 
 
 # ---------------------------------------------------------------------------
@@ -194,13 +278,17 @@ def display_results(name, results):
 # ---------------------------------------------------------------------------
 def main():
     st.set_page_config(
-        page_title="Phi-nance Backtester",
+        page_title="Phi-nance Prediction Accuracy",
         page_icon="$",
         layout="wide",
     )
 
-    st.title("Phi-nance Backtesting Dashboard")
-    st.markdown("Toggle strategies on/off, tweak parameters, then hit **Run Backtests**.")
+    st.title("Phi-nance Prediction Accuracy Dashboard")
+    st.markdown(
+        "Toggle strategies on/off, tweak parameters, then hit **Run Backtests**. "
+        "Success is measured by **how accurately each strategy predicts "
+        "next-day price direction** — not by P&L."
+    )
 
     config = build_sidebar()
 
@@ -230,50 +318,41 @@ def main():
     st.caption(f"Ready to run: **{enabled_names}**")
 
     if st.button("Run Backtests", type="primary", use_container_width=True):
-        st.header("Results")
+        st.header("Prediction Accuracy Results")
 
-        all_results = {}
+        all_scorecards = {}
         for name, entry in selected.items():
             with st.status(f"Running {name}...", expanded=True) as status:
-                st.write(f"Backtesting **{name}** from "
-                         f"{config['start'].date()} to {config['end'].date()} "
-                         f"with ${config['budget']:,.0f} budget...")
+                st.write(
+                    f"Backtesting **{name}** from "
+                    f"{config['start'].date()} to {config['end'].date()}..."
+                )
                 try:
                     buf = io.StringIO()
                     with redirect_stdout(buf), redirect_stderr(buf):
                         results, strat = run_single_backtest(
                             entry["class"], entry["params"], config
                         )
-                    all_results[name] = results
-                    status.update(label=f"{name} — done!", state="complete")
+                    scorecard = compute_prediction_accuracy(strat)
+                    all_scorecards[name] = scorecard
+                    status.update(
+                        label=f"{name} — {scorecard['accuracy']:.1%} accuracy",
+                        state="complete",
+                    )
                 except Exception as e:
                     status.update(label=f"{name} — failed", state="error")
                     st.error(f"Error running {name}: {e}")
 
-        # --- Per-strategy results ---
-        for name, results in all_results.items():
+        # --- Per-strategy detail ---
+        for name, scorecard in all_scorecards.items():
             st.subheader(name)
-            display_results(name, results)
+            display_accuracy_metrics(name, scorecard)
 
         # --- Comparison table ---
-        if len(all_results) > 1:
+        if len(all_scorecards) > 1:
             st.markdown("---")
-            st.subheader("Side-by-Side Comparison")
-
-            rows = []
-            for name, results in all_results.items():
-                if results:
-                    rows.append({
-                        "Strategy": name,
-                        "Total Return": f"{results.get('total_return', 0):,.2%}",
-                        "CAGR": f"{results.get('cagr', 0):,.2%}",
-                        "Sharpe": f"{results.get('sharpe', 0):,.2f}",
-                        "Max Drawdown": f"{results.get('max_drawdown', 0):,.2%}",
-                        "Volatility": f"{results.get('volatility', 0):,.2%}",
-                    })
-
-            if rows:
-                st.table(rows)
+            st.subheader("Strategy Comparison (ranked by accuracy)")
+            display_comparison_table(all_scorecards)
 
 
 if __name__ == "__main__":

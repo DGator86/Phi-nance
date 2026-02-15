@@ -5,6 +5,11 @@ Buys when the asset's price drops below its simple moving average
 (oversold) and sells when it rises above (overbought). A classic
 mean-reversion / trend-following hybrid.
 
+Prediction logic:
+    Price < SMA  ->  predicts UP   (expect reversion upward)
+    Price > SMA  ->  predicts DOWN (expect reversion downward)
+    Price == SMA ->  NEUTRAL
+
 Usage:
     python strategies/mean_reversion.py
 """
@@ -14,8 +19,10 @@ from datetime import datetime
 from lumibot.backtesting import YahooDataBacktesting
 from lumibot.strategies.strategy import Strategy
 
+from strategies.prediction_tracker import PredictionMixin
 
-class MeanReversion(Strategy):
+
+class MeanReversion(PredictionMixin, Strategy):
     parameters = {
         "symbol": "SPY",
         "sma_period": 20,
@@ -23,6 +30,7 @@ class MeanReversion(Strategy):
 
     def initialize(self):
         self.sleeptime = "1D"
+        self._init_predictions()
 
     def on_trading_iteration(self):
         symbol = self.parameters["symbol"]
@@ -41,6 +49,15 @@ class MeanReversion(Strategy):
         current_price = self.get_last_price(symbol)
         position = self.get_position(symbol)
 
+        # Record prediction based on SMA signal
+        if current_price < sma:
+            self.record_prediction(symbol, "UP", current_price)
+        elif current_price > sma:
+            self.record_prediction(symbol, "DOWN", current_price)
+        else:
+            self.record_prediction(symbol, "NEUTRAL", current_price)
+
+        # Trading logic (unchanged)
         if current_price < sma and position is None:
             quantity = int(self.portfolio_value * 0.95 // current_price)
             if quantity > 0:

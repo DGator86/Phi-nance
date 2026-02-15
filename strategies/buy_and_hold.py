@@ -5,6 +5,9 @@ Buys a single asset on the first trading iteration and holds it
 for the entire backtest period. A simple baseline to compare other
 strategies against.
 
+Prediction logic: Always predicts UP (permanent bullish bias).
+This is the naive baseline — any useful strategy should beat it.
+
 Usage:
     python strategies/buy_and_hold.py
 """
@@ -14,20 +17,26 @@ from datetime import datetime
 from lumibot.backtesting import YahooDataBacktesting
 from lumibot.strategies.strategy import Strategy
 
+from strategies.prediction_tracker import PredictionMixin
 
-class BuyAndHold(Strategy):
+
+class BuyAndHold(PredictionMixin, Strategy):
     parameters = {
         "symbol": "SPY",
     }
 
     def initialize(self):
         self.sleeptime = "1D"
+        self._init_predictions()
 
     def on_trading_iteration(self):
         symbol = self.parameters["symbol"]
+        price = self.get_last_price(symbol)
+
+        # Prediction: always bullish
+        self.record_prediction(symbol, "UP", price)
 
         if self.first_iteration:
-            price = self.get_last_price(symbol)
             quantity = int(self.portfolio_value // price)
             if quantity > 0:
                 order = self.create_order(symbol, quantity, "buy")

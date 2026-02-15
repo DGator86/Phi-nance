@@ -4,6 +4,9 @@ Momentum Rotation Strategy
 Rotates into the asset with the best recent momentum from a
 configurable universe of symbols. Re-evaluates every `rebalance_days`.
 
+Prediction logic: Predicts UP for the best-momentum asset,
+DOWN for all others in the universe.
+
 Usage:
     python strategies/momentum.py
 """
@@ -13,8 +16,10 @@ from datetime import datetime
 from lumibot.backtesting import YahooDataBacktesting
 from lumibot.strategies.strategy import Strategy
 
+from strategies.prediction_tracker import PredictionMixin
 
-class MomentumRotation(Strategy):
+
+class MomentumRotation(PredictionMixin, Strategy):
     parameters = {
         "symbols": ["SPY", "VEU", "AGG", "GLD"],
         "lookback_days": 20,
@@ -25,6 +30,7 @@ class MomentumRotation(Strategy):
         self.sleeptime = "1D"
         self.days_since_rebalance = 0
         self.current_asset = None
+        self._init_predictions()
 
     def on_trading_iteration(self):
         symbols = self.parameters["symbols"]
@@ -35,34 +41,45 @@ class MomentumRotation(Strategy):
 
         if self.first_iteration or self.days_since_rebalance >= rebalance_period:
             self.days_since_rebalance = 0
-            best = self._best_momentum_asset(symbols, lookback)
+            momentums = self._get_momentums(symbols, lookback)
 
-            if best and best != self.current_asset:
+            if not momentums:
+                return
+
+            best = max(momentums, key=lambda m: m["return"])
+            best_symbol = best["symbol"]
+
+            # Record predictions: UP for best, DOWN for the rest
+            for m in momentums:
+                signal = "UP" if m["symbol"] == best_symbol else "DOWN"
+                self.record_prediction(m["symbol"], signal, m["price"])
+
+            if best_symbol != self.current_asset:
                 if self.current_asset:
                     self.sell_all()
 
-                price = self.get_last_price(best)
+                price = best["price"]
                 quantity = int(self.portfolio_value // price)
                 if quantity > 0:
-                    order = self.create_order(best, quantity, "buy")
+                    order = self.create_order(best_symbol, quantity, "buy")
                     self.submit_order(order)
-                    self.current_asset = best
+                    self.current_asset = best_symbol
                     self.log_message(
-                        f"Rotated into {best} ({quantity} shares @ ${price:.2f})"
+                        f"Rotated into {best_symbol} ({quantity} shares @ ${price:.2f})"
                     )
 
-    def _best_momentum_asset(self, symbols, lookback):
+    def _get_momentums(self, symbols, lookback):
         bars = self.get_bars(symbols, lookback + 1, timestep="day")
-        best_symbol = None
-        best_return = float("-inf")
-
+        results = []
         for asset, bar_data in bars.items():
             momentum = bar_data.get_momentum(num_periods=lookback)
-            if momentum is not None and momentum > best_return:
-                best_return = momentum
-                best_symbol = asset.symbol
-
-        return best_symbol
+            if momentum is not None:
+                results.append({
+                    "symbol": asset.symbol,
+                    "price": bar_data.get_last_price(),
+                    "return": momentum,
+                })
+        return results
 
     def trace_stats(self, context, snapshot_before):
         return {
