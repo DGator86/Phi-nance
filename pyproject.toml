@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phi-nance"
+version = "0.1.0"
+description = "EPP v2 projection system — projection ends at ProjectionPacket"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0",
+    "pyarrow>=14.0",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "httpx>=0.25",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov", "ruff>=0.1"]
+# Official Polygon/Massive client for list_aggs backfill
+massive = ["massive>=1.0"]
+# Lumibot backtesting (same code path for backtest/live; uses our bar store via PandasDataBacktesting)
+lumibot = ["lumibot>=3.0"]
+# backtesting.py (kernc) — lightweight, no broker; DataFrame + Strategy.run()
+backtesting = ["backtesting>=0.4"]
+# MCP server for Agent World Model / any MCP client (get_projection, run_backtest tools)
+mcp = ["mcp[cli]>=1.0"]
+# Web GUI: strategy picker, backtest comparison, Ask the Agent (needs backtesting + optional openai)
+gui = ["streamlit>=1.28", "backtesting>=0.4", "openai>=1.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
