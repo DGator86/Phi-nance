@@ -9,6 +9,8 @@ Features:
 - Compounding strategy selector
 - Tiered layout (strategies → compounding → test → results)
 - Regime detection and best regime display
+- Testing Mode 1 — Phi Mode: technical/φ metrics only (direction accuracy, regime; no account simulation)
+- Testing Mode 2 — Trade Mode: account balance, trading costs, brokerage selector, PDT in effect
 """
 
 from __future__ import annotations
@@ -30,7 +32,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-from phinence.gui.strategy_catalog import STRATEGY_CATALOG, COMPOUNDING_STRATEGIES
+from phinence.gui.strategy_catalog import (
+    STRATEGY_CATALOG,
+    COMPOUNDING_STRATEGIES,
+    TESTING_MODES,
+    BROKERAGES,
+)
 
 st.set_page_config(
     page_title="Phi-nance Strategy Lab v2",
@@ -48,6 +55,16 @@ if "backtest_results" not in st.session_state:
     st.session_state.backtest_results = []
 if "regime_analysis" not in st.session_state:
     st.session_state.regime_analysis = {}
+if "testing_mode" not in st.session_state:
+    st.session_state.testing_mode = "phi_mode"
+if "trade_config" not in st.session_state:
+    st.session_state.trade_config = {
+        "initial_balance": 10000,
+        "commission_pct": 0.1,
+        "commission_per_trade": 0.0,
+        "brokerage": "tradier",
+        "pdt_effect": False,
+    }
 
 # CSS for expandable cards
 st.markdown("""
@@ -96,18 +113,18 @@ for strategy in STRATEGY_CATALOG:
         st.markdown(f"**{strategy['name']}** ({strategy['category']})")
         st.caption(strategy["description"])
     with col3:
-        expand_key = f"expand_{strategy['id']}"
-        if expand_key not in st.session_state:
-            st.session_state[expand_key] = False
-        expanded = st.button("⚙️", key=expand_key, help="Configure parameters")
-        if expanded:
-            st.session_state[expand_key] = not st.session_state[expand_key]
+        expand_btn_key = f"expand_btn_{strategy['id']}"
+        expanded_state_key = f"_expanded_{strategy['id']}"
+        if expanded_state_key not in st.session_state:
+            st.session_state[expanded_state_key] = False
+        if st.button("⚙️", key=expand_btn_key, help="Configure parameters"):
+            st.session_state[expanded_state_key] = not st.session_state[expanded_state_key]
     
     if enabled:
         enabled_strategies.append(strategy["id"])
     
     # Expandable parameters section
-    if st.session_state.get(expand_key, False):
+    if st.session_state.get(expanded_state_key, False):
         st.markdown("**Parameters:**")
         params_cols = st.columns(min(len(strategy.get("params", {})), 3))
         param_idx = 0
@@ -211,11 +228,75 @@ else:
     st.info("Enable 2+ strategies to configure compounding.")
 
 # ============================================================================
-# TIER 3: TEST WINDOW SECTION
+# TIER 3: TESTING MODE & TEST WINDOW
 # ============================================================================
 st.markdown("---")
-st.subheader("🧪 Tier 3: Test Window")
+st.subheader("🧪 Tier 3: Testing Mode & Test Window")
 
+# Testing mode: Phi Mode (technical/φ) vs Trade Mode (account, costs, brokerage, PDT)
+testing_mode = st.radio(
+    "**Testing Mode:**",
+    options=[m["id"] for m in TESTING_MODES],
+    format_func=lambda x: f"{next((m['icon'] for m in TESTING_MODES if m['id'] == x), '')} {next((m['name'] for m in TESTING_MODES if m['id'] == x), x)}",
+    horizontal=True,
+    key="testing_mode_radio",
+    help="Phi Mode: technical & φ metrics only. Trade Mode: full simulation with account, costs, brokerage, PDT.",
+)
+st.session_state.testing_mode = testing_mode
+
+if testing_mode == "phi_mode":
+    st.caption("**Phi Mode** — Strategy mechanics and φ metrics (direction accuracy, regime). No account balance or trading costs.")
+else:
+    st.caption("**Trade Mode** — Set account balance, trading costs, brokerage, and PDT (Pattern Day Trader) rules.")
+    with st.expander("💰 Trade settings", expanded=True):
+        tc = st.session_state.trade_config
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            tc["initial_balance"] = st.number_input(
+                "Account balance ($)",
+                min_value=500,
+                max_value=10_000_000,
+                value=int(tc.get("initial_balance", 10000)),
+                step=1000,
+                key="trade_initial_balance",
+            )
+        with c2:
+            tc["commission_pct"] = st.number_input(
+                "Commission (%)",
+                min_value=0.0,
+                max_value=5.0,
+                value=float(tc.get("commission_pct", 0.1)),
+                step=0.01,
+                key="trade_commission_pct",
+            )
+        with c3:
+            tc["commission_per_trade"] = st.number_input(
+                "Commission per trade ($)",
+                min_value=0.0,
+                max_value=100.0,
+                value=float(tc.get("commission_per_trade", 0.0)),
+                step=0.5,
+                key="trade_commission_fixed",
+            )
+        c4, c5 = st.columns(2)
+        with c4:
+            brokerage = st.selectbox(
+                "Brokerage",
+                options=[b["id"] for b in BROKERAGES],
+                format_func=lambda x: next((b["name"] for b in BROKERAGES if b["id"] == x), x),
+                key="trade_brokerage",
+            )
+            tc["brokerage"] = brokerage
+        with c5:
+            tc["pdt_effect"] = st.checkbox(
+                "PDT in effect (≤3 day trades per 5 days)",
+                value=tc.get("pdt_effect", False),
+                key="trade_pdt",
+                help="Pattern Day Trader rule: margin accounts under $25k limited to 3 day trades in 5 business days.",
+            )
+        st.session_state.trade_config = tc
+
+st.markdown("**Test window**")
 col1, col2, col3 = st.columns(3)
 with col1:
     ticker = st.text_input("Symbol", value="SPY", help="e.g. SPY, QQQ, AAPL").strip() or "SPY"
@@ -250,31 +331,52 @@ if run_button:
         results = []
         progress = st.progress(0, text="Running backtests...")
         
+        testing_mode = st.session_state.testing_mode
+        trade_config = st.session_state.trade_config
+        strategy_params_map = {
+            sid: st.session_state.strategy_configs[sid].get("params", {})
+            for sid in enabled_strategies
+            if sid in st.session_state.strategy_configs
+        }
+        comp_config = st.session_state.compounding_config
+
         if run_mode == "Combine strategies" and len(enabled_strategies) > 1:
-            # Run combined strategy
             progress.progress(0.5, text=f"Running combined strategy ({len(enabled_strategies)} strategies)...")
             r = run_combined_backtest(
                 enabled_strategies, ticker, start, end,
-                voting_mode=st.session_state.compounding_config["method"],
-                data_root=REPO_ROOT / "data" / "bars"
+                voting_mode=comp_config["method"],
+                data_root=REPO_ROOT / "data" / "bars",
+                strategy_params_map=strategy_params_map,
+                compounding_params=comp_config.get("params", {}),
+                testing_mode=testing_mode,
+                trade_config=trade_config if testing_mode == "trade_mode" else None,
             )
             results.append(r)
         else:
-            # Run each strategy individually
             for i, strategy_id in enumerate(enabled_strategies):
                 progress.progress((i + 1) / len(enabled_strategies), text=f"Running {strategy_id}...")
-                r = run_backtest_for_strategy(strategy_id, ticker, start, end, data_root=REPO_ROOT / "data" / "bars")
+                params = strategy_params_map.get(strategy_id, {})
+                r = run_backtest_for_strategy(
+                    strategy_id, ticker, start, end,
+                    data_root=REPO_ROOT / "data" / "bars",
+                    strategy_params=params,
+                    testing_mode=testing_mode,
+                    trade_config=trade_config if testing_mode == "trade_mode" else None,
+                )
                 results.append(r)
         
         progress.empty()
         st.session_state.backtest_results = results
-        
-        # Simple regime analysis (placeholder - would use RegimeEngine in real implementation)
-        st.session_state.regime_analysis = {
-            "best_regime": "Trending Up",
-            "regime_distribution": {"Trending Up": 0.4, "Trending Down": 0.3, "Ranging": 0.3}
-        }
-        
+
+        try:
+            from phinence.gui.runner import detect_regime
+            st.session_state.regime_analysis = detect_regime(ticker, start, end, data_root=REPO_ROOT / "data" / "bars")
+        except Exception:
+            st.session_state.regime_analysis = {
+                "best_regime": "Unknown",
+                "regime_distribution": {"Trending": 0.33, "Mean Reverting": 0.33, "Expanding": 0.34},
+            }
+
         st.rerun()
 
 # ============================================================================
@@ -285,13 +387,14 @@ st.subheader("📊 Tier 4: Results")
 
 if st.session_state.backtest_results:
     df = pd.DataFrame(st.session_state.backtest_results)
-    
+    testing_mode = st.session_state.get("testing_mode", "trade_mode")
+
     if "Error" in df.columns:
         st.dataframe(df, use_container_width=True, hide_index=True)
     else:
         st.dataframe(df, use_container_width=True, hide_index=True)
-        
-        # Best overall strategy
+        if testing_mode == "phi_mode":
+            st.info("**φ Phi Mode** — Results emphasize technical and direction metrics. Switch to Trade Mode for account balance, costs, and PDT.")
         if "Sharpe Ratio" in df.columns and len(df) > 0:
             best_idx = df["Sharpe Ratio"].idxmax()
             best_name = df.loc[best_idx, "Strategy"]

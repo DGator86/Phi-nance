@@ -117,18 +117,19 @@ for strategy in STRATEGY_CATALOG:
         st.markdown(f"**{strategy['name']}** ({strategy['category']})")
         st.caption(strategy["description"])
     with col3:
-        expand_key = f"expand_{strategy['id']}"
-        if expand_key not in st.session_state:
-            st.session_state[expand_key] = False
-        expanded = st.button("⚙️", key=expand_key, help="Configure parameters")
-        if expanded:
-            st.session_state[expand_key] = not st.session_state[expand_key]
+        # Use separate keys: widget key for button, session key for expanded state (Streamlit disallows assigning to widget keys)
+        expand_btn_key = f"expand_btn_{strategy['id']}"
+        expanded_state_key = f"_expanded_{strategy['id']}"
+        if expanded_state_key not in st.session_state:
+            st.session_state[expanded_state_key] = False
+        if st.button("⚙️", key=expand_btn_key, help="Configure parameters"):
+            st.session_state[expanded_state_key] = not st.session_state[expanded_state_key]
     
     if enabled:
         enabled_strategies.append(strategy["id"])
     
     # Expandable parameters section
-    if st.session_state.get(expand_key, False):
+    if st.session_state.get(expanded_state_key, False):
         st.markdown("**Parameters:**")
         params_cols = st.columns(min(len(strategy.get("params", {})), 3))
         param_idx = 0
