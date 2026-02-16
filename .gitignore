@@ -1,0 +1,29 @@
+# Secrets — never commit API keys or tokens
+.env
+.env.local
+.env.*.local
+*.pem
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.eggs/
+dist/
+build/
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data (large)
+data/bars/**/*.parquet
+*.parquet
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
