@@ -116,3 +116,31 @@ COMPOUNDING_STRATEGIES = [
         },
     },
 ]
+
+# Testing modes: Phi Mode (technical/strategy + Phi metrics) vs Trade Mode (P&L with account/costs/PDT)
+TESTING_MODES = [
+    {
+        "id": "phi_mode",
+        "name": "Phi Mode",
+        "short": "Phi",
+        "description": "Technical & Phi metrics only: signal accuracy, projection cones, regime, no account simulation.",
+        "icon": "φ",
+    },
+    {
+        "id": "trade_mode",
+        "name": "Trade Mode",
+        "short": "Trade",
+        "description": "Full trading simulation: account balance, costs, brokerage, PDT rules.",
+        "icon": "💰",
+    },
+]
+
+# Brokerages for Trade Mode (name -> default commission/fee info)
+BROKERAGES = [
+    {"id": "tradier", "name": "Tradier", "default_commission_pct": 0.0, "default_per_trade": 0.0},
+    {"id": "ibkr", "name": "Interactive Brokers", "default_commission_pct": 0.0, "default_per_trade": 0.0},
+    {"id": "schwab", "name": "Charles Schwab", "default_commission_pct": 0.0, "default_per_trade": 0.0},
+    {"id": "fidelity", "name": "Fidelity", "default_commission_pct": 0.0, "default_per_trade": 0.0},
+    {"id": "etrade", "name": "E*TRADE", "default_commission_pct": 0.0, "default_per_trade": 0.0},
+    {"id": "custom", "name": "Custom", "default_commission_pct": 0.1, "default_per_trade": 1.0},
+]
