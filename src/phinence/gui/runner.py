@@ -338,13 +338,12 @@ def _get_strategy_signal(strategy_id: str, bt_df: pd.DataFrame, bar_store: Any, 
     """
     from backtesting.lib import crossover
     import pandas as pd
-    
+
+    params = params or {}
+
     if strategy_id == "buy_and_hold":
         # Buy on first bar only
         return 1 if idx == 0 else 0
-    
-    params = params or {}
-    
     elif strategy_id == "sma_cross":
         try:
             from backtesting.test import SMA
