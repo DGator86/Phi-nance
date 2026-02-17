@@ -48,6 +48,8 @@ if "workflow" not in st.session_state:
         "blocks": [],  # [{id, type, x, y, params, connections: [to_id]}]
         "connections": [],  # [{from_id, to_id}]
     }
+if "block_id_counter" not in st.session_state:
+    st.session_state.block_id_counter = 0
 if "backtest_config" not in st.session_state:
     st.session_state.backtest_config = {
         "ticker": "SPY",
@@ -89,8 +91,10 @@ with col_right:
     # Strategy catalog as clickable items
     for strategy in STRATEGY_CATALOG:
         if st.button(f"➕ {strategy['name']}", key=f"add_{strategy['id']}", use_container_width=True):
+            # Generate unique block ID
+            st.session_state.block_id_counter += 1
+            block_id = f"block_{st.session_state.block_id_counter}"
             # Add block to workflow
-            block_id = f"block_{len(st.session_state.workflow['blocks'])}"
             st.session_state.workflow["blocks"].append({
                 "id": block_id,
                 "type": strategy["id"],
@@ -102,7 +106,9 @@ with col_right:
     
     # Composer block
     if st.button("🎼 Composer", key="add_composer", use_container_width=True):
-        block_id = f"block_{len(st.session_state.workflow['blocks'])}"
+        # Generate unique block ID
+        st.session_state.block_id_counter += 1
+        block_id = f"block_{st.session_state.block_id_counter}"
         st.session_state.workflow["blocks"].append({
             "id": block_id,
             "type": "composer",
@@ -138,55 +144,72 @@ with col_left:
         # Fallback: visual grid layout using Streamlit native widgets
         st.info("Using grid layout (full drag-and-drop coming soon)")
         
-        # Display blocks in a grid
+        # Display blocks in a grid - find blocks by ID to avoid index issues
         if st.session_state.workflow["blocks"]:
             cols_per_row = 3
-            for i in range(0, len(st.session_state.workflow["blocks"]), cols_per_row):
+            blocks_to_display = list(st.session_state.workflow["blocks"])  # Copy to avoid modification during iteration
+            for i in range(0, len(blocks_to_display), cols_per_row):
                 cols = st.columns(cols_per_row)
-                for j, block in enumerate(st.session_state.workflow["blocks"][i:i+cols_per_row]):
+                row_blocks = blocks_to_display[i:i+cols_per_row]
+                for j, block in enumerate(row_blocks):
+                    # Find block in session state by ID (in case it was modified)
+                    block_idx = next((idx for idx, b in enumerate(st.session_state.workflow["blocks"]) if b["id"] == block["id"]), None)
+                    if block_idx is None:
+                        continue  # Block was deleted, skip
+                    
+                    current_block = st.session_state.workflow["blocks"][block_idx]
                     with cols[j]:
-                        is_composer = block["type"] == "composer"
-                        block_color = "rgba(232,121,42,0.2)" if is_composer else "rgba(58,32,80,0.4)"
-                        block_border = "#e8792a" if is_composer else "rgba(168,85,247,0.3)"
+                        is_composer = current_block["type"] == "composer"
+                        block_display_name = "🎼 Composer" if is_composer else current_block["type"]
                         
-                        with st.expander(f"{'🎼 Composer' if is_composer else block['type']}", expanded=False):
+                        with st.expander(f"{block_display_name}", expanded=False, key=f"expander_{current_block['id']}"):
                             if is_composer:
                                 method = st.selectbox("Method", ["majority", "weighted", "unanimous"], 
-                                                     key=f"composer_method_{block['id']}")
-                                st.session_state.workflow["blocks"][i+j]["params"]["method"] = method
+                                                     index=["majority", "weighted", "unanimous"].index(current_block["params"].get("method", "majority")),
+                                                     key=f"composer_method_{current_block['id']}")
+                                # Update by finding block by ID
+                                for idx, b in enumerate(st.session_state.workflow["blocks"]):
+                                    if b["id"] == current_block["id"]:
+                                        st.session_state.workflow["blocks"][idx]["params"]["method"] = method
+                                        break
                             else:
-                                strategy = next((s for s in STRATEGY_CATALOG if s["id"] == block["type"]), None)
+                                strategy = next((s for s in STRATEGY_CATALOG if s["id"] == current_block["type"]), None)
                                 if strategy and strategy.get("params"):
                                     for param_id, param_def in strategy["params"].items():
+                                        current_val = current_block["params"].get(param_id, param_def["default"])
                                         if param_def["type"] == "int":
                                             val = st.number_input(param_def["label"], 
                                                                  min_value=param_def.get("min", 1),
                                                                  max_value=param_def.get("max", 1000),
-                                                                 value=block["params"].get(param_id, param_def["default"]),
-                                                                 key=f"param_{block['id']}_{param_id}")
+                                                                 value=int(current_val),
+                                                                 key=f"param_{current_block['id']}_{param_id}")
                                         elif param_def["type"] == "float":
                                             val = st.number_input(param_def["label"],
                                                                  min_value=float(param_def.get("min", 0.0)),
                                                                  max_value=float(param_def.get("max", 1000.0)),
-                                                                 value=float(block["params"].get(param_id, param_def["default"])),
+                                                                 value=float(current_val),
                                                                  step=0.1,
-                                                                 key=f"param_{block['id']}_{param_id}")
+                                                                 key=f"param_{current_block['id']}_{param_id}")
                                         elif param_def["type"] == "bool":
                                             val = st.checkbox(param_def["label"],
-                                                            value=block["params"].get(param_id, param_def["default"]),
-                                                            key=f"param_{block['id']}_{param_id}")
+                                                            value=bool(current_val),
+                                                            key=f"param_{current_block['id']}_{param_id}")
                                         else:
                                             val = st.text_input(param_def["label"],
-                                                              value=str(block["params"].get(param_id, param_def["default"])),
-                                                              key=f"param_{block['id']}_{param_id}")
-                                        st.session_state.workflow["blocks"][i+j]["params"][param_id] = val
+                                                              value=str(current_val),
+                                                              key=f"param_{current_block['id']}_{param_id}")
+                                        # Update by finding block by ID
+                                        for idx, b in enumerate(st.session_state.workflow["blocks"]):
+                                            if b["id"] == current_block["id"]:
+                                                st.session_state.workflow["blocks"][idx]["params"][param_id] = val
+                                                break
                             
                             # Connection management
                             if len(st.session_state.workflow["blocks"]) > 1:
                                 st.caption("Connect to:")
-                                other_blocks = [b for b in st.session_state.workflow["blocks"] if b["id"] != block["id"]]
+                                other_blocks = [b for b in st.session_state.workflow["blocks"] if b["id"] != current_block["id"]]
                                 target_options = ["None"] + [f"{b['type']} ({b['id'][:8]})" for b in other_blocks]
-                                current_conn = next((c["to_id"] for c in st.session_state.workflow["connections"] if c["from_id"] == block["id"]), None)
+                                current_conn = next((c["to_id"] for c in st.session_state.workflow["connections"] if c["from_id"] == current_block["id"]), None)
                                 current_idx = 0
                                 if current_conn:
                                     for idx, b in enumerate(other_blocks):
@@ -194,19 +217,20 @@ with col_left:
                                             current_idx = idx + 1
                                             break
                                 
-                                selected = st.selectbox("→", target_options, index=current_idx, key=f"connect_{block['id']}")
+                                selected = st.selectbox("→", target_options, index=current_idx, key=f"connect_{current_block['id']}")
                                 if selected != "None":
                                     target_id = other_blocks[target_options.index(selected) - 1]["id"]
-                                    # Update connections
-                                    st.session_state.workflow["connections"] = [c for c in st.session_state.workflow["connections"] if c["from_id"] != block["id"]]
-                                    st.session_state.workflow["connections"].append({"from_id": block["id"], "to_id": target_id})
+                                    # Update connections - remove old, add new
+                                    st.session_state.workflow["connections"] = [c for c in st.session_state.workflow["connections"] if c["from_id"] != current_block["id"]]
+                                    st.session_state.workflow["connections"].append({"from_id": current_block["id"], "to_id": target_id})
                                 elif current_conn:
-                                    st.session_state.workflow["connections"] = [c for c in st.session_state.workflow["connections"] if c["from_id"] != block["id"]]
+                                    st.session_state.workflow["connections"] = [c for c in st.session_state.workflow["connections"] if c["from_id"] != current_block["id"]]
                             
-                            if st.button("🗑️ Remove", key=f"remove_{block['id']}"):
-                                st.session_state.workflow["blocks"] = [b for b in st.session_state.workflow["blocks"] if b["id"] != block["id"]]
+                            if st.button("🗑️ Remove", key=f"remove_{current_block['id']}"):
+                                # Remove block and its connections
+                                st.session_state.workflow["blocks"] = [b for b in st.session_state.workflow["blocks"] if b["id"] != current_block["id"]]
                                 st.session_state.workflow["connections"] = [c for c in st.session_state.workflow["connections"] 
-                                                                           if c["from_id"] != block["id"] and c["to_id"] != block["id"]]
+                                                                           if c["from_id"] != current_block["id"] and c["to_id"] != current_block["id"]]
                                 st.rerun()
         else:
             st.markdown("""
