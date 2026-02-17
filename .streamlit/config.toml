@@ -1,0 +1,10 @@
+# Phi-nance Strategy Lab — always dark, purple-to-orange theme
+[theme]
+base = "dark"
+primaryColor = "#e8792a"
+backgroundColor = "#0f0614"
+secondaryBackgroundColor = "#1a0f24"
+textColor = "#e8e0f0"
+
+[server]
+headless = true
