@@ -130,7 +130,7 @@ with col_left:
         )
         
         # Use components.html with height
-        result = components.html(html_content, height=600, key="workflow_builder")
+        result = components.html(html_content, height=600)
         
         # Handle updates from component (if using proper Streamlit component API)
         # For now, we'll use a simpler approach with buttons
