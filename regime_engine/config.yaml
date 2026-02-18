@@ -3,6 +3,16 @@
 # All numeric parameters are AI-tunable.
 # ============================================================
 
+# ── Alpha Vantage Data Source ────────────────────────────────
+alpha_vantage:
+  api_key:   "PLN25H3ESMM1IRBN"        # override with env var AV_API_KEY
+  mcp_token: "G7jhPGMv69WcDYerwJ6VZ2Tw6upJ"  # mcp.alphavantage.co bearer
+  mcp_url:   "https://mcp.alphavantage.co/"
+  rate_limit: 12.0            # seconds between calls (5 req/min free tier)
+  cache_dir:  ".av_cache"     # local response cache directory
+  default_interval:  "1min"
+  default_outputsize: "full"  # 'compact' for latest 100 bars, 'full' for 30d
+
 # ── Feature Engine ──────────────────────────────────────────
 features:
   drift_windows: [15, 30, 60]

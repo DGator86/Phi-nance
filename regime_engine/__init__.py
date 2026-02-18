@@ -40,6 +40,8 @@ from .indicator_library import INDICATOR_CLASSES, build_indicator
 from .expert_registry import ExpertRegistry
 from .projection_engine import ProjectionEngine
 from .mixer import Mixer
+from .data_fetcher import AlphaVantageFetcher, AlphaVantageMCP
+from .live_scanner import LiveScanner
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -159,4 +161,7 @@ __all__ = [
     "ExpertRegistry",
     "ProjectionEngine",
     "Mixer",
+    "AlphaVantageFetcher",
+    "AlphaVantageMCP",
+    "LiveScanner",
 ]
