@@ -1,0 +1,314 @@
+# ============================================================
+# Regime Probability Field Engine — Configuration
+# All numeric parameters are AI-tunable.
+# ============================================================
+
+# ── Alpha Vantage Data Source ────────────────────────────────
+alpha_vantage:
+  api_key:   "PLN25H3ESMM1IRBN"        # override with env var AV_API_KEY
+  mcp_token: "G7jhPGMv69WcDYerwJ6VZ2Tw6upJ"  # mcp.alphavantage.co bearer
+  mcp_url:   "https://mcp.alphavantage.co/"
+  rate_limit: 12.0            # seconds between calls (5 req/min free tier)
+  cache_dir:  ".av_cache"     # local response cache directory
+  default_interval:  "1min"
+  default_outputsize: "full"  # 'compact' for latest 100 bars, 'full' for 30d
+
+# ── Feature Engine ──────────────────────────────────────────
+features:
+  drift_windows: [15, 30, 60]
+  vol_windows: [30, 120]
+  er_windows: [30, 60, 120]
+  autocorr_lag: 10
+  autocorr_window: 40
+  flip_rate_window: 30
+  median_cross_window: 30
+  impulse_revert_window: 30
+  impulse_revert_sigma: 1.5      # multiplier on rolling std for "large move"
+  illiquidity_window: 60
+  volume_zscore_window: 200
+  entropy_window: 30
+  entropy_bins: 10
+  range_expansion_window: 30
+  # Robust normalization
+  robust_norm_window: 60
+  mad_floor: 1.0e-8
+  mad_small_multiplier: 10.0     # if MAD < floor * this → use EWMA std
+  ewma_norm_span: 30
+
+# ── Taxonomy Smoothing (sticky-logit EWM alpha per level) ───
+taxonomy:
+  smoothing:
+    kingdom: 0.10    # alpha = 1 - persistence → low alpha = sticky
+    phylum:  0.12
+    class_:  0.15
+    order:   0.18
+    family:  0.20
+    genus:   0.22
+
+  # ── Energy coefficients  alpha_{node,feature} ─────────────
+  # Sign convention: positive → feature↑ raises node energy
+  # Features referenced by their normalized column name.
+  # Only non-zero coefficients need to be listed.
+  energy:
+
+    # ── KINGDOM ──────────────────────────────────────────────
+    kingdom:
+      DIR:
+        drift_tscore_30:  0.40
+        drift_tscore_60:  0.25
+        er_30:            0.30
+        autocorr:         0.20
+        flip_rate:       -0.15
+        impulse_revert:  -0.10
+      NDR:
+        er_30:           -0.35
+        autocorr:        -0.25
+        flip_rate:        0.20
+        impulse_revert:   0.25
+        median_cross:     0.15
+        drift_tscore_30: -0.20
+      TRN:
+        entropy:          0.25
+        rv_delta:         0.30
+        range_expansion:  0.25
+        volume_zscore:    0.20
+        drift_tscore_30:  0.00   # neutral — direction irrelevant at TRN
+
+    # ── PHYLUM ───────────────────────────────────────────────
+    phylum:
+      LV:
+        rv_30:           -0.50
+        true_range:      -0.30
+        volume_zscore:   -0.20
+        rv_delta:        -0.15
+      NV:
+        rv_30:            0.00
+        illiquidity:      0.10
+        volume_zscore:   -0.05
+      HV:
+        rv_30:            0.50
+        true_range:       0.30
+        volume_zscore:    0.20
+        rv_delta:         0.15
+
+    # ── CLASS ─────────────────────────────────────────────────
+    # DIR classes
+    class_:
+      PT:
+        drift_tscore_60:  0.50
+        er_60:            0.35
+        flip_rate:       -0.20
+        autocorr:         0.15
+        drift_tscore_30:  0.15
+      PX:
+        rv_delta:         0.35
+        drift_tscore_30:  0.40
+        range_expansion:  0.30
+        er_30:            0.15
+      TE:
+        impulse_revert:   0.45
+        autocorr:        -0.30
+        er_30:           -0.30
+        flip_rate:        0.15
+        rv_delta:         0.10
+      # NDR classes
+      BR:
+        er_30:           -0.40
+        autocorr:        -0.20
+        median_cross:     0.40
+        flip_rate:        0.15
+        rv_delta:        -0.10
+      RR:
+        impulse_revert:   0.50
+        autocorr:        -0.25
+        flip_rate:        0.30
+        er_30:           -0.15
+      AR:
+        volume_zscore:    0.40
+        illiquidity:     -0.20
+        er_30:           -0.20
+        median_cross:     0.15
+      # TRN classes
+      SR:
+        rv_delta:         0.45
+        entropy:         -0.25
+        range_expansion:  0.30
+        volume_zscore:    0.15
+      RB:
+        rv_delta:         0.40
+        er_30:            0.35
+        gap_score:        0.25
+        volume_zscore:    0.20
+      FB:
+        impulse_revert:   0.45
+        gap_score:        0.30
+        autocorr:        -0.25
+        flip_rate:        0.15
+
+    # ── ORDER ────────────────────────────────────────────────
+    order:
+      AGC:
+        drift_tscore_30:  0.50
+        er_30:            0.30
+        volume_zscore:    0.20
+        flip_rate:       -0.10
+      RVP:
+        impulse_revert:   0.40
+        autocorr:        -0.30
+        flip_rate:        0.30
+        er_30:           -0.10
+      ABS:
+        er_60:           -0.30
+        rv_delta:        -0.30
+        flip_rate:        0.20
+        volume_zscore:   -0.10
+      EXH:
+        autocorr:        -0.40
+        impulse_revert:   0.40
+        rv_delta:         0.20
+        drift_tscore_30: -0.15
+
+    # ── FAMILY ───────────────────────────────────────────────
+    family:
+      ALN:
+        drift_tscore_60:  0.40
+        er_120:           0.40
+        autocorr:         0.20
+        er_60:            0.10
+      CT:
+        autocorr:        -0.30
+        flip_rate:        0.30
+        impulse_revert:   0.40
+        drift_tscore_30: -0.20
+      CST:
+        rv_30:           -0.30
+        er_30:           -0.20
+        volume_zscore:   -0.20
+        range_expansion: -0.15
+
+    # ── GENUS ────────────────────────────────────────────────
+    genus:
+      RUN:
+        drift_tscore_30:  0.50
+        er_30:            0.30
+        flip_rate:       -0.20
+        autocorr:         0.10
+      PBM:
+        impulse_revert:   0.40
+        autocorr:        -0.30
+        er_30:           -0.10
+        rv_delta:        -0.10
+      FLG:
+        rv_delta:        -0.30
+        er_60:            0.30
+        volume_zscore:   -0.15
+        flip_rate:        0.10
+      VWM:
+        volume_zscore:    0.40
+        illiquidity:     -0.20
+        median_cross:     0.15
+      RRO:
+        median_cross:     0.40
+        autocorr:        -0.30
+        flip_rate:        0.20
+      SRR:
+        impulse_revert:   0.45
+        autocorr:        -0.25
+        flip_rate:        0.30
+        rv_delta:         0.10
+
+# ── Projection Engine — AR(1) regime priors ─────────────────
+# x_{t+1}^r = mu_r + phi_r*(x_t - mu_r) + beta_r*Delta_x_t
+# sigma_r: residual noise std (for variance mixture)
+projection:
+  regimes:
+    TREND_UP:
+      mu:    0.30
+      phi:   0.90
+      beta:  0.10
+      sigma: 0.15
+    TREND_DN:
+      mu:   -0.30
+      phi:   0.90
+      beta:  0.10
+      sigma: 0.15
+    RANGE:
+      mu:    0.00
+      phi:   0.20
+      beta:  0.00
+      sigma: 0.20
+    BREAKOUT_UP:
+      mu:    0.50
+      phi:   0.95
+      beta:  0.20
+      sigma: 0.25
+    BREAKOUT_DN:
+      mu:   -0.50
+      phi:   0.95
+      beta:  0.20
+      sigma: 0.25
+    EXHAUST_REV:
+      mu:    0.00
+      phi:  -0.20
+      beta: -0.10
+      sigma: 0.30
+    LOWVOL:
+      mu:    0.00
+      phi:   0.30
+      beta:  0.00
+      sigma: 0.08
+    HIGHVOL:
+      mu:    0.00
+      phi:   0.60
+      beta:  0.05
+      sigma: 0.35
+
+# ── Confidence ───────────────────────────────────────────────
+confidence:
+  epsilon: 1.0e-8
+  # Both features are robust z-scores from FeatureEngine
+  liquidity_volume_scale: 0.5   # sigmoid(vol_zscore * scale) — higher = more decisive
+  liquidity_gap_scale:    0.5   # sigmoid(-|gap_zscore| * scale) — higher = more penalty
+
+# ── Scanner ──────────────────────────────────────────────────
+scanner:
+  min_bars: 300          # minimum bars required to run engine
+  lookback_bars: 60      # bars used for most recent feature window
+  top_n: 20             # top N tickers to return
+
+# ── Indicator Library — per-indicator config ─────────────────
+indicators:
+  rsi:
+    period: 14
+    type: A
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+    type: B
+  stochastic:
+    k_period: 14
+    d_period: 3
+    type: A
+  roc:
+    period: 10
+    type: B
+  vwap_dev:
+    session_minutes: 390
+    type: D
+  cmf:
+    period: 20
+    type: A
+  range_pos:
+    period: 20
+    type: A
+  momentum:
+    period: 10
+    type: B
+  atr_ratio:
+    atr_period: 14
+    ma_period: 50
+    type: B
+  vol_profile_dev:
+    period: 30
+    type: D
