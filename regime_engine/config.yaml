@@ -47,6 +47,22 @@ taxonomy:
     family:  0.20
     genus:   0.22
 
+  # ── Gate steepness γ per feature (Interface 1→2) ──────────
+  # Controls sharpness of tanh/tanh_abs gate applied to each feature.
+  # Higher γ → harder threshold; lower γ → smoother response.
+  gate_steepness:
+    default:        1.0    # used for any feature not explicitly listed
+    d_mass_dt:      2.0    # rate-of-change: sharper gate
+    d_lambda:       1.5    # lambda change: slightly sharper
+    mass:           1.0    # near-equilibrium gate
+    ofi_proxy:      1.2    # order-flow: mild boost
+    dissipation_proxy: 1.3
+
+  # ── MSL Condition Matrix scale (Interfaces 2 & 3) ─────────
+  # Global multiplier on all MSL hardcoded matrix weights.
+  # Set to 0.0 to disable; set to 1.0 for full strength.
+  msl_kingdom_scale: 0.8   # slightly discounted until backtested
+
   # ── Energy coefficients  alpha_{node,feature} ─────────────
   # Sign convention: positive → feature↑ raises node energy
   # Features referenced by their normalized column name.
@@ -322,8 +338,16 @@ projection:
 confidence:
   epsilon: 1.0e-8
   # Both features are robust z-scores from FeatureEngine
-  liquidity_volume_scale: 0.5   # sigmoid(vol_zscore * scale) — higher = more decisive
-  liquidity_gap_scale:    0.5   # sigmoid(-|gap_zscore| * scale) — higher = more penalty
+  liquidity_volume_scale: 0.5   # sigmoid(vol_zscore * scale)
+  liquidity_gap_scale:    0.5   # sigmoid(-|gap_zscore| * scale)
+
+  # Interface 4: blend ratio between species-pattern validity weights
+  # and entropy-weighted affinity weights. 0 = validity-only, 1 = affinity-only.
+  affinity_blend: 0.5
+
+  # Interface 6: quadratic composite blending. 1.0 = pure linear (original
+  # behaviour). Lower values allow cross-indicator interactions to modulate.
+  interaction_alpha: 0.7
 
 # ── Scanner ──────────────────────────────────────────────────
 scanner:

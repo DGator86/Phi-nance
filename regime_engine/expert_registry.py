@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 
 from .indicator_library import BaseIndicator, INDICATOR_CLASSES, build_indicator
 from .species import SPECIES_LIST
@@ -121,15 +121,28 @@ class ExpertRegistry:
     """
     Manages a collection of indicators, computes signals and validity weights.
 
+    Weight blending (Interface 4)
+    -----------------------------
+    The final per-indicator weight blends two sources:
+      w_validity : species-pattern sum (granular, species-level resolution)
+      w_affinity : entropy-weighted affinity from node-level condition matrix
+      w_final    = (1 - β) · w_validity + β · w_affinity
+
+    β is read from config['affinity_blend'] (default 0.5).
+
     Parameters
     ----------
     indicator_configs : dict  — from config['indicators']
         {indicator_name: {param_key: value, ...}}
+    blend_beta        : float — override blend ratio (0 = validity only,
+                        1 = affinity only). If None, read from config.
 
     Usage
     -----
     >>> registry = ExpertRegistry(cfg['indicators'])
-    >>> signals, weights = registry.compute(ohlcv_df, species_probs_df)
+    >>> signals, weights = registry.compute(ohlcv_df, species_probs_df,
+    ...                                     node_log_probs=nodes_df,
+    ...                                     affinity_blend=0.5)
     """
 
     def __init__(self, indicator_configs: Dict[str, Any]) -> None:
@@ -149,20 +162,26 @@ class ExpertRegistry:
         self,
         ohlcv: pd.DataFrame,
         species_probs: pd.DataFrame,
+        node_log_probs: Optional[pd.DataFrame] = None,
+        affinity_blend: float = 0.5,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Compute all indicator signals and corresponding validity weights.
+        Compute all indicator signals and corresponding blended weights.
 
         Parameters
         ----------
-        ohlcv         : raw OHLCV DataFrame
-        species_probs : (T, 28) DataFrame of species probabilities (linear)
-                        — output of exp(probability_field['species'])
+        ohlcv           : raw OHLCV DataFrame
+        species_probs   : (T, 28) DataFrame of species probabilities (linear)
+                          — output of exp(probability_field['species'])
+        node_log_probs  : (T, num_nodes) DataFrame of node log-probs from
+                          ProbabilityField. If provided, affinity weights are
+                          computed and blended with validity weights.
+        affinity_blend  : β ∈ [0, 1]; 0 = validity-only, 1 = affinity-only.
 
         Returns
         -------
         signals : pd.DataFrame  (T, num_indicators) — normalized signals
-        weights : pd.DataFrame  (T, num_indicators) — soft validity weights w_j
+        weights : pd.DataFrame  (T, num_indicators) — blended soft weights
         """
         sig_dict: Dict[str, pd.Series] = {}
         wt_dict:  Dict[str, pd.Series] = {}
@@ -181,6 +200,13 @@ class ExpertRegistry:
 
         signals = pd.DataFrame(sig_dict, index=ohlcv.index)
         weights = pd.DataFrame(wt_dict,  index=ohlcv.index)
+
+        # Interface 4: blend validity weights with entropy-weighted affinity
+        if node_log_probs is not None and affinity_blend > 0.0:
+            weights = self._blend_affinity_weights(
+                weights, node_log_probs, affinity_blend
+            )
+
         return signals, weights
 
     def indicator_names(self) -> List[str]:
@@ -188,3 +214,41 @@ class ExpertRegistry:
 
     def indicator_type(self, name: str) -> str:
         return self.indicators[name].indicator_type
+
+    # ------------------------------------------------------------------
+    # Affinity weight blending (Interface 4)
+    # ------------------------------------------------------------------
+
+    def _blend_affinity_weights(
+        self,
+        validity_weights: pd.DataFrame,
+        node_log_probs: pd.DataFrame,
+        beta: float,
+    ) -> pd.DataFrame:
+        """
+        Blend validity weights with entropy-weighted affinity weights:
+          w_final = (1 - β) · w_validity + β · w_affinity
+
+        Affinity weights can exceed 1.0 (ALN amplifier). We clip the blended
+        result to [0, 2] to allow amplification while preventing runaway.
+        """
+        from .affinity_matrix import compute_entropy_weighted_affinity
+
+        ind_names = list(validity_weights.columns)
+        w_aff_df = compute_entropy_weighted_affinity(node_log_probs, ind_names)
+
+        # Align index in case of minor mismatches
+        w_aff_df = w_aff_df.reindex(validity_weights.index, fill_value=0.0)
+
+        blended = (
+            (1.0 - beta) * validity_weights.values
+            + beta * w_aff_df.values
+        )
+        # Clip: allow mild amplification (ALN > 1), prevent pathological values
+        blended = np.clip(blended, 0.0, 2.0)
+
+        return pd.DataFrame(
+            blended,
+            index=validity_weights.index,
+            columns=validity_weights.columns,
+        )

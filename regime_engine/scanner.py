@@ -143,8 +143,15 @@ class RegimeEngine:
         species_p  = np.exp(species_lp.clip(upper=0))
         species_p  = species_p.div(species_p.sum(axis=1).clip(lower=1e-15), axis=0)
 
-        # 4. Indicator signals + validity weights
-        signals, weights = self.experts.compute(ohlcv, species_p)
+        # 4. Indicator signals + validity weights (blended with affinity)
+        affinity_beta = float(
+            self.cfg.get("confidence", {}).get("affinity_blend", 0.5)
+        )
+        signals, weights = self.experts.compute(
+            ohlcv, species_p,
+            node_log_probs=node_lp,
+            affinity_blend=affinity_beta,
+        )
 
         # 5. Projection
         ind_types = {

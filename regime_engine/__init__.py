@@ -169,4 +169,7 @@ __all__ = [
     "GammaSurface",
     "PolygonL2Client",
     "PolygonRestClient",
+    # Interface 4 affinity blending utilities
+    "compute_entropy_weighted_affinity",
+    "entropy_certainty",
 ]

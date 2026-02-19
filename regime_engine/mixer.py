@@ -1,11 +1,16 @@
 """
 Mixer — Composite signal and confidence metric computation.
 
-Composite signal (validity-weighted average of all indicator signals):
+Composite signal (Interface 6 — quadratic blending):
 
-  S_t = Σ_j w_{j,t} · z_{j,t}  /  (Σ_j w_{j,t} + ε)
+  S_raw = Σ_j w_j · z_j / (Σ_j w_j + ε)            (linear weighted avg)
+  S_int = Σ_i Σ_j w_i · w_j · M(i,j) · z_i · z_j  (cross-indicator term)
+  S_t   = α · S_raw + (1-α) · sign(S_int) · |S_int|^0.5
 
-where w_{j,t} = Σ_{n ∈ V_j} P_t(n)   (resolved in ExpertRegistry)
+where M(i,j) is the INDICATOR_INTERACTION_MATRIX encoding expected
+correlation under different regime conditions.  Square-root compression
+keeps S_int on the same scale as S_raw while preserving sign and magnitude.
+α defaults to 0.7 (linear term dominates; interaction modulates).
 
 Confidence metrics
 ------------------
@@ -37,8 +42,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from scipy.special import softmax
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 
 def _entropy_from_log_probs(log_probs: pd.DataFrame, cols: list) -> pd.Series:
@@ -118,8 +122,24 @@ class Mixer:
         )
 
     # ------------------------------------------------------------------
-    # Composite signal
+    # Composite signal (Interface 6: quadratic blending)
     # ------------------------------------------------------------------
+
+    # 7×7 cross-indicator interaction matrix  M(i, j) ∈ [-1, +1]
+    # Positive = indicators tend to agree (amplify), negative = diverge (dampen)
+    # Order: ema, macd, supertrend, rsi, bb_mr, vwap_dev, donchian
+    _IND_ORDER = ["ema", "macd", "supertrend", "rsi", "bb_mr", "vwap_dev",
+                  "donchian"]
+    _INTERACTION_MATRIX = np.array([
+        # ema   macd   st     rsi   bb_mr  vwap   don
+        [1.00,  0.85,  0.80, -0.40, -0.40, -0.20,  0.50],  # ema
+        [0.85,  1.00,  0.70, -0.30, -0.30, -0.15,  0.50],  # macd
+        [0.80,  0.70,  1.00, -0.35, -0.35, -0.20,  0.60],  # supertrend
+        [-0.40, -0.30, -0.35, 1.00,  0.85,  0.80, -0.30],  # rsi
+        [-0.40, -0.30, -0.35, 0.85,  1.00,  0.75, -0.30],  # bb_mr
+        [-0.20, -0.15, -0.20, 0.80,  0.75,  1.00, -0.20],  # vwap_dev
+        [0.50,  0.50,  0.60, -0.30, -0.30, -0.20,  1.00],  # donchian
+    ], dtype=np.float64)
 
     def _composite_signal(
         self,
@@ -127,14 +147,57 @@ class Mixer:
         weights: pd.DataFrame,
         eps: float,
     ) -> pd.Series:
-        """S_t = Σ_j w_j * z_j / (Σ_j w_j + ε)"""
-        w = weights.values.astype(np.float64)
-        z = signals.values.astype(np.float64)
+        """
+        Quadratic-blended composite signal (Interface 6).
 
+        S_raw = Σ_j w_j · z_j / (Σ_j w_j + ε)
+        S_int = Σ_i Σ_j w_i · w_j · M(i,j) · z_i · z_j
+        S_t   = α · S_raw + (1-α) · sign(S_int) · |S_int|^0.5
+        """
+        alpha = float(self.cfg.get("interaction_alpha", 0.7))
+
+        w = weights.values.astype(np.float64)   # (T, K)
+        z = signals.values.astype(np.float64)   # (T, K)
+
+        # Linear term
         numer = (w * z).sum(axis=1)
         denom = w.sum(axis=1) + eps
+        s_raw = numer / denom                   # (T,)
 
-        return pd.Series(numer / denom, index=signals.index, name="composite_signal")
+        if alpha >= 1.0 - 1e-9:
+            # Fast path: pure linear (interaction_alpha == 1.0)
+            return pd.Series(
+                s_raw, index=signals.index, name="composite_signal"
+            )
+
+        # Quadratic interaction term using M for known indicators
+        # Map column names to matrix indices
+        col_idx = {
+            n: i for i, n in enumerate(self._IND_ORDER)
+        }
+        T, K = w.shape
+        s_int = np.zeros(T, dtype=np.float64)
+
+        for ji, name_i in enumerate(signals.columns):
+            mi = col_idx.get(name_i)
+            if mi is None:
+                continue
+            for jj, name_j in enumerate(signals.columns):
+                mj = col_idx.get(name_j)
+                if mj is None:
+                    continue
+                m_ij = self._INTERACTION_MATRIX[mi, mj]
+                if abs(m_ij) < 1e-9:
+                    continue
+                s_int += m_ij * w[:, ji] * w[:, jj] * z[:, ji] * z[:, jj]
+
+        # Square-root compression: sign(S_int) · |S_int|^0.5
+        s_int_compressed = np.sign(s_int) * np.sqrt(np.abs(s_int))
+
+        composite = alpha * s_raw + (1.0 - alpha) * s_int_compressed
+        return pd.Series(
+            composite, index=signals.index, name="composite_signal"
+        )
 
     # ------------------------------------------------------------------
     # Field confidence (entropy-based)
