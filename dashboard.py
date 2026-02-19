@@ -25,8 +25,11 @@ from strategies.bollinger import BollingerBands
 from strategies.breakout import ChannelBreakout
 from strategies.buy_and_hold import BuyAndHold
 from strategies.dual_sma import DualSMACrossover
+from strategies.ensemble_strategy import EnsembleMLStrategy
+from strategies.lightgbm_strategy import LightGBMStrategy
 from strategies.macd import MACDStrategy
 from strategies.mean_reversion import MeanReversion
+from strategies.ml_classifier_strategy import MLClassifierStrategy
 from strategies.momentum import MomentumRotation
 from strategies.prediction_tracker import compute_prediction_accuracy
 from strategies.rsi import RSIStrategy
@@ -257,6 +260,53 @@ STRATEGY_CATALOG = {
                 "min": 2,
                 "max": 10,
             },
+        },
+    },
+    # ── ML Strategies ─────────────────────────────────────────────────────
+    "ML Classifier (Random Forest)": {
+        "class": MLClassifierStrategy,
+        "description": (
+            "Scikit-learn Random Forest trained on regime features. "
+            "Requires models/classifier_rf.pkl (run train_ml_classifier.py). "
+            "Outputs NEUTRAL until model is trained."
+        ),
+        "params": {
+            "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
+            "min_confidence": {
+                "label": "Min confidence threshold",
+                "type": "number",
+                "default": 0.6,
+                "min": 0.5,
+                "max": 0.95,
+            },
+        },
+    },
+    "ML Classifier (LightGBM)": {
+        "class": LightGBMStrategy,
+        "description": (
+            "LightGBM gradient-boosting classifier on regime features. "
+            "Requires models/classifier_lgb.txt (run train_ml_classifier.py). "
+            "Outputs NEUTRAL until model is trained."
+        ),
+        "params": {
+            "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
+            "min_confidence": {
+                "label": "Min confidence threshold",
+                "type": "number",
+                "default": 0.62,
+                "min": 0.5,
+                "max": 0.95,
+            },
+        },
+    },
+    "Ensemble (RF + LightGBM)": {
+        "class": EnsembleMLStrategy,
+        "description": (
+            "Votes between Random Forest + LightGBM — trades only when both agree. "
+            "Most conservative ML signal. Requires both model files."
+        ),
+        "params": {
+            "symbol": {"label": "Symbol", "type": "text", "default": "SPY"},
         },
     },
 }

@@ -10,3 +10,12 @@ websocket-client>=1.7
 sortedcontainers>=2.4
 # Phase 2+: options analytics
 scipy>=1.11
+
+# ML Frameworks (Tier 1 — required for ML strategies)
+scikit-learn>=1.3.0
+lightgbm>=4.0.0
+joblib>=1.3.0
+
+# RL (Tier 2 — optional, only needed for RLStrategy + train_rl_agent.py)
+# stable-baselines3>=2.0.0
+# gymnasium>=0.28.0
