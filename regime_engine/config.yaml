@@ -410,6 +410,93 @@ gamma:
   # Distance features
   max_wall_distance_pct: 0.10  # clip at 10% from spot
 
+# ── Variable Registry — assumption-free state-space model ────
+# Every quantity here is an initial prior, not a fixed constant.
+# All values will adapt over time via their own update equations.
+# The only true constants are in bounds.rho_min / rho_max.
+variable_registry:
+
+  # ── Initial priors (starting values before market data arrives) ──
+  initial_priors:
+
+    # Natural timescale τ(t)
+    tau: 20.0             # initial autocorrelation decay lag (bars)
+    rho_tau: 0.05         # initial meta-learning rate for τ
+    tau_threshold: 0.10   # initial autocorr magnitude threshold (30th pct quantile)
+
+    # Smoothing constants η_L(t) per taxonomy level
+    # These match the current config values so initial behaviour is identical.
+    # They will adapt based on regime velocity and prediction error.
+    eta:
+      kingdom: 0.10
+      phylum:  0.12
+      class_:  0.15
+      order:   0.18
+      family:  0.20
+      genus:   0.22
+    kappa_eta: 0.05       # how fast η adapts toward η_target
+    beta_eta: 2.0         # steepness of η_target sigmoid
+
+    # Condition matrix C(i, k, t) — starts at zero
+    # (Prior signal-node weights come from MSL matrices + config energy)
+    lambda_C: 0.05        # initial adaptation rate for C
+    rho_C: 0.05           # meta-learning rate for lambda_C
+
+    # Signal weights α_j(t) and windows W_j(t)
+    W_j_init: 60.0        # initial adaptive window per signal (bars)
+
+    # Projection parameters θ_r(t) — seeded from projection.regimes below
+    # They will adapt via weighted gradient on prediction error.
+    Gamma_init: 0.01      # initial per-param, per-regime learning rate
+    theta_r:
+      TREND_UP:    {mu:  0.30, phi: 0.90, beta: 0.10, sigma: 0.15}
+      TREND_DN:    {mu: -0.30, phi: 0.90, beta: 0.10, sigma: 0.15}
+      RANGE:       {mu:  0.00, phi: 0.20, beta: 0.00, sigma: 0.20}
+      BREAKOUT_UP: {mu:  0.50, phi: 0.95, beta: 0.20, sigma: 0.25}
+      BREAKOUT_DN: {mu: -0.50, phi: 0.95, beta: 0.20, sigma: 0.25}
+      EXHAUST_REV: {mu:  0.00, phi: -0.20, beta: -0.10, sigma: 0.30}
+      LOWVOL:      {mu:  0.00, phi: 0.30, beta: 0.00, sigma: 0.08}
+      HIGHVOL:     {mu:  0.00, phi: 0.60, beta: 0.05, sigma: 0.35}
+
+    # Cone parameters σ(H, t)
+    sigma_cone_init: 0.10  # initial empirical cone width per horizon
+    cone_window: 200        # rolling buffer length for cone error accumulation
+
+    # Projection horizons H_k(t) — EMA of observed transition times per level
+    # No assumed H2/H1 ratio. Data will reveal the true scale relationships.
+    H_k_init:
+      kingdom: 120.0
+      phylum:   60.0
+      class_:   40.0
+      order:    20.0
+      family:   10.0
+      genus:     5.0
+    alpha_H: 0.05           # adaptation rate for H_k
+
+    # Cross-scale consistency
+    consistency_init: 0.5   # initial micro-macro agreement estimate
+    W_con_init: 60.0        # initial consistency window (bars)
+    lambda_con_init: 0.05   # initial consistency adaptation rate
+
+  # ── Stability bounds (the ONLY true constants in the framework) ──
+  # These are not parameters — they are hard limits on learning rates
+  # to prevent numerical instability. Nothing else is hardcoded.
+  bounds:
+    rho_min: 0.0001        # minimum learning rate (stability floor)
+    rho_max: 0.50          # maximum learning rate (stability ceiling)
+    eta_min: 0.02          # smoothing constant lower bound
+    eta_max: 0.60          # smoothing constant upper bound
+    C_max:   3.0           # condition matrix cell magnitude bound
+    alpha_j_lr: 0.05       # signal weight update step size
+    M_lr: 0.02             # interaction matrix update step size
+    W_min: 10.0            # minimum adaptive window length (bars)
+    W_max: 500.0           # maximum adaptive window length (bars)
+    W_lr: 0.02             # window length update step size
+    persistence_lr: 0.02   # regime persistence update step size
+    tau_transition_lr: 0.05 # transition time EMA step size
+    W_con_min: 10.0        # minimum consistency window
+    W_con_max: 500.0       # maximum consistency window
+
 # ── Phase 3: Polygon.io Live L2 Feed ─────────────────────────
 polygon:
   enabled: false              # set true when POLYGON_API_KEY is set

@@ -27,7 +27,10 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .variable_registry import VariableRegistry
 
 
 REGIME_ORDER = [
@@ -60,6 +63,68 @@ class ProjectionEngine:
         self._phi   = self._extract_param("phi")
         self._beta  = self._extract_param("beta")
         self._sigma = self._extract_param("sigma")
+        # Registry reference: when set, θ_r is read from and updated via registry
+        self._registry: Optional["VariableRegistry"] = None
+
+    # ------------------------------------------------------------------
+    # Registry integration
+    # ------------------------------------------------------------------
+
+    def set_registry(self, registry: "VariableRegistry") -> None:
+        """
+        Attach a VariableRegistry so that projection parameters θ_r(t) are
+        read from and updated via the registry rather than staying fixed.
+
+        The registry's theta_r is seeded from config.yaml priors on
+        VariableRegistry.__init__, so initial behaviour is identical to the
+        non-registry path.  Over time the registry learns better parameters
+        from prediction errors.
+        """
+        self._registry = registry
+        # Sync local arrays from registry (they are the source of truth)
+        self._sync_from_registry()
+
+    def _sync_from_registry(self) -> None:
+        """Pull current θ_r arrays from registry into local cached arrays."""
+        if self._registry is not None:
+            mu, phi, beta, sigma = self._registry.get_theta_arrays()
+            self._mu    = mu
+            self._phi   = phi
+            self._beta  = beta
+            self._sigma = sigma
+
+    def update(
+        self,
+        x_observed: float,
+        x_t: float,
+        dx_t: float,
+        regime_probs_dict: Dict[str, float],
+    ) -> None:
+        """
+        Feed back the observed signal value to update θ_r via the registry.
+
+        Call this after each bar once x_{t+1} is known:
+          - Computes weighted prediction error per regime
+          - Updates θ_r via gradient descent (inside registry)
+          - Syncs local parameter arrays from updated registry
+
+        Parameters
+        ----------
+        x_observed        : actual signal value at t+1
+        x_t               : signal value at t
+        dx_t              : Δx_t = x_t − x_{t−1}
+        regime_probs_dict : {regime_name: probability}
+        """
+        if self._registry is None:
+            return
+        regime_probs_arr = np.array(
+            [regime_probs_dict.get(r, 0.0) for r in REGIME_ORDER],
+            dtype=np.float64,
+        )
+        self._registry.update_projection_params(
+            x_observed, x_t, dx_t, regime_probs_arr
+        )
+        self._sync_from_registry()
 
     # ------------------------------------------------------------------
     # Public API
