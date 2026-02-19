@@ -368,6 +368,52 @@ class FeatureEngine:
         return out
 
     # ------------------------------------------------------------------
+    # Empirical timescale estimation (feeds VariableRegistry.update_tau)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def compute_tau_observed(
+        log_returns: np.ndarray,
+        threshold: float = 0.10,
+        max_lag: int = 100,
+    ) -> float:
+        """
+        Empirical autocorrelation decay timescale.
+
+        τ_observed = argmin_k { |autocorr(log_returns, lag=k)| < threshold }
+
+        No assumed timescale formula. The threshold is provided externally
+        (typically the running 30th-percentile quantile from VariableRegistry,
+        which is itself a variable updated each bar).
+
+        Parameters
+        ----------
+        log_returns : array of log returns
+        threshold   : |autocorr| below which the series is considered decorrelated
+        max_lag     : search bound in bars; returned if threshold never crossed
+
+        Returns
+        -------
+        float — lag in bars at which autocorrelation first falls below threshold.
+        """
+        x = log_returns[np.isfinite(log_returns)]
+        if len(x) < 10:
+            return float(max_lag)
+
+        x = x - x.mean()
+        variance = float(np.var(x))
+        if variance < 1e-12:
+            return float(max_lag)
+
+        search_max = min(max_lag, len(x) // 2)
+        for lag in range(1, search_max + 1):
+            acf = float(np.mean(x[lag:] * x[:-lag])) / (variance + 1e-12)
+            if abs(acf) < threshold:
+                return float(lag)
+
+        return float(search_max)
+
+    # ------------------------------------------------------------------
     # Multi-timeframe aggregation helpers (5m, 15m derived from 1m)
     # ------------------------------------------------------------------
 

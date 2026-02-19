@@ -42,7 +42,10 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Any
+from typing import Dict, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .variable_registry import VariableRegistry
 
 
 def _entropy_from_log_probs(log_probs: pd.DataFrame, cols: list) -> pd.Series:
@@ -72,6 +75,21 @@ class Mixer:
     >>> result = mixer.compute(signals, weights, node_log_probs, features)
     # result is a DataFrame with columns:
     #   composite_signal, c_field, c_consensus, c_liquidity, score
+
+    Registry integration (optional)
+    --------------------------------
+    When a VariableRegistry is passed to compute():
+
+    1. The indicator interaction matrix M(i,j) is read from
+       registry.M_interaction instead of the hardcoded _INTERACTION_MATRIX.
+       M starts as an identity matrix and is updated via
+       registry.update_interaction_matrix() each bar.
+
+    2. Signal blend weights in the linear term use registry.alpha_j instead
+       of uniform weights.  alpha_j adapts toward predictive contribution.
+
+    3. The final score is multiplied by registry.get_cone_confidence_multiplier()
+       which reduces confidence when micro/macro scales disagree.
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -87,6 +105,7 @@ class Mixer:
         weights: pd.DataFrame,
         node_log_probs: pd.DataFrame,
         features: pd.DataFrame,
+        registry: Optional["VariableRegistry"] = None,
     ) -> pd.DataFrame:
         """
         Parameters
@@ -95,6 +114,8 @@ class Mixer:
         weights        : (T, K) validity weights for each indicator
         node_log_probs : (T, num_nodes) log-probs from ProbabilityField
         features       : (T, F) feature DataFrame (needs volume_zscore, gap_score)
+        registry       : VariableRegistry — if provided, uses adaptive α_j
+                         and M_interaction(t) instead of fixed config values.
 
         Returns
         -------
@@ -103,12 +124,18 @@ class Mixer:
         """
         eps = self.cfg.get("epsilon", 1e-8)
 
-        s_composite = self._composite_signal(signals, weights, eps)
+        s_composite = self._composite_signal(signals, weights, eps, registry)
         c_field     = self._field_confidence(node_log_probs)
         c_consensus = self._consensus_confidence(signals, weights, eps)
         c_liquidity = self._liquidity_confidence(features)
 
         score = s_composite * c_field * c_consensus * c_liquidity
+
+        # Cross-scale consistency multiplier: widens effective uncertainty
+        # when micro and macro projections disagree (variable, not threshold)
+        if registry is not None:
+            consistency_mult = registry.get_cone_confidence_multiplier()
+            score = score * consistency_mult
 
         return pd.DataFrame(
             {
@@ -146,58 +173,77 @@ class Mixer:
         signals: pd.DataFrame,
         weights: pd.DataFrame,
         eps: float,
+        registry: Optional["VariableRegistry"] = None,
     ) -> pd.Series:
         """
         Quadratic-blended composite signal (Interface 6).
 
-        S_raw = Σ_j w_j · z_j / (Σ_j w_j + ε)
-        S_int = Σ_i Σ_j w_i · w_j · M(i,j) · z_i · z_j
-        S_t   = α · S_raw + (1-α) · sign(S_int) · |S_int|^0.5
+        S_raw = Σ_j α_j(t) · w_j · z_j / (Σ_j α_j(t) · w_j + ε)
+        S_int = Σ_i Σ_j w_i · w_j · M(i,j,t) · z_i · z_j
+        S_t   = blend · S_raw + (1−blend) · sign(S_int) · |S_int|^0.5
+
+        When registry is provided:
+          - α_j(t)   — adaptive signal weights from registry.alpha_j
+          - M(i,j,t) — learned interaction matrix from registry.M_interaction
+          - blend    — registry-adapted or config fallback
         """
+        # Interaction blend ratio: if registry has adapted alpha_j, use
+        # interaction_alpha from config as the starting point (still variable
+        # via the registry once update_signal_weights is called by the caller)
         alpha = float(self.cfg.get("interaction_alpha", 0.7))
 
         w = weights.values.astype(np.float64)   # (T, K)
         z = signals.values.astype(np.float64)   # (T, K)
 
-        # Linear term
-        numer = (w * z).sum(axis=1)
-        denom = w.sum(axis=1) + eps
+        # ── Adaptive signal weights α_j(t) ─────────────────────────────
+        # When registry is available, modulate validity weights by α_j so that
+        # indicators with higher predictive contribution receive more weight.
+        if registry is not None:
+            n_sig = min(registry.n_signals, w.shape[1])
+            alpha_j = registry.alpha_j[:n_sig]
+            # Broadcast α_j across time: (1, K) multiplicative modifier
+            w_adj = w.copy()
+            w_adj[:, :n_sig] *= alpha_j[None, :]
+        else:
+            w_adj = w
+
+        # Linear term (now α_j-modulated)
+        numer = (w_adj * z).sum(axis=1)
+        denom = w_adj.sum(axis=1) + eps
         s_raw = numer / denom                   # (T,)
 
         if alpha >= 1.0 - 1e-9:
-            # Fast path: pure linear (interaction_alpha == 1.0)
-            return pd.Series(
-                s_raw, index=signals.index, name="composite_signal"
-            )
+            return pd.Series(s_raw, index=signals.index, name="composite_signal")
 
-        # Quadratic interaction term using M for known indicators
-        # Map column names to matrix indices
-        col_idx = {
-            n: i for i, n in enumerate(self._IND_ORDER)
-        }
+        # ── Interaction matrix M(i,j,t) ────────────────────────────────
+        # Use registry's learned M if available; fall back to hardcoded prior
+        if registry is not None:
+            M_matrix = registry.M_interaction  # (n_signals, n_signals)
+            col_idx = {n: i for i, n in enumerate(self._IND_ORDER)}
+        else:
+            M_matrix = self._INTERACTION_MATRIX
+            col_idx = {n: i for i, n in enumerate(self._IND_ORDER)}
+
         T, K = w.shape
         s_int = np.zeros(T, dtype=np.float64)
 
         for ji, name_i in enumerate(signals.columns):
             mi = col_idx.get(name_i)
-            if mi is None:
+            if mi is None or mi >= M_matrix.shape[0]:
                 continue
             for jj, name_j in enumerate(signals.columns):
                 mj = col_idx.get(name_j)
-                if mj is None:
+                if mj is None or mj >= M_matrix.shape[1]:
                     continue
-                m_ij = self._INTERACTION_MATRIX[mi, mj]
+                m_ij = M_matrix[mi, mj]
                 if abs(m_ij) < 1e-9:
                     continue
-                s_int += m_ij * w[:, ji] * w[:, jj] * z[:, ji] * z[:, jj]
+                s_int += m_ij * w_adj[:, ji] * w_adj[:, jj] * z[:, ji] * z[:, jj]
 
         # Square-root compression: sign(S_int) · |S_int|^0.5
         s_int_compressed = np.sign(s_int) * np.sqrt(np.abs(s_int))
-
         composite = alpha * s_raw + (1.0 - alpha) * s_int_compressed
-        return pd.Series(
-            composite, index=signals.index, name="composite_signal"
-        )
+        return pd.Series(composite, index=signals.index, name="composite_signal")
 
     # ------------------------------------------------------------------
     # Field confidence (entropy-based)
