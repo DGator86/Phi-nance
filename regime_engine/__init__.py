@@ -42,6 +42,8 @@ from .projection_engine import ProjectionEngine
 from .mixer import Mixer
 from .data_fetcher import AlphaVantageFetcher, AlphaVantageMCP
 from .live_scanner import LiveScanner
+from .gamma_surface import GammaSurface
+from .l2_feed import PolygonL2Client, PolygonRestClient
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -164,4 +166,7 @@ __all__ = [
     "AlphaVantageFetcher",
     "AlphaVantageMCP",
     "LiveScanner",
+    "GammaSurface",
+    "PolygonL2Client",
+    "PolygonRestClient",
 ]

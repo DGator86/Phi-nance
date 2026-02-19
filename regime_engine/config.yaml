@@ -34,6 +34,8 @@ features:
   mad_floor: 1.0e-8
   mad_small_multiplier: 10.0     # if MAD < floor * this → use EWMA std
   ewma_norm_span: 30
+  # MFT Phase 1 — L2 proxy feature parameters
+  dissipation_window: 30         # rolling window for dissipation_proxy
 
 # ── Taxonomy Smoothing (sticky-logit EWM alpha per level) ───
 taxonomy:
@@ -73,6 +75,20 @@ taxonomy:
         range_expansion:  0.25
         volume_zscore:    0.20
         drift_tscore_30:  0.00   # neutral — direction irrelevant at TRN
+        # MFT L2-proxy weights at KINGDOM level
+      DIR:
+        d_lambda:         0.20   # book thinning → confirms directional impetus
+        mass:            -0.15   # low mass → thin book → breakout-prone
+        d_mass_dt:       -0.20   # collapsing mass → precedes acceleration
+        ofi_proxy:        0.25   # signed order flow → directional pressure
+        dissipation_proxy: 0.15  # trending field alignment
+      NDR:
+        absorption_score:  0.20  # volume absorbed without movement → S/R holding
+        dissipation_proxy: -0.20 # opposing flow → mean-reverting field
+        d_mass_dt:         0.15  # mass growing → depth rebuilding → consolidation
+      TRN:
+        d_lambda:         0.20   # rapid lambda change → transitional
+        d_mass_dt:       -0.15   # mass collapsing → transition incoming
 
     # ── PHYLUM ───────────────────────────────────────────────
     phylum:
@@ -90,6 +106,13 @@ taxonomy:
         true_range:       0.30
         volume_zscore:    0.20
         rv_delta:         0.15
+        # MFT L2-proxy weights at PHYLUM (volatility) level
+        mass:            -0.25   # low mass → thin book → high vol environment
+        d_mass_dt:       -0.20   # mass collapse → volatility expansion
+        absorption_score: -0.15  # low absorption → no one catching the fall
+      LV:
+        mass:             0.20   # high mass → deep book → bounded range
+        absorption_score:  0.25  # high absorption → vol suppression
 
     # ── CLASS ─────────────────────────────────────────────────
     # DIR classes
@@ -144,6 +167,19 @@ taxonomy:
         gap_score:        0.30
         autocorr:        -0.25
         flip_rate:        0.15
+        # MFT L2-proxy weights at CLASS level
+        ofi_proxy:        0.25   # directional flow → context for all classes
+        dissipation_proxy: 0.20  # trending vs mean-reverting field discriminator
+      PT:
+        d_mass_dt:       -0.15   # mass collapse confirms trend continuation
+      BR:
+        absorption_score:  0.25  # volume absorbed → confirms trading range
+        mass:             0.15   # deep book → bounded range
+      SR:
+        d_mass_dt:       -0.20   # mass collapse precedes squeeze release
+        d_lambda:         0.15   # rapid lambda change → transitional regime
+      RB:
+        ofi_proxy:        0.15   # order flow confirms breakout direction
 
     # ── ORDER ────────────────────────────────────────────────
     order:
@@ -167,6 +203,11 @@ taxonomy:
         impulse_revert:   0.40
         rv_delta:         0.20
         drift_tscore_30: -0.15
+        # MFT L2-proxy weights at ORDER level
+        d_mass_dt:       -0.20   # mass collapse → exhaustion / acceleration
+        ofi_proxy:        0.20   # flow confirms directional order type
+        absorption_score:  0.15  # confirms absorption order type
+        dissipation_proxy: 0.15  # field character discriminator
 
     # ── FAMILY ───────────────────────────────────────────────
     family:
@@ -216,6 +257,20 @@ taxonomy:
         autocorr:        -0.25
         flip_rate:        0.30
         rv_delta:         0.10
+        # MFT L2-proxy weights at GENUS level (most granular)
+        ofi_proxy:        0.20   # directional OFI proxy for all directional genera
+        dissipation_proxy: 0.20  # field character discriminator
+        absorption_score:  0.15  # confirms S/R holding (VWM, RRO)
+        d_mass_dt:        0.15   # mass collapse precedes RUN (momentum) genus
+      RUN:
+        d_mass_dt:       -0.20   # mass collapse → momentum run fuel
+      VWM:
+        absorption_score:  0.25  # high absorption → volume wall matched
+        mass:             0.15   # deep book at strike level
+      RRO:
+        absorption_score:  0.20  # ranging range oscillation confirmed by absorption
+      FLG:
+        d_mass_dt:        0.15   # consolidating mass → flag continuation
 
 # ── Projection Engine — AR(1) regime priors ─────────────────
 # x_{t+1}^r = mu_r + phi_r*(x_t - mu_r) + beta_r*Delta_x_t
@@ -312,3 +367,38 @@ indicators:
   vol_profile_dev:
     period: 30
     type: D
+
+# ── Phase 2: Options Gamma Overlay ───────────────────────────
+gamma:
+  enabled: false              # set true when AV_API_KEY has options access
+  # How often to refresh the options chain (seconds)
+  refresh_interval_s: 3600
+  # Number of strikes each side of ATM to include in GEX computation
+  strike_range: 20
+  # ATM window as fraction of spot (e.g. 0.15 = ±15%)
+  atm_window_pct: 0.15
+  # Expiry filters (calendar days)
+  min_expiry_days: 1
+  max_expiry_days: 90
+  # Gamma wall classification thresholds
+  # |gamma_net| > strong_gex_threshold → price expected to pin at wall
+  strong_gex_threshold: 1.0e8  # in $ gamma units
+  # Distance features
+  max_wall_distance_pct: 0.10  # clip at 10% from spot
+
+# ── Phase 3: Polygon.io Live L2 Feed ─────────────────────────
+polygon:
+  enabled: false              # set true when POLYGON_API_KEY is set
+  api_key: ""                 # override with env var POLYGON_API_KEY
+  # WebSocket configuration
+  ws_url: "wss://socket.polygon.io/stocks"
+  reconnect_delay_s: 5
+  max_reconnect_attempts: 10
+  # OFI and book-imbalance computation
+  book_depth_levels: 5        # number of price levels to track each side
+  ofi_window_trades: 200      # rolling window for true OFI computation
+  # REST fallback (when WebSocket unavailable)
+  rest_fallback: true
+  rest_cache_ttl_s: 30        # quote snapshot TTL for REST fallback
+  # Graceful degradation: emit zero signals if no data available
+  zero_on_missing: true

@@ -78,13 +78,42 @@ class RegimeEngine:
         self.projection  = ProjectionEngine(config["projection"])
         self.mixer       = Mixer(config["confidence"])
 
-    def run(self, ohlcv: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+        # Phase 2: optional GammaSurface (lazy import to avoid hard dep)
+        gamma_cfg = config.get("gamma", {})
+        self._gamma_enabled = bool(gamma_cfg.get("enabled", False))
+        self._gamma_surface = None
+        if self._gamma_enabled:
+            try:
+                from .gamma_surface import GammaSurface
+                self._gamma_surface = GammaSurface(gamma_cfg)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "GammaSurface init failed — gamma features disabled: %s", exc
+                )
+                self._gamma_enabled = False
+
+    def run(
+        self,
+        ohlcv: pd.DataFrame,
+        gamma_features: Optional[Dict[str, float]] = None,
+        l2_features: Optional[Dict[str, float]] = None,
+    ) -> Dict[str, pd.DataFrame]:
         """
         Run full engine on a single OHLCV DataFrame.
 
         Parameters
         ----------
-        ohlcv : pd.DataFrame with columns open/high/low/close/volume
+        ohlcv         : pd.DataFrame with columns open/high/low/close/volume
+        gamma_features: optional dict from GammaSurface.compute_features()
+                        Keys: gamma_wall_distance, gamma_net,
+                              gamma_expiry_days, gex_flip_zone.
+                        When provided, values are broadcast as constant
+                        columns onto the feature DataFrame.
+        l2_features   : optional dict from PolygonL2Client.get_snapshot()
+                        Keys: book_imbalance, ofi_true, spread_bps,
+                              depth_ratio, depth_trend.
+                        Same broadcast treatment as gamma_features.
 
         Returns
         -------
@@ -94,6 +123,12 @@ class RegimeEngine:
         """
         # 1. Feature computation
         feat_df = self.features.compute(ohlcv)
+
+        # Inject external feature dicts as constant-valued columns
+        for ext_features in [gamma_features, l2_features]:
+            if ext_features:
+                for col, val in ext_features.items():
+                    feat_df[col] = float(val)
 
         # 2. Taxonomy logits (sticky EWM)
         logits_df = self.taxonomy.compute_logits(feat_df)

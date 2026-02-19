@@ -139,6 +139,19 @@ class FeatureEngine:
         "volume_zscore",
         "gap_score",
         "entropy",
+        # ── Market Field Theory L2-proxy features ──────────────────────
+        # L2: rate of change of price impact (your core formula)
+        "d_lambda",
+        # L1: effective market mass = 1/lambda (deep book = high mass)
+        "mass",
+        # L2: mass collapse rate — pre-acceleration signal
+        "d_mass_dt",
+        # L1 proxy: signed volume pressure = sign(close-open) × volume
+        "ofi_proxy",
+        # L2 proxy: volume per unit range (high = absorption)
+        "absorption_score",
+        # L3 proxy: field non-conservativeness (1=trending, -1=mean-reverting)
+        "dissipation_proxy",
     ]
 
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -287,6 +300,44 @@ class FeatureEngine:
             log_ret,
             window=cfg["entropy_window"],
             bins=cfg["entropy_bins"],
+        )
+
+        # ── Market Field Theory — L2 Proxy Features ────────────────────
+        # d_lambda: bar-to-bar change in price impact (rate that book thins)
+        # Sign flip at S/R → earliest evaporation warning
+        out["d_lambda"] = illiq_raw.diff()
+
+        # mass: effective market mass (inverse price impact)
+        # High → deep book, absorptive.  Low → thin book, breakout-prone.
+        mass_raw = 1.0 / (illiq_raw + 1e-10)
+        out["mass"] = mass_raw
+
+        # d_mass_dt: rate of mass change
+        # Strongly negative → market losing resistance without visible price move
+        # This is the "variable-mass" term in d²P/dT² = F/M - (dM/dT/M)×dP/dT
+        out["d_mass_dt"] = mass_raw.diff()
+
+        # ofi_proxy: OHLCV approximation of Order Flow Imbalance
+        # sign(close-open) × volume — positive = buyer aggression dominated bar
+        ofi_raw = np.sign(close - open_) * volume
+        out["ofi_proxy"] = ofi_raw
+
+        # absorption_score: volume per unit of true range
+        # High → lots of volume absorbed per unit of price movement → wall holding
+        # Low  → vacuum — price moves easily → breakout fuel
+        out["absorption_score"] = volume / (tr + 1e-10)
+
+        # dissipation_proxy: field non-conservativeness proxy
+        # Rolling mean of sign(ofi) × sign(ret)
+        # +1 → OFI and price perfectly aligned → trending (dissipative field)
+        # -1 → OFI opposes price → absorption (conservative/mean-reverting)
+        d_w = int(cfg.get("dissipation_window", 30))
+        ofi_sign = np.sign(ofi_raw)
+        ret_sign = np.sign(log_ret)
+        out["dissipation_proxy"] = (
+            (ofi_sign * ret_sign)
+            .rolling(d_w, min_periods=d_w // 2)
+            .mean()
         )
 
         return pd.DataFrame(out, index=close.index)

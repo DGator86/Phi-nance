@@ -289,6 +289,84 @@ class AlphaVantageFetcher:
         data = self._get(params, cache_ttl=60)
         return data.get("bestMatches", [])
 
+    def options_chain(
+        self,
+        symbol:    str,
+        date:      Optional[str] = None,  # 'YYYY-MM-DD'; None = latest
+        cache_ttl: int = 60,              # options data is slow-moving
+    ) -> pd.DataFrame:
+        """
+        Fetch options chain from Alpha Vantage HISTORICAL_OPTIONS endpoint.
+
+        Parameters
+        ----------
+        symbol    : equity ticker (e.g. 'AAPL')
+        date      : 'YYYY-MM-DD' for historical chain; None = latest available
+        cache_ttl : cache lifetime in minutes
+
+        Returns
+        -------
+        pd.DataFrame with columns (all lowercased):
+          strike, expiration, optiontype, openinterest, gamma,
+          delta, impliedvolatility, volume, last
+        Returns an empty DataFrame on any error.
+        """
+        params: Dict[str, Any] = {
+            "function": "HISTORICAL_OPTIONS",
+            "symbol":   symbol.upper(),
+            "apikey":   self.api_key,
+        }
+        if date is not None:
+            params["date"] = date
+
+        try:
+            data = self._get(params, cache_ttl=cache_ttl)
+        except Exception as e:
+            logger.error("options_chain(%s) fetch failed: %s", symbol, e)
+            return pd.DataFrame()
+
+        # AV returns data under key 'data' as a list of dicts
+        records = data.get("data", [])
+        if not records:
+            # Try alternate key structure
+            for key in data:
+                if isinstance(data[key], list) and len(data[key]) > 0:
+                    records = data[key]
+                    break
+
+        if not records:
+            logger.warning("options_chain(%s): empty response", symbol)
+            return pd.DataFrame()
+
+        df = pd.DataFrame(records)
+        # Normalize column names
+        df.columns = [
+            c.lower().replace(" ", "").replace("_", "") for c in df.columns
+        ]
+
+        # Standardize key column names expected by GammaSurface
+        rename_map = {
+            "contractid":        "contractid",
+            "type":              "optiontype",
+            "putcall":           "optiontype",
+            "option_type":       "optiontype",
+            "expire_date":       "expiration",
+            "expiry":            "expiration",
+            "expiration_date":   "expiration",
+            "open_interest":     "openinterest",
+            "impliedvolatility": "impliedvolatility",
+            "iv":                "impliedvolatility",
+        }
+        df = df.rename(columns=rename_map)
+
+        # Coerce numeric columns
+        for col in ["strike", "gamma", "delta", "openinterest",
+                    "impliedvolatility", "volume"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        return df
+
     # ------------------------------------------------------------------
     # MTF convenience helpers
     # ------------------------------------------------------------------
