@@ -86,12 +86,18 @@ def main():
     print(f"  Benchmark: {args.benchmark}")
     print()
 
-    results = strategy_class.backtest(
-        YahooDataBacktesting,
-        args.start,
-        args.end,
+    results, _ = strategy_class.run_backtest(
+        datasource_class=YahooDataBacktesting,
+        backtesting_start=args.start,
+        backtesting_end=args.end,
         budget=args.budget,
         benchmark_asset=args.benchmark,
+        show_plot=False,
+        show_tearsheet=False,
+        save_tearsheet=False,
+        show_indicators=False,
+        show_progress_bar=False,
+        quiet_logs=True,
     )
 
     return results

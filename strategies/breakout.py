@@ -71,9 +71,12 @@ if __name__ == "__main__":
     backtesting_start = datetime(2020, 1, 1)
     backtesting_end = datetime(2024, 12, 31)
 
-    ChannelBreakout.backtest(
-        YahooDataBacktesting,
-        backtesting_start,
-        backtesting_end,
+    ChannelBreakout.run_backtest(
+        datasource_class=YahooDataBacktesting,
+        backtesting_start=backtesting_start,
+        backtesting_end=backtesting_end,
         benchmark_asset="SPY",
+        show_plot=False,
+        show_tearsheet=False,
+        save_tearsheet=False,
     )
