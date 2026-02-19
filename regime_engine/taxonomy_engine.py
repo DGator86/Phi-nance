@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .features import FeatureEngine
 
@@ -287,6 +287,20 @@ class TaxonomyEngine:
     >>> engine = TaxonomyEngine(cfg['taxonomy'])
     >>> logits_df = engine.compute_logits(features_df)
     # logits_df columns: all node names, index: same as features_df
+
+    Registry integration (optional)
+    --------------------------------
+    When a VariableRegistry is passed, two behaviours change:
+
+    1. Smoothing constants η_L are read from registry.get_eta(level) instead
+       of the fixed config values.  The registry updates η each bar based on
+       regime velocity and prediction error.
+
+    2. The learned condition matrix C(i,k,t) from the registry is added to the
+       alpha matrix (as C.T), so the engine blends prior knowledge (from
+       config.yaml and MSL matrices) with empirically-discovered signal-regime
+       relationships.  C starts at zero and adapts over time, so early bars
+       behave identically to the non-registry case.
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -299,7 +313,11 @@ class TaxonomyEngine:
     # Public API
     # ------------------------------------------------------------------
 
-    def compute_logits(self, features: pd.DataFrame) -> pd.DataFrame:
+    def compute_logits(
+        self,
+        features: pd.DataFrame,
+        registry=None,  # Optional[VariableRegistry]
+    ) -> pd.DataFrame:
         """
         Compute sticky logits for every taxonomy node.
 
@@ -307,6 +325,11 @@ class TaxonomyEngine:
         ----------
         features : pd.DataFrame
             Output of FeatureEngine.compute() — robust-normalized features.
+        registry : VariableRegistry, optional
+            When provided:
+            - η_L is read from registry.get_eta(level) instead of config
+            - Learned condition matrix C(i,k,t) is blended into alpha_mat
+            - η is updated each bar from regime velocity + prediction error
 
         Returns
         -------
@@ -322,27 +345,34 @@ class TaxonomyEngine:
         steepness = self.cfg.get("gate_steepness", {})
         phi_F = _apply_gates(F, feat_cols, steepness)  # (T, F) ∈ (-1, 1)
 
-        # Build alpha matrices (cached)
+        # Build alpha matrix (base: config + MSL matrices)
         alpha_mat, node_order = self._build_alpha_matrix(feat_cols)
-        # alpha_mat : (num_nodes, num_features)
+        node_to_idx = {n: i for i, n in enumerate(node_order)}
+
+        # Blend in learned condition matrix from registry if available
+        if registry is not None:
+            alpha_mat = self._blend_registry_C(alpha_mat, feat_cols, node_order, registry)
 
         # Raw energies E_t(n) for each node
         E = phi_F @ alpha_mat.T  # (T, num_nodes)
 
         # Interface 3: context-scale Class energies by parent Kingdom logit
-        # Compute raw Kingdom logits first from the energy array
-        node_to_idx = {n: i for i, n in enumerate(node_order)}
         E = self._apply_class_context_scaling(E, node_to_idx, T)
 
         # Apply EWM smoothing (sticky logit) per level
+        # When registry is present: η is adaptive and must be applied bar-by-bar
         logits = np.empty_like(E)
         smoothing = self.cfg["smoothing"]
 
-        for level, (nodes, smooth_key) in LEVEL_META.items():
-            alpha_ewm = smoothing[smooth_key]  # EWM alpha (0 < α ≤ 1)
-            for node in nodes:
-                node_i = node_to_idx[node]
-                logits[:, node_i] = self._ewm_1d(E[:, node_i], alpha_ewm)
+        if registry is not None:
+            # Sequential application so regime_velocity and η updates are causal
+            logits = self._ewm_adaptive(E, node_to_idx, registry)
+        else:
+            for level, (nodes, smooth_key) in LEVEL_META.items():
+                alpha_ewm = smoothing[smooth_key]
+                for node in nodes:
+                    node_i = node_to_idx[node]
+                    logits[:, node_i] = self._ewm_1d(E[:, node_i], alpha_ewm)
 
         return pd.DataFrame(logits, index=features.index, columns=node_order)
 
@@ -354,6 +384,7 @@ class TaxonomyEngine:
         self,
         feature_row: Dict[str, float],
         prev_logits: Dict[str, float] | None = None,
+        registry=None,  # Optional[VariableRegistry]
     ) -> Dict[str, float]:
         """
         Single-bar sticky logit update for streaming use.
@@ -362,6 +393,10 @@ class TaxonomyEngine:
         ----------
         feature_row  : dict of {feature_name: value} (normalized)
         prev_logits  : previous bar's logit dict (None → zero init)
+        registry     : VariableRegistry — if provided, uses adaptive η_L and
+                       blends in the learned condition matrix C(i,k,t).
+                       Also updates η_L for each level based on this bar's
+                       regime velocity and prediction error.
 
         Returns
         -------
@@ -375,6 +410,10 @@ class TaxonomyEngine:
         phi_F = _apply_gates(F, feat_cols, steepness)  # (1, F)
 
         alpha_mat, node_order = self._build_alpha_matrix(feat_cols)
+
+        if registry is not None:
+            alpha_mat = self._blend_registry_C(alpha_mat, feat_cols, node_order, registry)
+
         E = phi_F @ alpha_mat.T  # (1, num_nodes)
 
         node_to_idx = {n: i for i, n in enumerate(node_order)}
@@ -385,13 +424,111 @@ class TaxonomyEngine:
         new_logits: Dict[str, float] = {}
 
         for level, (nodes, smooth_key) in LEVEL_META.items():
-            eta = smoothing[smooth_key]
+            if registry is not None:
+                eta = registry.get_eta(level)
+            else:
+                eta = smoothing[smooth_key]
+
             for node in nodes:
                 i = node_to_idx[node]
                 prev_l = prev.get(node, 0.0)
-                new_logits[node] = (1.0 - eta) * prev_l + eta * float(E[0, i])
+                energy = float(E[0, i])
+                new_logits[node] = (1.0 - eta) * prev_l + eta * energy
+
+            # Update η via registry: measure regime velocity from logit change
+            if registry is not None:
+                level_nodes = nodes
+                velocity = float(np.mean([
+                    abs(new_logits[n] - prev.get(n, 0.0)) for n in level_nodes
+                ]))
+                # Use logit change as proxy for prediction error
+                pred_err = float(np.mean([
+                    abs(new_logits[n] - float(E[0, node_to_idx[n]])) for n in level_nodes
+                ]))
+                registry.update_eta(level, velocity, pred_err)
 
         return new_logits
+
+    # ------------------------------------------------------------------
+    # Registry integration helpers
+    # ------------------------------------------------------------------
+
+    def _blend_registry_C(
+        self,
+        alpha_mat: np.ndarray,
+        feat_cols: list[str],
+        node_order: list[str],
+        registry,  # VariableRegistry
+    ) -> np.ndarray:
+        """
+        Add the registry's learned condition matrix C(i,k,t) to alpha_mat.
+
+        C has shape (n_features, n_nodes); alpha_mat has shape (n_nodes, n_features).
+        Adding C.T overlays empirically-learned signal→node weights on top of
+        the prior weights from config.yaml and the MSL matrices.
+
+        C starts at zero, so early bars are identical to the non-registry path.
+        As the market provides data, C learns the true signal-regime relationships
+        and the combined weight vector blends prior + posterior.
+        """
+        C = registry.get_condition_matrix()  # (n_features, n_nodes) — may be larger
+        alpha_out = alpha_mat.copy()
+
+        feat_idx_map = {f: i for i, f in enumerate(feat_cols)}
+        node_idx_map = {n: i for i, n in enumerate(node_order)}
+
+        n_f = min(C.shape[0], len(feat_cols))
+        n_n = min(C.shape[1], len(node_order))
+
+        for fi in range(n_f):
+            for ni in range(n_n):
+                if abs(C[fi, ni]) > 1e-9:
+                    # C[feature_idx, node_idx] maps to alpha[node_idx, feature_idx]
+                    alpha_out[ni, fi] += C[fi, ni]
+
+        return alpha_out
+
+    def _ewm_adaptive(
+        self,
+        E: np.ndarray,         # (T, num_nodes) — raw energies
+        node_to_idx: dict,
+        registry,              # VariableRegistry
+    ) -> np.ndarray:
+        """
+        Apply EWM smoothing bar-by-bar using adaptive η_L from the registry.
+
+        Sequential (not vectorized) because η_L changes each bar based on the
+        regime velocity observed at that bar — a causal, adaptive process.
+
+        Also updates the registry's η_L after each bar.
+        """
+        T, num_nodes = E.shape
+        logits = np.empty_like(E)
+        prev = np.zeros(num_nodes)
+
+        for t in range(T):
+            for level, (nodes, _) in LEVEL_META.items():
+                eta = registry.get_eta(level)
+                level_velocities = []
+                for node in nodes:
+                    ni = node_to_idx[node]
+                    energy = E[t, ni]
+                    new_l = (1.0 - eta) * prev[ni] + eta * energy
+                    logits[t, ni] = new_l
+                    level_velocities.append(abs(new_l - prev[ni]))
+
+                # Regime velocity = mean absolute logit change at this level
+                velocity = float(np.mean(level_velocities))
+                # Prediction error proxy = smoothing residual
+                pred_err = float(np.mean([
+                    abs(logits[t, node_to_idx[n]] - E[t, node_to_idx[n]])
+                    for n in nodes
+                ]))
+                registry.update_eta(level, velocity, pred_err)
+
+            prev = logits[t].copy()
+
+        return logits
 
     # ------------------------------------------------------------------
     # Interface 3 helper: Class context scaling

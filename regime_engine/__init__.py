@@ -40,6 +40,7 @@ from .indicator_library import INDICATOR_CLASSES, build_indicator
 from .expert_registry import ExpertRegistry
 from .projection_engine import ProjectionEngine
 from .mixer import Mixer
+from .variable_registry import VariableRegistry, LEVEL_ORDER, REGIME_ORDER, RHO_MIN, RHO_MAX
 from .data_fetcher import AlphaVantageFetcher, AlphaVantageMCP
 from .live_scanner import LiveScanner
 from .gamma_surface import GammaSurface
@@ -163,6 +164,12 @@ __all__ = [
     "ExpertRegistry",
     "ProjectionEngine",
     "Mixer",
+    # Variable-driven framework — central state-space model
+    "VariableRegistry",
+    "LEVEL_ORDER",
+    "REGIME_ORDER",
+    "RHO_MIN",
+    "RHO_MAX",
     "AlphaVantageFetcher",
     "AlphaVantageMCP",
     "LiveScanner",
