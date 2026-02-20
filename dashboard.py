@@ -2,11 +2,8 @@
 """
 Phi-nance Backtesting Dashboard
 --------------------------------
-Interactive Streamlit UI for toggling strategies on/off, configuring
-parameters, running backtests, and comparing **prediction accuracy**.
-
-The primary success metric is how well each strategy predicts the
-next-day price direction — not P&L.
+1. System Status — verifies regime engine (indicators, regime IDs, physics) are connected.
+2. Backtesting UI — toggle strategies, run backtests, compare prediction accuracy.
 
 Launch:
     streamlit run dashboard.py
@@ -20,6 +17,8 @@ import pandas as pd
 import streamlit as st
 
 from lumibot.backtesting import YahooDataBacktesting
+
+from engine_health import run_engine_health_check
 
 from strategies.bollinger import BollingerBands
 from strategies.breakout import ChannelBreakout
@@ -313,6 +312,95 @@ STRATEGY_CATALOG = {
 
 
 # ---------------------------------------------------------------------------
+# System Status — regime engine health check
+# ---------------------------------------------------------------------------
+def render_system_status():
+    """Run engine health check and display indicators, regime IDs, and physics engines."""
+    st.subheader("System Status — Regime Engine")
+    st.caption(
+        "Verifies that FeatureEngine, TaxonomyEngine, ProbabilityField, "
+        "indicators, ProjectionEngine, and Mixer are connected and running."
+    )
+
+    if "engine_health" not in st.session_state:
+        st.session_state["engine_health"] = None
+
+    col1, col2, _ = st.columns([1, 1, 2])
+    with col1:
+        check_clicked = st.button("Check engine", type="primary")
+    with col2:
+        recheck_clicked = st.button("Re-check")
+
+    # Run on first load or when user clicks Check/Re-check
+    if check_clicked or recheck_clicked or st.session_state["engine_health"] is None:
+        with st.status("Running regime engine health check...", expanded=True) as status:
+            st.write("Running full pipeline on synthetic OHLCV...")
+            try:
+                health = run_engine_health_check()
+                st.session_state["engine_health"] = health
+                if health.get("error"):
+                    status.update(label="Health check failed", state="error")
+                    st.error(health["error"])
+                else:
+                    status.update(
+                        label="Engine health check complete",
+                        state="complete",
+                    )
+            except Exception as e:
+                st.session_state["engine_health"] = {
+                    "ok": False,
+                    "error": str(e),
+                    "components": {},
+                    "optional": {},
+                }
+                status.update(label="Health check error", state="error")
+                st.exception(e)
+
+    health = st.session_state.get("engine_health")
+    if health is None:
+        st.info("Click **Check engine** to verify indicators, regime identifiers, and physics engines.")
+        return
+
+    if health.get("error") and not health.get("components"):
+        st.error(health["error"])
+        return
+
+    # Overall pass/fail
+    overall_ok = health.get("ok", False)
+    st.markdown(
+        f"**Overall:** {'PASS — all components connected' if overall_ok else 'FAIL — see details below'}"
+    )
+    if overall_ok:
+        st.success("Indicators, regime identifiers, and physics engines are up and connected.")
+    else:
+        st.warning("One or more components failed validation.")
+
+    # Component cards
+    components = health.get("components", {})
+    opt = health.get("optional", {})
+
+    cols = st.columns(3)
+    for idx, (name, c) in enumerate(components.items()):
+        with cols[idx % 3]:
+            ok = c.get("ok", False)
+            st.markdown(f"**{name}** — {'OK' if ok else 'FAIL'}")
+            st.caption(c.get("message", ""))
+            details = {k: v for k, v in c.items() if k not in ("ok", "message") and v is not None}
+            if details:
+                for k, v in details.items():
+                    if isinstance(v, list) and len(v) > 6:
+                        st.text(f"  {k}: {len(v)} items")
+                    else:
+                        st.text(f"  {k}: {v}")
+
+    with st.expander("Optional components (Gamma, L2, VariableRegistry)"):
+        for k, v in opt.items():
+            st.text(f"  {k}: {v}")
+
+    st.markdown("---")
+
+
+# ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
 def build_sidebar():
@@ -509,22 +597,24 @@ def display_comparison_table(all_scorecards):
 # ---------------------------------------------------------------------------
 def main():
     st.set_page_config(
-        page_title="Phi-nance Prediction Accuracy",
+        page_title="Phi-nance — Engine & Backtesting",
         page_icon="$",
         layout="wide",
     )
 
-    st.title("Phi-nance Prediction Accuracy Dashboard")
+    st.title("Phi-nance — Engine Status & Backtesting")
     st.markdown(
-        "Toggle strategies on/off, tweak parameters, then hit **Run Backtests**. "
-        "Success is measured by **how accurately each strategy predicts "
-        "next-day price direction** — not by P&L."
+        "**1. System Status** — Confirm indicators, regime identifiers, and physics engines are connected. "
+        "**2. Strategies** — Toggle strategies and run backtests; success = prediction accuracy (next-day direction)."
     )
+
+    # --- System Status (engine health) ---
+    render_system_status()
 
     config = build_sidebar()
 
     # --- Strategy cards (rows of 4) ---
-    st.header("Strategies")
+    st.header("Backtesting — Strategies")
     selected = {}
     catalog_items = list(STRATEGY_CATALOG.items())
     cols_per_row = 4

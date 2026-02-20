@@ -11,6 +11,9 @@ sortedcontainers>=2.4
 # Phase 2+: options analytics
 scipy>=1.11
 
+# Data acquisition (for generate_training_data.py)
+yfinance>=0.2.40
+
 # ML Frameworks (Tier 1 — required for ML strategies)
 scikit-learn>=1.3.0
 lightgbm>=4.0.0
