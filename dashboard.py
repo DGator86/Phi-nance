@@ -26,6 +26,13 @@ from contextlib import redirect_stdout, redirect_stderr
 from datetime import datetime, date
 from typing import Dict, Optional
 
+# ── MUST be set before any lumibot import ─────────────────────────────────────
+# lumibot/credentials.py instantiates live brokers (Tradier, Alpaca, …) at
+# module import time when IS_BACKTESTING is falsy.  Setting it to "True" here
+# makes credentials.py skip all broker initialisation and avoids the
+# "Please provide a config file or access_token" crash.
+os.environ.setdefault("IS_BACKTESTING", "True")
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -43,6 +50,8 @@ _LUMIBOT_CACHE: dict = {}
 def _strat(name: str):
     """Return a cached strategy class by module.ClassName string."""
     if name not in _LUMIBOT_CACHE:
+        # Reinforce the backtesting flag in case it was unset by other code
+        os.environ["IS_BACKTESTING"] = "True"
         module_path, cls_name = name.rsplit(".", 1)
         import importlib
         mod = importlib.import_module(module_path)
@@ -1058,8 +1067,8 @@ def render_backtests(config: dict):
 def render_system_status():
     st.subheader("Regime Engine Health Check")
     c1, c2, _ = st.columns([1, 1, 2])
-    if c1.button("Check engine", type="primary") or c2.button("Re-check") or \
-       st.session_state.get("engine_health") is None:
+    run_check = c1.button("Check engine", type="primary") or c2.button("Re-check")
+    if run_check:
         with st.status("Running health check...", expanded=True) as s:
             try:
                 health = run_engine_health_check()
