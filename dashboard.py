@@ -389,7 +389,7 @@ def _check_sklearn(path):
     try:
         from regime_engine.ml_classifier import DirectionClassifier
         c = DirectionClassifier(); c.load(path)
-        if not c.is_fitted: return False, None, None
+        if not getattr(c, '_is_fitted', False): return False, None, None
         return True, getattr(c.model, "n_features_in_", "?"), list(getattr(c.model, "classes_", []))
     except Exception as e:
         return False, None, str(e)
@@ -399,7 +399,7 @@ def _check_lgb(path):
     try:
         from regime_engine.ml_classifier_lightgbm import LightGBMDirectionClassifier
         c = LightGBMDirectionClassifier(); c.load(path)
-        if not c.is_fitted: return False, None, None
+        if c.model is None: return False, None, None
         return True, c.model.num_feature(), c.model.num_trees()
     except Exception as e:
         return False, None, str(e)
