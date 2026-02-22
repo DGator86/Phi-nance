@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 from contextlib import redirect_stdout, redirect_stderr
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Dict, Optional
 
 # ── MUST be set before any lumibot import ─────────────────────────────────────
@@ -32,6 +32,15 @@ from typing import Dict, Optional
 # makes credentials.py skip all broker initialisation and avoids the
 # "Please provide a config file or access_token" crash.
 os.environ.setdefault("IS_BACKTESTING", "True")
+
+# ── Force UTF-8 stdout/stderr on Windows ──────────────────────────────────────
+# Lumibot's backtest progress bars print Unicode block characters (█) which
+# crash on Windows with the default cp1252 encoding.  reconfigure() is a
+# no-op on non-Windows or when already UTF-8.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import numpy as np
 import pandas as pd
@@ -248,10 +257,36 @@ def _deep_merge(base: dict, overrides: dict) -> dict:
     return result
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Data helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# ── On-disk OHLCV cache ────────────────────────────────────────────────────
+_CACHE_DIR = os.path.join(os.path.dirname(__file__), "data", "cache")
+os.makedirs(_CACHE_DIR, exist_ok=True)
+
+
+def _ohlcv_cache_path(symbol: str, start, end) -> str:
+    s = str(start)[:10].replace("-", "")
+    e = str(end)[:10].replace("-", "")
+    return os.path.join(_CACHE_DIR, f"{symbol}_{s}_{e}.parquet")
+
+
+def _cache_is_fresh(path: str, end) -> bool:
+    """Cache is always fresh for fully historical ranges; stale after 24h otherwise."""
+    if not os.path.exists(path):
+        return False
+    # If end is today or tomorrow (i.e. includes live data), expire after 24h
+    end_date = end if isinstance(end, date) else date.fromisoformat(str(end)[:10])
+    if end_date >= date.today():
+        age_hours = (time.time() - os.path.getmtime(path)) / 3600
+        return age_hours < 24
+    return True  # fully historical — never re-download
+
+
 def _load_ohlcv(symbol: str, start, end) -> Optional[pd.DataFrame]:
+    cache_path = _ohlcv_cache_path(symbol, start, end)
+    if _cache_is_fresh(cache_path, end):
+        try:
+            return pd.read_parquet(cache_path)
+        except Exception:
+            pass  # corrupt cache — fall through to re-download
     try:
         import yfinance as yf
         raw = yf.download(symbol, start=str(start), end=str(end),
@@ -262,10 +297,15 @@ def _load_ohlcv(symbol: str, start, end) -> Optional[pd.DataFrame]:
             raw.columns = [c[0].lower() for c in raw.columns]
         else:
             raw.columns = [c.lower() for c in raw.columns]
+        try:
+            raw.to_parquet(cache_path)
+        except Exception:
+            pass  # cache write failure is non-fatal
         return raw
     except Exception as e:
         st.error(f"Download failed for {symbol}: {e}")
         return None
+
 
 
 def _run_engine_with_config(ohlcv: pd.DataFrame, cfg: dict) -> Optional[dict]:
@@ -285,19 +325,64 @@ def _get_universe_scanner():
     return UniverseScanner(config_path=CONFIG_PATH)
 
 
+# Minutes per bar for each timeframe (390 min = 1 full trading day)
+_TF_MINUTES = {
+    "1D": 390, "4H": 240, "1H": 60, "15m": 15, "5m": 5, "1m": 1,
+}
+# Lumibot timestep string per timeframe
+_TF_TIMESTEP = {
+    "1D": "day", "4H": "minute", "1H": "minute",
+    "15m": "minute", "5m": "minute", "1m": "minute",
+}
+
+
 def build_sidebar() -> dict:
     st.sidebar.title("Backtest Settings")
-    s = st.sidebar.date_input("Start", value=date(2020, 1, 1), min_value=date(2005, 1, 1))
-    e = st.sidebar.date_input("End",   value=date(2024, 12, 31), min_value=s)
-    b = st.sidebar.number_input("Budget ($)", value=100_000, min_value=1_000, step=10_000)
+
+    # ── N-Bars + Timeframe ─────────────────────────────────────────────────
+    col_tf, col_n = st.sidebar.columns([1, 1])
+    with col_tf:
+        tf = st.selectbox(
+            "Timeframe", list(_TF_MINUTES.keys()), index=0,
+            key="sb_timeframe",
+            help="Bar size. 1D = daily, intraday uses minute-level data.",
+        )
+    with col_n:
+        n_bars = st.number_input(
+            "N Bars", value=2000, min_value=100, max_value=10_000,
+            step=100, key="sb_nbars",
+            help="Number of bars to look back from today.",
+        )
+
+    # Auto-compute start date from N bars
+    # Calendar days = bars * bar_minutes / 390 * 1.4 (calendar/trading ratio)
+    bar_min = _TF_MINUTES[tf]
+    trading_days_needed = (n_bars * bar_min) / 390
+    calendar_days = int(trading_days_needed * 1.4) + 2  # small buffer
+    end_dt = date.today()
+    start_dt = end_dt - timedelta(days=calendar_days)
+
+    st.sidebar.caption(
+        f"📅 {n_bars} × {tf} ≈ {start_dt.strftime('%Y-%m-%d')} → "
+        f"{end_dt.strftime('%Y-%m-%d')}  ({calendar_days} calendar days)"
+    )
+
+    # ── Budget & Benchmark ─────────────────────────────────────────────────
+    b = st.sidebar.number_input(
+        "Budget ($)", value=100_000, min_value=1_000, step=10_000,
+    )
     bm = st.sidebar.text_input("Benchmark", value="SPY")
     st.sidebar.markdown("---")
     st.sidebar.caption("Lumibot + Yahoo Finance")
+
     return {
-        "start":     datetime.combine(s, datetime.min.time()),
-        "end":       datetime.combine(e, datetime.min.time()),
+        "start":     datetime.combine(start_dt, datetime.min.time()),
+        "end":       datetime.combine(end_dt, datetime.min.time()),
         "budget":    float(b),
         "benchmark": bm,
+        "timeframe": tf,
+        "n_bars":    int(n_bars),
+        "timestep":  _TF_TIMESTEP[tf],
     }
 
 
@@ -447,8 +532,8 @@ def render_ml_status():
         if st.button("Generate MFT Training Data", disabled=csv_ok, use_container_width=True,
                      help="Downloads SPY 2015-2024, runs full MFT pipeline"):
             with st.status("Generating...", expanded=True) as s:
-                r = subprocess.run([sys.executable, "generate_training_data.py"],
-                                   capture_output=True, text=True)
+                r = subprocess.run([sys.executable, "-X", "utf8", "generate_training_data.py"],
+                                   capture_output=True, text=True, encoding="utf-8")
                 st.code(r.stdout + r.stderr)
                 s.update(label="Done" if r.returncode == 0 else "Failed",
                          state="complete" if r.returncode == 0 else "error")
@@ -457,8 +542,8 @@ def render_ml_status():
         if st.button("Train All Models", disabled=not csv_ok, type="primary",
                      use_container_width=True):
             with st.status("Training...", expanded=True) as s:
-                r = subprocess.run([sys.executable, "train_ml_classifier.py"],
-                                   capture_output=True, text=True)
+                r = subprocess.run([sys.executable, "-X", "utf8", "train_ml_classifier.py"],
+                                   capture_output=True, text=True, encoding="utf-8")
                 st.code(r.stdout + r.stderr)
                 s.update(label="Done" if r.returncode == 0 else "Failed",
                          state="complete" if r.returncode == 0 else "error")
