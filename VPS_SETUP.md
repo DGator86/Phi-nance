@@ -1,13 +1,15 @@
 # VPS Setup Guide (Phi-Bot)
 
-Follow these steps to get Phi-nance running on your new server at **165.245.140.115**.
+Follow these steps to get Phi-nance running on your new server at **165.245.142.100**.
+
+For a short beta-deploy checklist, see **BETA_DEPLOY.md**.
 
 ## 1. Connect to your VPS
 
 Open your terminal (PowerShell or Bash) and run:
 
 ```bash
-ssh root@165.245.140.115
+ssh root@165.245.142.100
 ```
 
 *(Enter your password when prompted)*
@@ -45,7 +47,7 @@ We'll use `screen` so the dashboard stays alive after you close your terminal.
 ```bash
 screen -S phi-nance
 source venv/bin/activate
-streamlit run dashboard.py --server.address 0.0.0.0
+streamlit run dashboard.py
 ```
 
 **To disconnect (keeping it running):**
@@ -59,4 +61,4 @@ screen -r phi-nance
 
 ---
 **Access your dashboard at:**
-`http://165.245.140.115:8501`
+`http://165.245.142.100:8501`

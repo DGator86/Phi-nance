@@ -1,1 +1,1 @@
-import sys, json; data=json.load(sys.stdin); droplet = [d for d in data["droplets"] if any(v["ip_address"] == "165.245.140.115" for v in d["networks"]["v4"])]; print(droplet[0]["id"] if droplet else "NOT_FOUND")
+import sys, json; data=json.load(sys.stdin); droplet = [d for d in data["droplets"] if any(v["ip_address"] == "165.245.142.100" for v in d["networks"]["v4"])]; print(droplet[0]["id"] if droplet else "NOT_FOUND")
