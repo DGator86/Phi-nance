@@ -5,7 +5,13 @@ Run with: python _test_mft.py
 import sys
 import traceback
 
-sys.path.insert(0, r"c:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance-1")
+import os
+
+# Set root directory relative to this file
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 
 
 def section(title):
