@@ -20,7 +20,7 @@ from datetime import datetime
 # Suppress Lumibot credential checks by forcing backtesting mode
 os.environ["IS_BACKTESTING"] = "True"
 
-from lumibot.backtesting import AlphaVantageDataBacktesting
+from lumibot.backtesting import AlphaVantageBacktesting
 from lumibot.strategies.strategy import Strategy
 
 from strategies.prediction_tracker import PredictionMixin
@@ -92,7 +92,7 @@ if __name__ == "__main__":
     av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
 
     MeanReversion.run_backtest(
-        datasource_class=AlphaVantageDataBacktesting,
+        datasource_class=AlphaVantageBacktesting,
         backtesting_start=backtesting_start,
         backtesting_end=backtesting_end,
         benchmark_asset="SPY",

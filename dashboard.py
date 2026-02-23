@@ -69,10 +69,10 @@ def _strat(name: str):
 
 
 def _av_backtesting():
-    if "AlphaVantageDataBacktesting" not in _LUMIBOT_CACHE:
-        from lumibot.backtesting import AlphaVantageDataBacktesting  # noqa: PLC0415
-        _LUMIBOT_CACHE["AlphaVantageDataBacktesting"] = AlphaVantageDataBacktesting
-    return _LUMIBOT_CACHE["AlphaVantageDataBacktesting"]
+    if "AlphaVantageBacktesting" not in _LUMIBOT_CACHE:
+        from lumibot.backtesting import AlphaVantageBacktesting  # noqa: PLC0415
+        _LUMIBOT_CACHE["AlphaVantageBacktesting"] = AlphaVantageBacktesting
+    return _LUMIBOT_CACHE["AlphaVantageBacktesting"]
 
 
 def _compute_accuracy(strat):

@@ -18,7 +18,7 @@ from datetime import datetime
 # Suppress Lumibot credential checks by forcing backtesting mode
 os.environ["IS_BACKTESTING"] = "True"
 
-from lumibot.backtesting import AlphaVantageDataBacktesting, YahooDataBacktesting
+from lumibot.backtesting import AlphaVantageBacktesting, YahooDataBacktesting
 
 from strategies.bollinger import BollingerBands
 from strategies.breakout import ChannelBreakout
@@ -86,7 +86,7 @@ def main():
 
     # Use Alpha Vantage as primary data source
     av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
-    datasource_class = AlphaVantageDataBacktesting
+    datasource_class = AlphaVantageBacktesting
 
     print(f"Running backtest: {args.strategy}")
     print(f"  Period: {args.start.date()} to {args.end.date()}")
