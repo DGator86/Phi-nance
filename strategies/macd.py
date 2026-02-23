@@ -13,9 +13,13 @@ Usage:
     python strategies/macd.py
 """
 
+import os
 from datetime import datetime
 
-from lumibot.backtesting import YahooDataBacktesting
+# Suppress Lumibot credential checks by forcing backtesting mode
+os.environ["IS_BACKTESTING"] = "True"
+
+from lumibot.backtesting import AlphaVantageDataBacktesting
 from lumibot.strategies.strategy import Strategy
 
 from strategies.prediction_tracker import PredictionMixin
@@ -83,11 +87,15 @@ if __name__ == "__main__":
     backtesting_start = datetime(2020, 1, 1)
     backtesting_end = datetime(2024, 12, 31)
 
+    # Use Alpha Vantage as primary data source
+    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
+
     MACDStrategy.run_backtest(
-        datasource_class=YahooDataBacktesting,
+        datasource_class=AlphaVantageDataBacktesting,
         backtesting_start=backtesting_start,
         backtesting_end=backtesting_end,
         benchmark_asset="SPY",
+        api_key=av_api_key,
         show_plot=False,
         show_tearsheet=False,
         save_tearsheet=False,

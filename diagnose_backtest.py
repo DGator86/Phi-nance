@@ -1,5 +1,9 @@
 import os
 import sys
+
+# Suppress Lumibot credential checks by forcing backtesting mode
+os.environ["IS_BACKTESTING"] = "True"
+
 import pandas as pd
 import yaml
 

@@ -12,9 +12,13 @@ Usage:
 """
 
 import argparse
+import os
 from datetime import datetime
 
-from lumibot.backtesting import YahooDataBacktesting
+# Suppress Lumibot credential checks by forcing backtesting mode
+os.environ["IS_BACKTESTING"] = "True"
+
+from lumibot.backtesting import AlphaVantageDataBacktesting, YahooDataBacktesting
 
 from strategies.bollinger import BollingerBands
 from strategies.breakout import ChannelBreakout
@@ -80,18 +84,24 @@ def main():
     args = parse_args()
     strategy_class = STRATEGIES[args.strategy]
 
+    # Use Alpha Vantage as primary data source
+    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
+    datasource_class = AlphaVantageDataBacktesting
+
     print(f"Running backtest: {args.strategy}")
     print(f"  Period: {args.start.date()} to {args.end.date()}")
     print(f"  Budget: ${args.budget:,.0f}")
     print(f"  Benchmark: {args.benchmark}")
+    print(f"  Data Source: Alpha Vantage")
     print()
 
     results, _ = strategy_class.run_backtest(
-        datasource_class=YahooDataBacktesting,
+        datasource_class=datasource_class,
         backtesting_start=args.start,
         backtesting_end=args.end,
         budget=args.budget,
         benchmark_asset=args.benchmark,
+        api_key=av_api_key,
         show_plot=False,
         show_tearsheet=False,
         save_tearsheet=False,

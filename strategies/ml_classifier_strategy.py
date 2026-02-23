@@ -14,6 +14,10 @@ To train the model, run:
 
 from __future__ import annotations
 
+import os
+# Suppress Lumibot credential checks by forcing backtesting mode
+os.environ["IS_BACKTESTING"] = "True"
+
 from lumibot.strategies.strategy import Strategy
 
 from regime_engine.feature_extractor import get_regime_features

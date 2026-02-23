@@ -82,3 +82,8 @@ Strategy = _LazyStrategy
 def YahooDataBacktesting():
     """Lazy accessor — call as YahooDataBacktesting() to get the class."""
     return _lazy("lumibot.backtesting", "YahooDataBacktesting")
+
+
+def AlphaVantageDataBacktesting():
+    """Lazy accessor — call as AlphaVantageDataBacktesting() to get the class."""
+    return _lazy("lumibot.backtesting", "AlphaVantageDataBacktesting")

@@ -68,11 +68,11 @@ def _strat(name: str):
     return _LUMIBOT_CACHE[name]
 
 
-def _yahoo_backtesting():
-    if "YahooDataBacktesting" not in _LUMIBOT_CACHE:
-        from lumibot.backtesting import YahooDataBacktesting  # noqa: PLC0415
-        _LUMIBOT_CACHE["YahooDataBacktesting"] = YahooDataBacktesting
-    return _LUMIBOT_CACHE["YahooDataBacktesting"]
+def _av_backtesting():
+    if "AlphaVantageDataBacktesting" not in _LUMIBOT_CACHE:
+        from lumibot.backtesting import AlphaVantageDataBacktesting  # noqa: PLC0415
+        _LUMIBOT_CACHE["AlphaVantageDataBacktesting"] = AlphaVantageDataBacktesting
+    return _LUMIBOT_CACHE["AlphaVantageDataBacktesting"]
 
 
 def _compute_accuracy(strat):
@@ -288,15 +288,16 @@ def _load_ohlcv(symbol: str, start, end) -> Optional[pd.DataFrame]:
         except Exception:
             pass  # corrupt cache — fall through to re-download
     try:
-        import yfinance as yf
-        raw = yf.download(symbol, start=str(start), end=str(end),
-                          auto_adjust=True, progress=False)
+        from regime_engine.data_fetcher import AlphaVantageFetcher
+        av = AlphaVantageFetcher()  # uses AV_API_KEY from env or default
+        raw = av.intraday(symbol, outputsize="full")
+        
+        # Filter by dates
+        raw = raw[(raw.index >= pd.Timestamp(start)) & (raw.index <= pd.Timestamp(end))]
+        
         if raw.empty:
             return None
-        if isinstance(raw.columns, pd.MultiIndex):
-            raw.columns = [c[0].lower() for c in raw.columns]
-        else:
-            raw.columns = [c.lower() for c in raw.columns]
+            
         try:
             raw.to_parquet(cache_path)
         except Exception:
@@ -387,11 +388,15 @@ def build_sidebar() -> dict:
 
 
 def _run_backtest(strategy_class, params, config):
+    # Use Alpha Vantage as primary data source
+    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
+    
     results, strat = strategy_class.run_backtest(
-        datasource_class=_yahoo_backtesting(),
+        datasource_class=_av_backtesting(),
         backtesting_start=config["start"], backtesting_end=config["end"],
         budget=config["budget"], benchmark_asset=config["benchmark"],
         parameters=params,
+        api_key=av_api_key,
         show_plot=False, show_tearsheet=False, save_tearsheet=False,
         show_indicators=False, show_progress_bar=False, quiet_logs=True,
     )

@@ -24,6 +24,9 @@ from __future__ import annotations
 import os
 from typing import Dict, Optional
 
+# Suppress Lumibot credential checks by forcing backtesting mode
+os.environ["IS_BACKTESTING"] = "True"
+
 import numpy as np
 import pandas as pd
 import yaml
