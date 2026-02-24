@@ -41,10 +41,13 @@ from .expert_registry import ExpertRegistry
 from .projection_engine import ProjectionEngine
 from .mixer import Mixer
 from .variable_registry import VariableRegistry, LEVEL_ORDER, REGIME_ORDER, RHO_MIN, RHO_MAX
-from .data_fetcher import AlphaVantageFetcher, AlphaVantageMCP
+from .data_fetcher import AlphaVantageFetcher, AlphaVantageMCP, YFinanceOptionsFetcher
 from .live_scanner import LiveScanner
 from .gamma_surface import GammaSurface
 from .l2_feed import PolygonL2Client, PolygonRestClient
+from .options_engine import OptionsEngine, OptionsTrade, OptionsLeg
+from .auto_learning import LearningCycleRunner, Lesson, RegimeLessons
+from .param_tuner import ParameterTuner
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -172,10 +175,21 @@ __all__ = [
     "RHO_MAX",
     "AlphaVantageFetcher",
     "AlphaVantageMCP",
+    "YFinanceOptionsFetcher",
     "LiveScanner",
     "GammaSurface",
     "PolygonL2Client",
     "PolygonRestClient",
+    # Options engine (L1/L2/L3 regime-conditioned trade selection)
+    "OptionsEngine",
+    "OptionsTrade",
+    "OptionsLeg",
+    # Automated learning cycles
+    "LearningCycleRunner",
+    "Lesson",
+    "RegimeLessons",
+    # Regime × GEX × liquidity parameter tuner
+    "ParameterTuner",
     # Interface 4 affinity blending utilities
     "compute_entropy_weighted_affinity",
     "entropy_certainty",

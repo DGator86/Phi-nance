@@ -513,3 +513,56 @@ polygon:
   rest_cache_ttl_s: 30        # quote snapshot TTL for REST fallback
   # Graceful degradation: emit zero signals if no data available
   zero_on_missing: true
+
+# ── Options Engine (L1/L2/L3 regime-conditioned options trading) ───────
+options_engine:
+  # Expiry targets (days to expiration)
+  target_dte_short: 21          # front-month (premium selling, defined-risk)
+  target_dte_long:  45          # main expiry (directional, long vol)
+  target_dte_back:  60          # back-month (calendar spreads)
+  # Volatility regime classification
+  iv_high_ratio:   1.30         # IV/HV > 1.30 → HIGH_IV (sell premium)
+  iv_low_ratio:    0.80         # IV/HV < 0.80 → LOW_IV  (buy vol)
+  # GEX regime classification
+  gex_pin_thresh:  0.30         # gamma_net >  0.30 → PINNING
+  gex_amp_thresh: -0.30         # gamma_net < -0.30 → AMPLIFY
+  # Strike selection
+  spread_width_pct: 0.05        # OTM spread width as % of spot (5% = 5 pts on $100)
+  min_oi:           10          # minimum open interest to consider a strike
+  min_iv:           0.05        # minimum IV (5%) to treat as valid
+  # Options data
+  max_chain_exps:   4           # max number of expiries to fetch from yfinance
+
+# ── Auto Learning (automated backtest learning cycles) ─────────────────
+auto_learning:
+  # Rolling-window backtest parameters
+  min_warmup_bars:  100         # minimum bars before scoring begins
+  window_bars:      500         # bars per learning window
+  stride_bars:      50          # bars between window starts
+  # Lesson feedback parameters
+  lesson_lr:        0.02        # learning rate for VariableRegistry updates
+  error_clip:       2.00        # clip prediction error magnitude
+  lesson_decay:     0.95        # decay factor applied each cycle
+  # Performance targets
+  accuracy_target:  0.55        # per-regime accuracy goal; below → tighten
+  # Scheduling
+  auto_run_every_n_bars: 50     # run learning cycle every N trading iterations
+
+# ── Parameter Tuner (regime × GEX × liquidity conditioned thresholds) ──
+param_tuner:
+  # Adaptive learning
+  learning_rate: 0.02           # rate at which lessons adjust parameter banks
+  decay:         0.995          # decay toward defaults between updates
+  # Position size bounds
+  max_pos_mult:  2.00           # maximum position size multiplier
+  min_pos_mult:  0.00           # minimum (0 = skip trade entirely)
+  # Feature toggles
+  enable_gex:       true        # apply GEX overlay in tune()
+  enable_liquidity: true        # apply L2 liquidity overlay in tune()
+  # Persistence (leave empty to disable)
+  persist_path: ""              # e.g. "logs/param_tuner_banks.yaml"
+  # Per-regime overrides (merged with built-in defaults at startup)
+  # regime_banks:
+  #   TREND_UP:
+  #     signal_threshold: 0.12
+  #     position_size_mult: 1.10

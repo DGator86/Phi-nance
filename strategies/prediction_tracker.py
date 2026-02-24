@@ -139,3 +139,124 @@ def _empty_scorecard():
         "edge": 0,
         "scored_log": [],
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Options prediction tracking
+# ──────────────────────────────────────────────────────────────────────────────
+
+def compute_options_scorecard(strategy):
+    """
+    Score options trade predictions recorded via record_options_prediction().
+
+    For each recorded options trade (signal == 'OPTIONS'), we score it by
+    comparing the entry spot price to the spot price at the *next* OPTIONS
+    prediction for the same symbol.  We use structure-level expected direction:
+      - Bullish structures (long_call, bull_*): correct if price rises
+      - Bearish structures (long_put, bear_*):  correct if price falls
+      - Non-directional (straddle, condor, etc.): correct if |move| > avg spread
+
+    Returns a dict with overall and per-structure accuracy, avg net_credit, P&L.
+    """
+    log = [e for e in getattr(strategy, "_prediction_log", []) if e.get("signal") == "OPTIONS"]
+    if not log:
+        return _empty_options_scorecard()
+
+    by_symbol = {}
+    for entry in log:
+        by_symbol.setdefault(entry["symbol"], []).append(entry)
+
+    _BULLISH = {"long_call", "bull_call_spread", "bull_put_spread", "collar", "covered_call"}
+    _BEARISH = {"long_put", "bear_put_spread", "bear_call_spread"}
+
+    scored = []
+    by_structure: dict = {}
+
+    for symbol, entries in by_symbol.items():
+        entries.sort(key=lambda e: e["date"])
+        for i in range(len(entries) - 1):
+            curr = entries[i]
+            nxt  = entries[i + 1]
+            move = nxt["price"] - curr["price"]
+            structure = curr.get("structure", "unknown")
+            max_loss  = curr.get("max_loss", 0) or 0
+            net_credit = curr.get("net_credit", 0) or 0
+            beqs = curr.get("breakeven", []) or []
+
+            if structure in _BULLISH:
+                correct = move > 0
+                simple_pnl = move * 100 * 0.5  # rough delta = 0.5 × 100 shares
+            elif structure in _BEARISH:
+                correct = move < 0
+                simple_pnl = -move * 100 * 0.5
+            else:
+                # Non-directional: win if price moves beyond a breakeven or stays in range
+                avg_be = sum(beqs) / len(beqs) if beqs else curr["price"]
+                if net_credit > 0:
+                    # Short premium: win if price stays near avg_be
+                    correct = abs(curr["price"] - avg_be) < abs(move) * 0.5
+                else:
+                    # Long vol: win if price moves a lot
+                    correct = abs(move) > abs(avg_be - curr["price"]) * 0.3
+                simple_pnl = net_credit if correct else -abs(max_loss)
+
+            record = {
+                "date":        curr["date"],
+                "symbol":      symbol,
+                "structure":   structure,
+                "level":       curr.get("level", "?"),
+                "regime":      curr.get("regime", "?"),
+                "vol_regime":  curr.get("vol_regime", "?"),
+                "gex_regime":  curr.get("gex_regime", "?"),
+                "confidence":  curr.get("confidence", 0.0),
+                "price":       curr["price"],
+                "next_price":  nxt["price"],
+                "move":        move,
+                "correct":     correct,
+                "est_pnl":     simple_pnl,
+                "net_credit":  net_credit,
+            }
+            scored.append(record)
+
+            if structure not in by_structure:
+                by_structure[structure] = {"n": 0, "wins": 0, "total_pnl": 0.0}
+            by_structure[structure]["n"]         += 1
+            by_structure[structure]["wins"]      += int(correct)
+            by_structure[structure]["total_pnl"] += simple_pnl
+
+    if not scored:
+        return _empty_options_scorecard()
+
+    total = len(scored)
+    hits  = sum(1 for s in scored if s["correct"])
+
+    structure_summary = {
+        k: {
+            "n":        v["n"],
+            "accuracy": v["wins"] / max(v["n"], 1),
+            "avg_pnl":  v["total_pnl"] / max(v["n"], 1),
+        }
+        for k, v in by_structure.items()
+    }
+
+    return {
+        "total_options_predictions": total,
+        "hits":                      hits,
+        "misses":                    total - hits,
+        "accuracy":                  hits / total,
+        "avg_est_pnl":               sum(s["est_pnl"] for s in scored) / total,
+        "by_structure":              structure_summary,
+        "scored_log":                scored,
+    }
+
+
+def _empty_options_scorecard():
+    return {
+        "total_options_predictions": 0,
+        "hits":    0,
+        "misses":  0,
+        "accuracy": 0,
+        "avg_est_pnl": 0,
+        "by_structure": {},
+        "scored_log": [],
+    }
