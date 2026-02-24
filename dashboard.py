@@ -225,6 +225,15 @@ def _build_catalog() -> dict:
                 "confidence_floor": {"label": "Conf Floor", "type": "number", "default": 0.30, "min": 0.10, "max": 0.80},
             },
         },
+        "Plutus Bot (LLM)": {
+            "module": "strategies.plutus_strategy.PlutusStrategy",
+            "description": "0xroyce/Plutus LLM via Ollama — in-context learning from trade history.",
+            "params": {
+                "symbol":         {"label": "Symbol",      "type": "text",   "default": "SPY"},
+                "min_confidence": {"label": "Min Conf",    "type": "number", "default": 0.60, "min": 0.50, "max": 0.95},
+                "ollama_host":    {"label": "Ollama Host", "type": "text",   "default": "http://localhost:11434"},
+            },
+        },
     }
 
 
@@ -1193,6 +1202,248 @@ def render_system_status():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Tab 5: Plutus Bot  — LLM-guided trading via 0xroyce/Plutus + Ollama
+# ─────────────────────────────────────────────────────────────────────────────
+def _get_plutus_advisor(host: str, model: str, min_conf: float):
+    """Return a cached PlutusAdvisor (one per session)."""
+    cache_key = f"_plutus_advisor_{host}_{model}"
+    if cache_key not in st.session_state:
+        from regime_engine.plutus_advisor import PlutusAdvisor
+        st.session_state[cache_key] = PlutusAdvisor(
+            model=model, host=host, min_conf=min_conf
+        )
+    return st.session_state[cache_key]
+
+
+def render_plutus_bot(config: dict):
+    st.subheader("Plutus Bot — LLM-Guided Trading")
+    st.caption(
+        "Powered by [0xroyce/plutus](https://ollama.com/0xroyce/plutus) "
+        "— a LLaMA 3.1-8B model fine-tuned on 394 finance & trading books. "
+        "Runs locally via [Ollama](https://ollama.com). "
+        "The bot maintains a rolling trade journal so it can learn from past decisions."
+    )
+
+    # ── Connection settings ───────────────────────────────────────────────
+    with st.expander("Ollama Connection", expanded=True):
+        c1, c2, c3 = st.columns([3, 3, 1])
+        with c1:
+            ollama_host = st.text_input(
+                "Ollama Host", value="http://localhost:11434",
+                key="plutus_host",
+                help="Default: http://localhost:11434  |  Set OLLAMA_HOST env var to override."
+            )
+        with c2:
+            plutus_model = st.text_input(
+                "Model", value="0xroyce/plutus",
+                key="plutus_model_name",
+                help="Pull with: ollama pull 0xroyce/plutus"
+            )
+        with c3:
+            st.write("")
+            st.write("")
+            check_btn = st.button("Check", use_container_width=True)
+
+        if check_btn:
+            with st.spinner("Checking Ollama..."):
+                try:
+                    from regime_engine.plutus_advisor import PlutusAdvisor
+                    adv = PlutusAdvisor(model=plutus_model, host=ollama_host)
+                    avail = adv.is_available()
+                    if avail:
+                        st.success(f"Plutus model `{plutus_model}` is ready.")
+                    else:
+                        st.warning(
+                            f"Model `{plutus_model}` not found on `{ollama_host}`. "
+                            "Click **Pull Model** below to download it (~5.7 GB)."
+                        )
+                except Exception as e:
+                    st.error(f"Cannot reach Ollama: {e}")
+
+        pull_col, _ = st.columns([1, 3])
+        with pull_col:
+            if st.button("Pull Model (ollama pull)", use_container_width=True):
+                with st.status(f"Pulling {plutus_model}...", expanded=True) as s:
+                    try:
+                        from regime_engine.plutus_advisor import PlutusAdvisor
+                        adv = PlutusAdvisor(model=plutus_model, host=ollama_host)
+                        ok = adv.pull_model()
+                        if ok:
+                            s.update(label="Model ready.", state="complete")
+                        else:
+                            s.update(label="Pull failed — check Ollama logs.", state="error")
+                    except Exception as e:
+                        s.update(label=f"Error: {e}", state="error")
+
+    st.markdown("---")
+
+    # ── Quick ask Plutus ──────────────────────────────────────────────────
+    ask_tab, bt_tab, journal_tab = st.tabs([
+        "Ask Plutus", "Backtest", "Trade Journal"
+    ])
+
+    with ask_tab:
+        st.markdown("#### Ask Plutus about the market")
+        st.caption(
+            "Fetch live data and get an immediate BUY / SELL / HOLD recommendation "
+            "with reasoning from the Plutus LLM."
+        )
+        qa, qb, qc = st.columns([2, 1, 1])
+        with qa: ask_sym   = st.text_input("Symbol", value="SPY", key="plutus_ask_sym")
+        with qb: ask_start = st.date_input("From", value=date(2023, 1, 1), key="plutus_ask_start")
+        with qc: ask_end   = st.date_input("To",   value=date(2024, 12, 31), key="plutus_ask_end")
+        ask_conf = st.slider(
+            "Minimum confidence to flag as actionable",
+            0.50, 0.95, 0.60, 0.05, key="plutus_ask_conf"
+        )
+
+        if st.button("Get Plutus Recommendation", type="primary", use_container_width=True):
+            with st.status("Fetching data + consulting Plutus...", expanded=True) as s:
+                try:
+                    ohlcv = _load_ohlcv(ask_sym, ask_start, ask_end)
+                    if ohlcv is None or ohlcv.empty:
+                        s.update(label="No data", state="error")
+                    else:
+                        # Run MFT engine for extra context
+                        mft_out = None
+                        try:
+                            from regime_engine.scanner import RegimeEngine
+                            cfg = _load_base_config()
+                            mft_out = RegimeEngine(cfg).run(ohlcv)
+                        except Exception:
+                            pass
+
+                        from regime_engine.plutus_advisor import (
+                            PlutusAdvisor, build_market_brief
+                        )
+                        advisor = _get_plutus_advisor(ollama_host, plutus_model, ask_conf)
+
+                        if not advisor.is_available():
+                            s.update(
+                                label="Plutus offline — pull the model first.",
+                                state="error"
+                            )
+                        else:
+                            ohlcv_sum, mft_sig = build_market_brief(ohlcv, mft_out)
+                            price = float(ohlcv["close"].iloc[-1])
+                            decision = advisor.recommend(
+                                ask_sym, ohlcv_sum, mft_sig, price
+                            )
+                            st.session_state["plutus_last_decision"] = decision
+
+                            colour = (
+                                "green" if decision.signal == "BUY"
+                                else "red" if decision.signal == "SELL"
+                                else "grey"
+                            )
+                            s.update(
+                                label=f"Plutus says: {decision.signal} "
+                                      f"(conf={decision.confidence:.0%})",
+                                state="complete"
+                            )
+                except Exception as e:
+                    s.update(label=f"Error: {e}", state="error")
+                    st.exception(e)
+
+        dec = st.session_state.get("plutus_last_decision")
+        if dec is not None:
+            sig_color = {"BUY": "green", "SELL": "red", "HOLD": "gray"}.get(dec.signal, "gray")
+            d1, d2, d3 = st.columns(3)
+            d1.metric("Signal",     dec.signal)
+            d2.metric("Confidence", f"{dec.confidence:.0%}")
+            d3.metric("Actionable", "YES" if dec.is_actionable(ask_conf) else "NO")
+            st.markdown(f"**Reasoning:** {dec.reasoning}")
+            st.markdown(f"**Risk note:** {dec.risk_note}")
+            if dec.raw:
+                with st.expander("Raw LLM output"):
+                    st.code(dec.raw, language="json")
+
+    with bt_tab:
+        st.markdown("#### Plutus Bot Backtest")
+        st.caption(
+            "Runs Plutus as a full Lumibot strategy. Plutus is consulted every bar "
+            "and its trade journal grows throughout the backtest (in-context learning)."
+        )
+        st.info(
+            "Ollama must be running and `0xroyce/plutus` must be pulled. "
+            "Each bar makes an LLM call — backtests over long periods will be slow."
+        )
+        bt_sym  = st.text_input("Symbol", value="SPY", key="plutus_bt_sym")
+        bt_c1, bt_c2 = st.columns(2)
+        bt_conf = bt_c1.slider("Min confidence", 0.50, 0.95, 0.60, 0.05, key="plutus_bt_conf")
+        bt_pos  = bt_c2.slider("Position size %", 0.50, 1.00, 0.95, 0.05, key="plutus_bt_pos")
+
+        if st.button("Run Plutus Backtest", type="primary", use_container_width=True):
+            with st.status("Running Plutus Bot backtest...", expanded=True) as s:
+                try:
+                    import io as _io
+                    from contextlib import redirect_stdout, redirect_stderr
+                    _PlutusStrat = _strat("strategies.plutus_strategy.PlutusStrategy")
+                    buf = _io.StringIO()
+                    with redirect_stdout(buf), redirect_stderr(buf):
+                        results, strat = _run_backtest(
+                            _PlutusStrat,
+                            {
+                                "symbol":         bt_sym,
+                                "min_confidence": bt_conf,
+                                "position_pct":   bt_pos,
+                                "ollama_host":    ollama_host,
+                                "plutus_model":   plutus_model,
+                            },
+                            config,
+                        )
+                    sc = _compute_accuracy(strat)
+                    s.update(label=f"Plutus Bot — {sc['accuracy']:.1%}", state="complete")
+                    p1, p2 = st.tabs(["Portfolio", "Accuracy"])
+                    with p1: _show_portfolio(results, config["budget"])
+                    with p2: _show_accuracy(sc)
+                except Exception as e:
+                    s.update(label=f"Failed: {e}", state="error")
+                    st.exception(e)
+
+    with journal_tab:
+        st.markdown("#### Trade Journal")
+        st.caption(
+            "Every bar where Plutus makes a recommendation is logged here. "
+            "Exit prices and P&L are filled in when positions close. "
+            "This journal is fed back to the LLM on each subsequent bar."
+        )
+        adv = st.session_state.get(f"_plutus_advisor_{ollama_host}_{plutus_model}")
+        if adv is None:
+            st.info("No advisor session active yet. Use 'Ask Plutus' or run a backtest first.")
+        else:
+            journal = adv.get_journal()
+            if not journal:
+                st.info("Journal is empty — no decisions recorded yet.")
+            else:
+                hit = adv.journal_accuracy()
+                j1, j2, j3 = st.columns(3)
+                j1.metric("Decisions", len(journal))
+                j2.metric(
+                    "Settled",
+                    sum(1 for e in journal if e.get("pnl_pct") is not None)
+                )
+                j3.metric("Hit rate", f"{hit:.1%}" if hit else "—")
+
+                df_j = pd.DataFrame(journal)
+                # Pretty formatting
+                for col in ("entry_price", "exit_price"):
+                    if col in df_j:
+                        df_j[col] = df_j[col].apply(
+                            lambda x: f"{x:.2f}" if x is not None else "open"
+                        )
+                if "pnl_pct" in df_j:
+                    df_j["pnl_pct"] = df_j["pnl_pct"].apply(
+                        lambda x: f"{x:+.2f}%" if x is not None else "—"
+                    )
+                if "correct" in df_j:
+                    df_j["correct"] = df_j["correct"].map(
+                        {True: "CORRECT", False: "WRONG", None: "open"}
+                    )
+                st.dataframe(df_j, use_container_width=True, hide_index=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 def main():
@@ -1207,6 +1458,7 @@ def main():
         "Fetch Data",
         "MFT Blender",
         "Phi-Bot",
+        "Plutus Bot",
         "Backtests",
         "System Status",
     ])
@@ -1215,8 +1467,9 @@ def main():
     with tabs[1]: render_fetch_data()
     with tabs[2]: render_mft_blender(config)
     with tabs[3]: render_phi_bot(config)
-    with tabs[4]: render_backtests(config)
-    with tabs[5]: render_system_status()
+    with tabs[4]: render_plutus_bot(config)
+    with tabs[5]: render_backtests(config)
+    with tabs[6]: render_system_status()
 
 
 if __name__ == "__main__":
