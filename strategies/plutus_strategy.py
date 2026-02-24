@@ -85,11 +85,16 @@ class PlutusStrategy(PredictionMixin, Strategy):
     def initialize(self) -> None:
         self.sleeptime = "1D"
         self._init_predictions()
-        self._engine  = None
-        self._advisor = None
+        self._engine   = None
+        self._advisor  = None
+        self._registry = None
+        self._learner  = None
+        self._bar_count = 0
+        self._al_every: Optional[int] = None
         self._prev_signal = "HOLD"
         self._prev_price: Optional[float] = None
         self._setup_advisor()
+        self._setup_auto_learning()
 
     def _setup_advisor(self) -> None:
         from regime_engine.plutus_advisor import PlutusAdvisor
@@ -98,10 +103,25 @@ class PlutusStrategy(PredictionMixin, Strategy):
         min_c = float(self.parameters.get("min_confidence", 0.60))
         self._advisor = PlutusAdvisor(model=model, host=host, min_conf=min_c)
 
+    def _setup_auto_learning(self) -> None:
+        cfg = _get_config()
+        al_cfg = cfg.get("auto_learning", {})
+        try:
+            from regime_engine.variable_registry import VariableRegistry
+            from regime_engine.auto_learning import LearningCycleRunner
+            self._registry = VariableRegistry(cfg.get("variable_registry", {}))
+            self._learner  = LearningCycleRunner(al_cfg, self._registry)
+            self._al_every = int(al_cfg.get("auto_run_every_n_bars", 50))
+            logger.info("Auto-learning initialized (every %d bars)", self._al_every)
+        except Exception as e:
+            logger.warning("Auto-learning setup failed (non-fatal): %s", e)
+
     def _get_engine(self):
         if self._engine is None:
             from regime_engine.scanner import RegimeEngine
             self._engine = RegimeEngine(_get_config())
+            if self._registry is not None:
+                self._engine.projection.set_registry(self._registry)
         return self._engine
 
     # ── Main loop ─────────────────────────────────────────────────────────────
@@ -134,6 +154,31 @@ class PlutusStrategy(PredictionMixin, Strategy):
         if not {"open", "high", "low", "close", "volume"}.issubset(ohlcv.columns):
             self.record_prediction(symbol, "NEUTRAL", price)
             return
+
+        # ── 3b. Auto-learning cycle (every N bars) ───────────────────────
+        self._bar_count += 1
+        if (self._learner is not None
+                and self._al_every is not None
+                and self._bar_count % self._al_every == 0
+                and len(ohlcv) >= 100):
+            try:
+                al_cfg = _get_config().get("auto_learning", {})
+                self._learner.run_cycle(
+                    ohlcv,
+                    window_bars=int(al_cfg.get("window_bars", 500)),
+                    stride_bars=int(al_cfg.get("stride_bars", 50)),
+                )
+                if self._registry is not None:
+                    self._learner.apply_lessons(self._registry)
+                    # Sync updated theta_r into the projection engine
+                    if self._engine is not None:
+                        self._engine.projection._sync_from_registry()
+                logger.info(
+                    "Auto-learning cycle applied | bar=%d | underperforming=%s",
+                    self._bar_count, self._learner.underperforming_regimes(),
+                )
+            except Exception as e:
+                logger.warning("Auto-learning cycle failed (non-fatal): %s", e)
 
         # ── 4. Run MFT engine for quantitative context ───────────────────
         mft_out = None

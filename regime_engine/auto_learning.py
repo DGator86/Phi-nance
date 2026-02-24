@@ -330,15 +330,13 @@ class LearningCycleRunner:
             lr    = self.lesson_lr * self.lesson_decay
 
             # Nudge projection theta_r: if underpredicting returns, push mu up
-            if hasattr(registry, 'theta_r') and regime in self._get_regime_idx():
-                r_idx = self._get_regime_idx()[regime]
-                # mu correction: shift toward mean observed return
+            if hasattr(registry, 'theta_r'):
                 obs_mu = self._regime_stats[regime].avg_return
-                if hasattr(registry.theta_r, '__len__') and r_idx < len(registry.theta_r):
-                    mu_old = registry.theta_r[r_idx, 0]
-                    registry.theta_r[r_idx, 0] = float(
-                        mu_old + lr * (obs_mu - mu_old)
-                    )
+                theta_r = registry.theta_r
+                # VariableRegistry stores theta_r as Dict[regime_name, Dict]
+                if isinstance(theta_r, dict) and regime in theta_r:
+                    mu_old = theta_r[regime].get("mu", 0.0)
+                    theta_r[regime]["mu"] = float(mu_old + lr * (obs_mu - mu_old))
 
             # Update tau via registry if method exists
             if hasattr(registry, 'update_tau') and err > 0:
