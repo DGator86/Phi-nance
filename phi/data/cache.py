@@ -147,6 +147,53 @@ def _fetch_yfinance(symbol: str, timeframe: str, start_s: str, end_s: str) -> pd
     return df
 
 
+def _fetch_stockdata(symbol: str, start_s: str, end_s: str, api_key: str) -> pd.DataFrame:
+    """Fetch EOD OHLCV from StockData.org (free: ~100 req/day, 1yr history).
+    Paginates automatically — 50 records per page.
+    Only supports daily timeframe (EOD endpoint).
+    """
+    import requests
+
+    base_url = "https://api.stockdata.org/v1/data/eod"
+    rows = []
+    page = 1
+
+    while True:
+        resp = requests.get(base_url, params={
+            "symbols": symbol,
+            "date_from": start_s,
+            "date_to": end_s,
+            "sort": "asc",
+            "page": page,
+            "api_token": api_key,
+        }, timeout=20)
+        data = resp.json()
+
+        if "error" in data:
+            raise ValueError(f"StockData.org: {data['error'].get('message', data['error'])}")
+
+        batch = data.get("data", [])
+        if not batch:
+            break
+
+        rows.extend(batch)
+
+        meta = data.get("meta", {})
+        # Stop if we've received everything
+        if len(rows) >= meta.get("found", len(rows)):
+            break
+        page += 1
+
+    if not rows:
+        raise ValueError(f"StockData.org: no data for {symbol}")
+
+    df = pd.DataFrame(rows)
+    df["datetime"] = pd.to_datetime(df["date"])
+    df = df.set_index("datetime").sort_index()
+    df = df.rename(columns={"open": "open", "high": "high", "low": "low", "close": "close", "volume": "volume"})
+    return df[["open", "high", "low", "close", "volume"]]
+
+
 def _fetch_finnhub(symbol: str, timeframe: str, start_s: str, end_s: str, api_key: str) -> pd.DataFrame:
     """Fetch OHLCV from Finnhub REST API. Free tier: 60 req/min."""
     import requests
@@ -224,8 +271,16 @@ def fetch_and_cache(
             raise ValueError("FINNHUB_API_KEY not set — add it to .env")
         df = _fetch_finnhub(symbol, timeframe, start_s, end_s, key)
 
+    elif vendor_l in ("stockdata", "stockdataorg"):
+        if timeframe != "1D":
+            raise ValueError("StockData.org only supports daily (1D) timeframe on free tier")
+        key = api_key or os.getenv("STOCKDATA_API_KEY", "")
+        if not key:
+            raise ValueError("STOCKDATA_API_KEY not set — add it to .env")
+        df = _fetch_stockdata(symbol, start_s, end_s, key)
+
     else:
-        raise ValueError(f"Unknown vendor: {vendor!r}. Supported: alphavantage, yfinance, finnhub")
+        raise ValueError(f"Unknown vendor: {vendor!r}. Supported: alphavantage, yfinance, finnhub, stockdata")
 
     if df is None or df.empty:
         raise ValueError(f"No data returned for {symbol} from {vendor}")
