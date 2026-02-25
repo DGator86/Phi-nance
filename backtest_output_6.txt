@@ -1,0 +1,171 @@
+Lumibot version 4.4.49
+Running backtest: momentum
+  Period: 2024-11-20 to 2024-11-25
+  Budget: $100,000
+  Benchmark: SPY
+  Data Source: Alpha Vantage
+
+!!!! AV FIXED INSTANTIATED !!!! config=<strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource.__init__.<locals>.Config object at 0x00000153C2F8F4D0>
+!!!! AV FIXED INIT setting _timestep=day from kwargs !!!!
+!!!! AV FIXED INIT DONE !!!! api_key=PLN25H3ESMM1IRBN _timestep=day
+2026-02-24 06:48:13,924 | ERROR | strategy_executor.py:run:2023 | [MomentumRotation] 'charmap' codec can't encode characters in position 11-12: character maps to <undefined>
+2026-02-24 06:48:13,936 | ERROR | strategy_executor.py:run:2024 | [MomentumRotation] Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 2019, in run
+    self._run_trading_session()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1800, in _run_trading_session
+    if not self._setup_market_session(has_data_source):
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1717, in _setup_market_session
+    self.strategy.await_market_to_open()  # set new time and bar length. Check if hit bar max or date max.
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy.py", line 1063, in await_market_to_open
+    return self.broker._await_market_to_open(timedelta, strategy=self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\backtesting\backtesting_broker.py", line 538, in _await_market_to_open
+    self._update_datetime(time_to_open)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\backtesting\backtesting_broker.py", line 366, in _update_datetime
+    self.data_source._update_datetime(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        new_datetime,
+        ^^^^^^^^^^^^^
+    ...<4 lines>...
+        orders=orders
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source_backtesting.py", line 357, in _update_datetime
+    print_progress_bar(
+    ~~~~~~~~~~~~~~~~~~^
+        new_datetime,
+        ^^^^^^^^^^^^^
+    ...<5 lines>...
+        eta_override=eta_override,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\tools\helpers.py", line 592, in print_progress_bar
+    file.write(line)
+    ~~~~~~~~~~^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 11-12: character maps to <undefined>
+2026-02-24 06:48:13,937 | ERROR | strategy_executor.py:run:2080 | [MomentumRotation] 'charmap' codec can't encode characters in position 11-12: character maps to <undefined>
+2026-02-24 06:48:13,939 | ERROR | strategy_executor.py:run:2081 | [MomentumRotation] Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 2033, in run
+    raise e  # Re-raise original exception to preserve error message for tests
+    ^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 2019, in run
+    self._run_trading_session()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1800, in _run_trading_session
+    if not self._setup_market_session(has_data_source):
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1717, in _setup_market_session
+    self.strategy.await_market_to_open()  # set new time and bar length. Check if hit bar max or date max.
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy.py", line 1063, in await_market_to_open
+    return self.broker._await_market_to_open(timedelta, strategy=self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\backtesting\backtesting_broker.py", line 538, in _await_market_to_open
+    self._update_datetime(time_to_open)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\backtesting\backtesting_broker.py", line 366, in _update_datetime
+    self.data_source._update_datetime(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        new_datetime,
+        ^^^^^^^^^^^^^
+    ...<4 lines>...
+        orders=orders
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source_backtesting.py", line 357, in _update_datetime
+    print_progress_bar(
+    ~~~~~~~~~~~~~~~~~~^
+        new_datetime,
+        ^^^^^^^^^^^^^
+    ...<5 lines>...
+        eta_override=eta_override,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\tools\helpers.py", line 592, in print_progress_bar
+    file.write(line)
+    ~~~~~~~~~~^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 11-12: character maps to <undefined>
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\run_backtest.py", line 127, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\run_backtest.py", line 107, in main
+    results, _ = strategy_class.run_backtest(
+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        datasource_class=datasource_class,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<11 lines>...
+        quiet_logs=True,
+        ^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\_strategy.py", line 2258, in run_backtest
+    result = self._trader.run_all(
+        show_plot=show_plot,
+    ...<4 lines>...
+        base_filename=base_filename,
+    )
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\traders\trader.py", line 186, in run_all
+    self._join_pool()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\traders\trader.py", line 375, in _join_pool
+    raise strategy_thread.exception
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 2033, in run
+    raise e  # Re-raise original exception to preserve error message for tests
+    ^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 2019, in run
+    self._run_trading_session()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1800, in _run_trading_session
+    if not self._setup_market_session(has_data_source):
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1717, in _setup_market_session
+    self.strategy.await_market_to_open()  # set new time and bar length. Check if hit bar max or date max.
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy.py", line 1063, in await_market_to_open
+    return self.broker._await_market_to_open(timedelta, strategy=self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\backtesting\backtesting_broker.py", line 538, in _await_market_to_open
+    self._update_datetime(time_to_open)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\backtesting\backtesting_broker.py", line 366, in _update_datetime
+    self.data_source._update_datetime(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        new_datetime,
+        ^^^^^^^^^^^^^
+    ...<4 lines>...
+        orders=orders
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source_backtesting.py", line 357, in _update_datetime
+    print_progress_bar(
+    ~~~~~~~~~~~~~~~~~~^
+        new_datetime,
+        ^^^^^^^^^^^^^
+    ...<5 lines>...
+        eta_override=eta_override,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\tools\helpers.py", line 592, in print_progress_bar
+    file.write(line)
+    ~~~~~~~~~~^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 11-12: character maps to <undefined>

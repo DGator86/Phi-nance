@@ -231,7 +231,7 @@ def render_dataset_builder():
                    f"${cfg.get('initial_capital', 0):,.0f} initial capital")
         for sym, df in list(dfs.items())[:3]:
             with st.expander(f"{sym} — {len(df):,} rows"):
-                st.dataframe(df.tail(20), use_container_width=True)
+                st.dataframe(df.tail(20), width="stretch")
         return cfg
     return None
 
@@ -527,13 +527,13 @@ def _display_results(config, results, strat, indicators, blend_method, blend_wei
     r1.metric("Start Capital", f"${cap:,.0f}")
     r2.metric("End Capital", f"${end_cap:,.0f}")
     r3.metric("Net P/L", f"${net_pl:+,.0f}", f"{net_pct:+.1f}%")
-    r4.metric("CAGR", f"{cagr:+.1%}" if cagr is not None else "—")
-    r5.metric("Sharpe", f"{sharpe:.2f}" if sharpe is not None else "—")
+    r4.metric("CAGR", f"{cagr:+.1%}" if isinstance(cagr, (int, float)) else "—")
+    r5.metric("Sharpe", f"{sharpe:.2f}" if isinstance(sharpe, (int, float)) else "—")
 
     tab_sum, tab_curve, tab_trades, tab_metrics = st.tabs(["Summary", "Equity Curve", "Trades", "Metrics"])
     with tab_sum:
-        st.metric("Max Drawdown", f"{dd:.1%}" if dd is not None else "—")
-        st.metric("Direction Accuracy", f"{sc.get('accuracy', 0):.1%}" if sc else "—")
+        st.metric("Max Drawdown", f"{dd:.1%}" if isinstance(dd, (int, float)) else "—")
+        st.metric("Direction Accuracy", f"{sc.get('accuracy', 0):.1%}" if sc and isinstance(sc.get('accuracy'), (int, float)) else "—")
     with tab_curve:
         if pv and len(pv) > 1:
             try:
@@ -547,12 +547,12 @@ def _display_results(config, results, strat, indicators, blend_method, blend_wei
                     font_color="#e4e4e7",
                     margin=dict(l=40, r=40, t=40, b=40),
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             except ImportError:
                 st.line_chart(pd.DataFrame(pv, columns=["Portfolio Value ($)"]))
     with tab_trades:
         if strat and hasattr(strat, "prediction_log") and strat.prediction_log:
-            st.dataframe(pd.DataFrame(strat.prediction_log), use_container_width=True)
+            st.dataframe(pd.DataFrame(strat.prediction_log), width="stretch")
         else:
             st.caption("No trade log.")
     with tab_metrics:
@@ -601,7 +601,7 @@ def render_cache_manager():
     if not datasets:
         st.caption("No cached datasets.")
         return
-    st.dataframe(pd.DataFrame(datasets), use_container_width=True)
+    st.dataframe(pd.DataFrame(datasets), width="stretch")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

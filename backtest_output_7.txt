@@ -1,0 +1,190 @@
+Lumibot version 4.4.49
+Running backtest: momentum
+  Period: 2024-11-20 to 2024-11-25
+  Budget: $100,000
+  Benchmark: SPY
+  Data Source: Alpha Vantage
+
+!!!! AV FIXED INSTANTIATED !!!! config=<strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource.__init__.<locals>.Config object at 0x0000020D5903F4D0>
+!!!! AV FIXED INIT setting _timestep=day from kwargs !!!!
+!!!! AV FIXED INIT DONE !!!! api_key=PLN25H3ESMM1IRBN _timestep=day
+
+Progress |ΓûêΓûê----------------------------|   7.08% [Elapsed: 0:00:01 ETA: 0:00:17] | Sim Time: 2024-11-20 08:30 [K2026-02-24 07:02:53,909 | ERROR | strategy_executor.py:run:2023 | [MomentumRotation] 'AlphaVantageFixedDataSource' object has no attribute '_thread_pool'
+2026-02-24 07:02:53,927 | ERROR | strategy_executor.py:run:2024 | [MomentumRotation] Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 2019, in run
+    self._run_trading_session()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1879, in _run_trading_session
+    self._run_backtesting_loop(is_continuous_market, time_to_close)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1765, in _run_backtesting_loop
+    self._on_trading_iteration()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 834, in func_output
+    result = func_input(self, *args, **kwargs)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 861, in func_output
+    result = func_input(self, *args, **kwargs)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1039, in _on_trading_iteration
+    raise e
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 995, in _on_trading_iteration
+    on_trading_iteration()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\momentum.py", line 48, in on_trading_iteration
+    momentums = self._get_momentums(symbols, lookback)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\momentum.py", line 76, in _get_momentums
+    bars = self.get_bars(symbols, lookback + 1, timestep="day")
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy.py", line 4499, in get_bars
+    return self.get_historical_prices_for_assets(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        assets,
+        ^^^^^^^
+    ...<6 lines>...
+        sleep_time=sleep_time
+        ^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy.py", line 4469, in get_historical_prices_for_assets
+    return self.broker.data_source.get_bars(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        assets,
+        ^^^^^^^
+    ...<6 lines>...
+        sleep_time=effective_sleep_time
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 438, in get_bars
+    executor = self._get_or_create_thread_pool()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 89, in _get_or_create_thread_pool
+    if self._thread_pool is None:
+       ^^^^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_thread_pool'
+2026-02-24 14:55:38,797 | ERROR | strategy_executor.py:run:2080 | [MomentumRotation] 'AlphaVantageFixedDataSource' object has no attribute '_thread_pool'
+2026-02-24 14:55:38,814 | ERROR | strategy_executor.py:run:2081 | [MomentumRotation] Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 2033, in run
+    raise e  # Re-raise original exception to preserve error message for tests
+    ^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 2019, in run
+    self._run_trading_session()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1879, in _run_trading_session
+    self._run_backtesting_loop(is_continuous_market, time_to_close)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1765, in _run_backtesting_loop
+    self._on_trading_iteration()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 834, in func_output
+    result = func_input(self, *args, **kwargs)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 861, in func_output
+    result = func_input(self, *args, **kwargs)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1039, in _on_trading_iteration
+    raise e
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 995, in _on_trading_iteration
+    on_trading_iteration()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\momentum.py", line 48, in on_trading_iteration
+    momentums = self._get_momentums(symbols, lookback)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\momentum.py", line 76, in _get_momentums
+    bars = self.get_bars(symbols, lookback + 1, timestep="day")
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy.py", line 4499, in get_bars
+    return self.get_historical_prices_for_assets(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        assets,
+        ^^^^^^^
+    ...<6 lines>...
+        sleep_time=sleep_time
+        ^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy.py", line 4469, in get_historical_prices_for_assets
+    return self.broker.data_source.get_bars(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        assets,
+        ^^^^^^^
+    ...<6 lines>...
+        sleep_time=effective_sleep_time
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 438, in get_bars
+    executor = self._get_or_create_thread_pool()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 89, in _get_or_create_thread_pool
+    if self._thread_pool is None:
+       ^^^^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_thread_pool'
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\run_backtest.py", line 127, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\run_backtest.py", line 107, in main
+    results, _ = strategy_class.run_backtest(
+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        datasource_class=datasource_class,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<11 lines>...
+        quiet_logs=True,
+        ^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\_strategy.py", line 2258, in run_backtest
+    result = self._trader.run_all(
+        show_plot=show_plot,
+    ...<4 lines>...
+        base_filename=base_filename,
+    )
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\traders\trader.py", line 186, in run_all
+    self._join_pool()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\traders\trader.py", line 375, in _join_pool
+    raise strategy_thread.exception
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 2033, in run
+    raise e  # Re-raise original exception to preserve error message for tests
+    ^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 2019, in run
+    self._run_trading_session()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1879, in _run_trading_session
+    self._run_backtesting_loop(is_continuous_market, time_to_close)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1765, in _run_backtesting_loop
+    self._on_trading_iteration()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 834, in func_output
+    result = func_input(self, *args, **kwargs)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 861, in func_output
+    result = func_input(self, *args, **kwargs)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 1039, in _on_trading_iteration
+    raise e
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy_executor.py", line 995, in _on_trading_iteration
+    on_trading_iteration()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\momentum.py", line 48, in on_trading_iteration
+    momentums = self._get_momentums(symbols, lookback)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\momentum.py", line 76, in _get_momentums
+    bars = self.get_bars(symbols, lookback + 1, timestep="day")
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy.py", line 4499, in get_bars
+    return self.get_historical_prices_for_assets(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        assets,
+        ^^^^^^^
+    ...<6 lines>...
+        sleep_time=sleep_time
+        ^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\strategies\strategy.py", line 4469, in get_historical_prices_for_assets
+    return self.broker.data_source.get_bars(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        assets,
+        ^^^^^^^
+    ...<6 lines>...
+        sleep_time=effective_sleep_time
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 438, in get_bars
+    executor = self._get_or_create_thread_pool()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 89, in _get_or_create_thread_pool
+    if self._thread_pool is None:
+       ^^^^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_thread_pool'

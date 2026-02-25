@@ -3,6 +3,7 @@ from lumibot.entities import Asset, Bars
 from lumibot.tools.lumibot_logger import get_logger
 import pandas as pd
 import requests
+import json
 from io import StringIO
 from lumibot.constants import LUMIBOT_DEFAULT_PYTZ
 
@@ -114,7 +115,12 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
                 
                 # Check if the response is actually JSON (which means an error/note)
                 if content.strip().startswith("{"):
-                    print(f"!!!! AV FIXED API returned JSON instead of CSV: {content[:100]}... !!!!")
+                    try:
+                        err_data = json.loads(content)
+                        msg = err_data.get("Information") or err_data.get("Note") or err_data.get("Error Message") or content[:100]
+                        print(f"!!!! AV FIXED API error: {msg} !!!!")
+                    except Exception:
+                        print(f"!!!! AV FIXED API returned JSON instead of CSV: {content[:100]}... !!!!")
                     # If we got a JSON error, don't cache and return None
                     return None
                     

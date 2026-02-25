@@ -1,0 +1,913 @@
+Lumibot version 4.4.49
+Running backtest: buy_and_hold
+  Period: 2024-01-01 to 2024-02-01
+  Budget: $100,000
+  Benchmark: SPY
+  Data Source: Alpha Vantage
+
+!!!! AV FIXED INSTANTIATED !!!! config=<strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource.__init__.<locals>.Config object at 0x000002A9369AF620>
+!!!! AV FIXED INIT DONE !!!! api_key=PLN25H3ESMM1IRBN
+
+Progress |Γûê-----------------------------|   4.37% [Elapsed: 0:00:01 ETA: 0:00:22] | Sim Time: 2024-01-02 08:30 [K!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,830 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,840 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,840 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,840 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,848 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,849 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,849 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-02 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-02 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,861 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,862 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,862 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,862 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,866 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,866 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,866 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-03 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-03 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,873 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,873 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,874 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,874 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,877 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,877 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,877 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-04 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-04 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,884 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,885 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,885 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,885 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,889 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,889 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,889 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-05 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-05 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,898 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,899 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,899 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,899 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,903 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,903 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,903 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-08 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-08 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,909 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,909 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,910 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,910 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,914 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,914 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,914 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-09 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-09 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,920 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,921 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,921 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,921 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,924 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,924 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,924 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-10 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-10 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,931 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,932 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,932 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,933 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,937 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,938 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,938 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-11 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-11 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,943 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,944 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,944 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,944 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,949 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,950 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,950 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-12 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-12 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,956 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,956 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,956 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,957 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,960 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,960 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,960 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-16 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-16 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,966 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,967 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,967 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,967 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,971 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,971 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,971 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-17 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-17 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,979 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,979 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,979 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,979 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,985 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,985 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,985 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-18 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-18 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:36,991 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:36,991 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:36,991 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:36,991 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:36,995 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:36,996 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:36,996 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-19 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-19 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:37,004 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:37,004 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:37,005 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:37,005 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:37,008 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:37,008 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:37,009 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-22 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-22 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:37,014 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:37,015 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:37,015 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:37,015 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:37,018 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:37,018 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:37,018 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-23 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-23 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:37,026 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:37,026 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:37,026 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:37,026 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:37,030 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:37,030 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:37,030 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-24 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-24 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:37,037 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:37,037 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:37,037 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:37,037 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:37,041 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:37,042 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:37,042 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-25 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-25 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:37,048 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:37,048 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:37,049 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:37,049 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:37,052 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:37,052 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:37,053 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-26 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-26 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:37,059 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:37,060 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:37,060 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:37,060 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:37,063 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:37,063 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:37,063 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-29 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-29 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:37,073 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:37,074 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:37,074 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:37,074 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:37,077 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:37,078 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:37,078 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-30 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-30 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 19:54:37,086 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+2026-02-23 19:54:37,086 | ERROR | alpha_vantage_fixed.py:get_historical_prices:61 | DEBUG: [AVFixed] _pull_source_symbol_bars returned: <class 'pandas.core.frame.DataFrame'>
+2026-02-23 19:54:37,086 | ERROR | alpha_vantage_fixed.py:get_historical_prices:63 | DEBUG: [AVFixed] data.empty: False
+2026-02-23 19:54:37,086 | ERROR | alpha_vantage_fixed.py:get_historical_prices:65 | DEBUG: [AVFixed] data.columns: ['Unnamed: 0', '{']
+2026-02-23 19:54:37,091 | ERROR | alpha_vantage_fixed.py:get_historical_prices:66 | DEBUG: [AVFixed] data.head(1):
+                                    Unnamed: 0    {
+1970-01-01 00:00:00.000000047-05:00          }  NaN
+2026-02-23 19:54:37,091 | ERROR | alpha_vantage_fixed.py:get_historical_prices:67 | DEBUG: [AVFixed] data.index range: 1970-01-01 00:00:00.000000047-05:00 to 1970-01-01 00:00:00.000000047-05:00
+2026-02-23 19:54:37,091 | ERROR | alpha_vantage_fixed.py:get_historical_prices:68 | DEBUG: [AVFixed] Current backtest datetime: 2024-01-31 09:30:00-05:00
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'close'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 81, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 73, in get_historical_prices
+    return self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\alpha_vantage_data.py", line 144, in _parse_source_symbol_bars
+    bars = Bars(response, self.SOURCE, asset, raw=response, quote=quote)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\entities\bars.py", line 312, in __init__
+    close_series = df["close"]
+                   ~~^^^^^^^^^
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'close'
+!!!! AV FIXED get_last_price ERROR: 'close' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-31 09:30:00-05:00
