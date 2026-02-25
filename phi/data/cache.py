@@ -339,6 +339,56 @@ def fetch_and_cache(
     return df
 
 
+def auto_fetch_and_cache(
+    symbol: str,
+    timeframe: str,
+    start: str | date | datetime,
+    end: str | date | datetime,
+) -> tuple[pd.DataFrame, str]:
+    """
+    Fetch OHLCV using the best available vendor, automatically.
+
+    Priority (most capable → most reliable fallback):
+      1. Massive  — unlimited free, all timeframes (needs MASSIVE_API_KEY)
+      2. Finnhub  — 60 req/min, all timeframes   (needs FINNHUB_API_KEY)
+      3. StockData — 100 req/day, daily only      (needs STOCKDATA_API_KEY)
+      4. yFinance — unlimited, no key required   (always available)
+
+    Returns (DataFrame, vendor_name_used).
+    """
+    start_s = str(start)[:10]
+    end_s = str(end)[:10]
+    cache = DataCache()
+
+    # Build priority list — only include keyed vendors if the key exists
+    candidates: list[tuple[str, Optional[str]]] = []
+    if os.getenv("MASSIVE_API_KEY"):
+        candidates.append(("massive", os.getenv("MASSIVE_API_KEY")))
+    if os.getenv("FINNHUB_API_KEY"):
+        candidates.append(("finnhub", os.getenv("FINNHUB_API_KEY")))
+    if os.getenv("STOCKDATA_API_KEY") and timeframe == "1D":
+        candidates.append(("stockdata", os.getenv("STOCKDATA_API_KEY")))
+    candidates.append(("yfinance", None))  # always last, always works
+
+    last_error: Optional[Exception] = None
+    for vendor, key in candidates:
+        # Serve from cache first — no API call needed
+        existing = cache.load(vendor, symbol.upper(), timeframe, start_s, end_s)
+        if existing is not None and not existing.empty:
+            return existing, vendor
+        try:
+            df = fetch_and_cache(vendor, symbol, timeframe, start_s, end_s, api_key=key)
+            return df, vendor
+        except Exception as exc:
+            last_error = exc
+            continue
+
+    raise ValueError(
+        f"Could not fetch {symbol} from any available vendor. "
+        f"Last error: {last_error}"
+    )
+
+
 def get_cached_dataset(
     vendor: str,
     symbol: str,

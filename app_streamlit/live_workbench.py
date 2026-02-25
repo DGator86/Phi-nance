@@ -213,22 +213,9 @@ def render_dataset_builder():
         start_d = st.date_input("Start", value=date(2020, 1, 1), key="ds_start")
         end_d = st.date_input("End", value=date(2024, 12, 31), key="ds_end")
 
-    col_tf, col_vendor, col_cap = st.columns(3)
+    col_tf, col_cap = st.columns(2)
     with col_tf:
         timeframe = st.selectbox("Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf")
-    with col_vendor:
-        vendor = st.selectbox(
-            "Data Vendor",
-            [
-                "yFinance (free)",
-                "Massive (free, unlimited delayed)",
-                "Finnhub (free, 60 req/min)",
-                "StockData.org (free, ~100 req/day)",
-                "Alpha Vantage (25 req/day)",
-            ],
-            key="ds_vendor",
-            help="yFinance needs no API key. Massive (ex-Polygon) has no rate limit on free tier.",
-        )
     with col_cap:
         initial_capital = st.number_input(
             "Initial Capital ($)",
@@ -249,14 +236,6 @@ def render_dataset_builder():
     with col_use:
         use_cached = st.button("Use Cached Data", key="ds_use")
 
-    _VENDOR_KEY_MAP = {
-        "yfinance (free)": "yfinance",
-        "massive (free, unlimited delayed)": "massive",
-        "finnhub (free, 60 req/min)": "finnhub",
-        "stockdata.org (free, ~100 req/day)": "stockdata",
-        "alpha vantage (25 req/day)": "alphavantage",
-    }
-    vendor_key = _VENDOR_KEY_MAP.get(vendor.lower(), "yfinance")
     symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
     if not symbols:
         st.warning("Enter at least one symbol.")
@@ -266,27 +245,25 @@ def render_dataset_builder():
     dfs = {}
 
     if fetch_clicked or use_cached:
-        from phi.data import fetch_and_cache, get_cached_dataset
+        from phi.data import auto_fetch_and_cache, get_cached_dataset
 
         with st.status("Loading data...", expanded=True) as s:
             for sym in symbols:
                 try:
                     if fetch_clicked:
-                        _api_key = {
-                            "finnhub":  os.getenv("FINNHUB_API_KEY"),
-                            "stockdata": os.getenv("STOCKDATA_API_KEY"),
-                            "massive":  os.getenv("MASSIVE_API_KEY"),
-                        }.get(vendor_key, os.getenv("AV_API_KEY"))
-                        df = fetch_and_cache(
-                            vendor_key, sym, timeframe,
-                            str(start_d), str(end_d),
-                            api_key=_api_key,
+                        df, vendor_used = auto_fetch_and_cache(
+                            sym, timeframe, str(start_d), str(end_d)
                         )
+                        s.write(f"{sym}: fetched {len(df):,} bars via {vendor_used}")
                     else:
-                        df = get_cached_dataset(
-                            vendor_key, sym, timeframe,
-                            str(start_d), str(end_d),
-                        )
+                        # Try each vendor cache in priority order
+                        df = None
+                        for _v in ("massive", "finnhub", "yfinance", "alphavantage", "stockdata"):
+                            df = get_cached_dataset(_v, sym, timeframe, str(start_d), str(end_d))
+                            if df is not None and not df.empty:
+                                break
+                        if df is None or df.empty:
+                            raise ValueError("No cached data — click 'Fetch & Cache Data'")
                     if df is not None and not df.empty:
                         dfs[sym] = df
                 except Exception as e:
@@ -299,14 +276,14 @@ def render_dataset_builder():
                     "start": datetime.combine(start_d, datetime.min.time()),
                     "end": datetime.combine(end_d, datetime.min.time()),
                     "timeframe": timeframe,
-                    "vendor": vendor_key,
+                    "vendor": "auto",
                     "initial_capital": float(initial_capital),
                     "benchmark": symbols[0],
                 }
-                s.update(label=f"Cached {sum(len(d) for d in dfs.values()):,} bars", state="complete")
+                s.update(label=f"Ready — {sum(len(d) for d in dfs.values()):,} bars", state="complete")
                 dataset_ready = True
             else:
-                s.update(label="No data", state="error")
+                s.update(label="No data loaded", state="error")
 
     if st.session_state.get("workbench_dataset"):
         dfs = st.session_state["workbench_dataset"]
@@ -704,29 +681,216 @@ def render_cache_manager():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# AI Backtest Agent UI
+# ─────────────────────────────────────────────────────────────────────────────
+def render_ai_agent():
+    """
+    AI Backtest Agent tab.
+
+    Runs every strategy with multiple parameter sets, ranks results, sends
+    them to Claude for analysis, and writes the winning configuration to
+    data_cache/learned_params/{SYMBOL}_{TF}.json so the active trading
+    agent can load it on startup.
+    """
+    st.markdown("## AI Backtest Agent")
+    st.caption(
+        "Set a symbol and date range — the agent tests every built-in strategy, "
+        "ranks them, and asks Claude to distill the lessons into a live trading config."
+    )
+
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+    with col1:
+        symbol = st.text_input("Symbol", value="SPY", key="ai_symbol").strip().upper()
+    with col2:
+        start_d = st.date_input("Start", value=date(2022, 1, 1), key="ai_start")
+    with col3:
+        end_d = st.date_input("End", value=date(2024, 12, 31), key="ai_end")
+    with col4:
+        capital = st.number_input(
+            "Capital ($)", value=100_000, min_value=1_000, step=10_000, key="ai_cap"
+        )
+
+    # Show existing learned params for this symbol if any
+    from phi.agents import BacktestAgent
+    agent = BacktestAgent()
+    existing = agent.load_learned_params(symbol)
+    if existing:
+        with st.expander(
+            f"Learned params on file for {symbol} "
+            f"(last run: {existing.get('updated_at', '?')[:10]})",
+            expanded=False,
+        ):
+            best = existing.get("best_run", {})
+            perf = best.get("performance", {})
+            col_a, col_b, col_c, col_d = st.columns(4)
+            col_a.metric("Best Strategy", best.get("name", "—"))
+            col_b.metric("Sharpe", f"{perf.get('sharpe', 0):.2f}")
+            col_c.metric("CAGR", f"{perf.get('cagr', 0)*100:.1f}%")
+            col_d.metric("Max DD", f"{perf.get('max_drawdown', 0)*100:.1f}%")
+            if existing.get("ai_analysis_summary"):
+                st.markdown(existing["ai_analysis_summary"][:400] + "…")
+
+    run_clicked = st.button("Run AI Backtest Agent", type="primary", key="ai_run")
+    if not run_clicked:
+        return
+
+    if not symbol:
+        st.warning("Enter a symbol first.")
+        return
+    if start_d >= end_d:
+        st.error("Start must be before End.")
+        return
+
+    # ── Run the agent with live Streamlit progress ────────────────────────────
+    results_store: dict = {}
+    status_slots: dict = {}         # label → st.status handle
+    metric_slots: dict = {}         # label → st.empty handle
+    progress_bar = st.progress(0.0)
+    total_runs = sum(
+        1 + (1 if name != "Buy & Hold" else 0)
+        for name in ["RSI", "MACD", "Bollinger", "Dual SMA",
+                     "Mean Reversion", "Breakout", "Buy & Hold"]
+    ) + 1  # +1 for Claude
+
+    completed = [0]  # mutable counter for closure
+
+    def on_progress(label: str, status: str, metrics: dict | None = None):
+        if status == "fetching":
+            status_slots[label] = st.status(f"Fetching {symbol} market data…", expanded=False)
+        elif status == "complete" and label == "Data":
+            v = (metrics or {}).get("vendor", "auto")
+            b = (metrics or {}).get("bars", 0)
+            status_slots.get("Data", st.empty()).update(
+                label=f"Data ready — {b:,} bars via {v}", state="complete"
+            )
+        elif status == "running":
+            status_slots[label] = st.status(f"Testing {label}…", expanded=False)
+            metric_slots[label] = st.empty()
+        elif status == "complete" and label != "Data":
+            m = metrics or {}
+            if label == "Claude Analysis":
+                status_slots.get(label, st.empty()).update(
+                    label="Claude analysis complete", state="complete"
+                )
+            elif m.get("status") == "ok":
+                status_slots.get(label, st.empty()).update(
+                    label=(
+                        f"{label} — "
+                        f"Sharpe {m.get('sharpe', 0):.2f}  |  "
+                        f"CAGR {m.get('cagr', 0)*100:.1f}%  |  "
+                        f"MaxDD {m.get('max_drawdown', 0)*100:.1f}%"
+                    ),
+                    state="complete",
+                )
+            else:
+                status_slots.get(label, st.empty()).update(
+                    label=f"{label} — error", state="error"
+                )
+            completed[0] += 1
+            progress_bar.progress(min(completed[0] / total_runs, 1.0))
+        elif status == "error":
+            status_slots.get(label, st.empty()).update(
+                label=f"{label} — failed", state="error"
+            )
+            completed[0] += 1
+            progress_bar.progress(min(completed[0] / total_runs, 1.0))
+
+    try:
+        result = agent.run(
+            symbol=symbol,
+            start=str(start_d),
+            end=str(end_d),
+            capital=float(capital),
+            timeframe="1D",
+            on_progress=on_progress,
+        )
+        results_store.update(result)
+    except Exception as exc:
+        st.error(f"Agent failed: {exc}")
+        return
+
+    progress_bar.progress(1.0)
+
+    # ── Results ───────────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("## Agent Results")
+
+    best = results_store.get("best")
+    if best:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Best Strategy", best["name"])
+        c2.metric("Sharpe Ratio", f"{best.get('sharpe', 0):.2f}")
+        c3.metric("CAGR", f"{best.get('cagr', 0)*100:.1f}%")
+        c4.metric("Max Drawdown", f"{best.get('max_drawdown', 0)*100:.1f}%")
+
+    # All runs table
+    ok_runs = [r for r in results_store.get("runs", []) if r["status"] == "ok"]
+    if ok_runs:
+        ok_runs_sorted = sorted(ok_runs, key=lambda r: r.get("score", 0), reverse=True)
+        df_runs = pd.DataFrame([
+            {
+                "Strategy": r["name"],
+                "Sharpe":   round(r.get("sharpe", 0), 2),
+                "CAGR %":   round(r.get("cagr", 0) * 100, 1),
+                "Max DD %": round(r.get("max_drawdown", 0) * 100, 1),
+                "Return %": round(r.get("total_return", 0) * 100, 1),
+                "Score":    round(r.get("score", 0), 2),
+            }
+            for r in ok_runs_sorted
+        ])
+        st.dataframe(df_runs, use_container_width=True, hide_index=True)
+
+    # AI analysis
+    ai_text = results_store.get("ai_analysis", "")
+    if ai_text:
+        with st.expander("Claude's Analysis & Lessons", expanded=True):
+            st.markdown(ai_text)
+
+    # Learned params saved confirmation
+    lp = results_store.get("learned_params_path", "")
+    if lp:
+        st.success(
+            f"Learned parameters saved to `{lp}`. "
+            "The active trading agent will load these on its next run."
+        )
+        ai_params = results_store.get("ai_params", {})
+        if ai_params:
+            with st.expander("Recommended live trading config (from Claude)"):
+                st.json(ai_params)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 def main():
     st.set_page_config(page_title="Phi-nance Live Workbench", page_icon="📊", layout="wide")
 
     st.title("Phi-nance Live Backtest Workbench")
-    st.caption("Fetch → Select → Blend → PhiAI → Run — Reproducible. Cached. Dark.")
 
-    config = render_dataset_builder()
-    indicators = render_indicator_selection()
-    blend_method = "weighted_sum"
-    blend_weights = {}
-    if len(indicators) >= 2:
-        blend_method, blend_weights = render_blending(indicators)
-    render_phiai()
-    bt_controls = render_backtest_controls(config) if config else {}
+    tab_agent, tab_manual, tab_hist, tab_cache = st.tabs([
+        "AI Backtest Agent",
+        "Manual Workbench",
+        "Run History",
+        "Cache",
+    ])
 
-    render_run_and_results(config, indicators, blend_method, blend_weights)
+    with tab_agent:
+        render_ai_agent()
 
-    st.markdown("---")
-    tab_hist, tab_cache = st.tabs(["Run History", "Cache Manager"])
+    with tab_manual:
+        config = render_dataset_builder()
+        indicators = render_indicator_selection()
+        blend_method = "weighted_sum"
+        blend_weights = {}
+        if len(indicators) >= 2:
+            blend_method, blend_weights = render_blending(indicators)
+        render_phiai()
+        render_backtest_controls(config) if config else {}
+        render_run_and_results(config, indicators, blend_method, blend_weights)
+
     with tab_hist:
         render_run_history()
+
     with tab_cache:
         render_cache_manager()
 
