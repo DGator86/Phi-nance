@@ -128,8 +128,9 @@ def _run_backtest(strategy_class, params: dict, config: dict):
     if df is None or df.empty:
         # Auto-fetch if not cached (yfinance always works, no key needed)
         _api_key = {
-            "finnhub": os.getenv("FINNHUB_API_KEY"),
+            "finnhub":  os.getenv("FINNHUB_API_KEY"),
             "stockdata": os.getenv("STOCKDATA_API_KEY"),
+            "massive":  os.getenv("MASSIVE_API_KEY"),
         }.get(vendor, os.getenv("AV_API_KEY"))
         try:
             df = fetch_and_cache(vendor, symbol, tf, str(start.date()), str(end.date()), api_key=_api_key)
@@ -220,12 +221,13 @@ def render_dataset_builder():
             "Data Vendor",
             [
                 "yFinance (free)",
+                "Massive (free, unlimited delayed)",
                 "Finnhub (free, 60 req/min)",
                 "StockData.org (free, ~100 req/day)",
                 "Alpha Vantage (25 req/day)",
             ],
             key="ds_vendor",
-            help="yFinance needs no API key. Finnhub/StockData require keys in .env.",
+            help="yFinance needs no API key. Massive (ex-Polygon) has no rate limit on free tier.",
         )
     with col_cap:
         initial_capital = st.number_input(
@@ -249,6 +251,7 @@ def render_dataset_builder():
 
     _VENDOR_KEY_MAP = {
         "yfinance (free)": "yfinance",
+        "massive (free, unlimited delayed)": "massive",
         "finnhub (free, 60 req/min)": "finnhub",
         "stockdata.org (free, ~100 req/day)": "stockdata",
         "alpha vantage (25 req/day)": "alphavantage",
@@ -270,8 +273,9 @@ def render_dataset_builder():
                 try:
                     if fetch_clicked:
                         _api_key = {
-                            "finnhub": os.getenv("FINNHUB_API_KEY"),
+                            "finnhub":  os.getenv("FINNHUB_API_KEY"),
                             "stockdata": os.getenv("STOCKDATA_API_KEY"),
+                            "massive":  os.getenv("MASSIVE_API_KEY"),
                         }.get(vendor_key, os.getenv("AV_API_KEY"))
                         df = fetch_and_cache(
                             vendor_key, sym, timeframe,

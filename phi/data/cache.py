@@ -147,6 +147,50 @@ def _fetch_yfinance(symbol: str, timeframe: str, start_s: str, end_s: str) -> pd
     return df
 
 
+def _fetch_massive(symbol: str, timeframe: str, start_s: str, end_s: str, api_key: str) -> pd.DataFrame:
+    """Fetch OHLCV from Massive.com (formerly Polygon.io, rebranded Oct 2025).
+    Uses the v2 aggregates REST endpoint directly with requests.
+    Handles next_url pagination automatically.
+    Free tier: unlimited calls, 15-min delayed data.
+    """
+    import requests
+
+    tf_map = {
+        "1D":  ("day",    1),
+        "4H":  ("hour",   4),
+        "1H":  ("hour",   1),
+        "15m": ("minute", 15),
+        "5m":  ("minute", 5),
+        "1m":  ("minute", 1),
+    }
+    timespan, multiplier = tf_map.get(timeframe, ("day", 1))
+
+    url = (
+        f"https://api.massive.com/v2/aggs/ticker/{symbol}/range"
+        f"/{multiplier}/{timespan}/{start_s}/{end_s}"
+    )
+    params = {"adjusted": "true", "sort": "asc", "limit": 50000, "apiKey": api_key}
+    rows = []
+
+    while url:
+        resp = requests.get(url, params=params, timeout=30)
+        data = resp.json()
+        status = data.get("status", "")
+        if status not in ("OK", "DELAYED"):
+            raise ValueError(f"Massive: {data.get('status', 'error')} — {data.get('error', data.get('message', ''))}")
+        rows.extend(data.get("results", []))
+        url = data.get("next_url")
+        params = {"apiKey": api_key}  # next_url already has other params baked in
+
+    if not rows:
+        raise ValueError(f"Massive: no data for {symbol}")
+
+    df = pd.DataFrame(rows).rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume", "t": "ts"})
+    df.index = pd.to_datetime(df["ts"], unit="ms")
+    df.index.name = "datetime"
+    return df[["open", "high", "low", "close", "volume"]].sort_index()
+
+
 def _fetch_stockdata(symbol: str, start_s: str, end_s: str, api_key: str) -> pd.DataFrame:
     """Fetch EOD OHLCV from StockData.org (free: ~100 req/day, 1yr history).
     Paginates automatically — 50 records per page.
@@ -279,8 +323,14 @@ def fetch_and_cache(
             raise ValueError("STOCKDATA_API_KEY not set — add it to .env")
         df = _fetch_stockdata(symbol, start_s, end_s, key)
 
+    elif vendor_l in ("massive", "massivecom", "polygon", "polygonio"):
+        key = api_key or os.getenv("MASSIVE_API_KEY", "")
+        if not key:
+            raise ValueError("MASSIVE_API_KEY not set — add it to .env")
+        df = _fetch_massive(symbol, timeframe, start_s, end_s, key)
+
     else:
-        raise ValueError(f"Unknown vendor: {vendor!r}. Supported: alphavantage, yfinance, finnhub, stockdata")
+        raise ValueError(f"Unknown vendor: {vendor!r}. Supported: alphavantage, yfinance, finnhub, stockdata, massive")
 
     if df is None or df.empty:
         raise ValueError(f"No data returned for {symbol} from {vendor}")
