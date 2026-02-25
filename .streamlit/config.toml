@@ -1,5 +1,5 @@
-# Phi-nance Dashboard — beta/VPS defaults
-# Binds to all interfaces so the app is reachable from other machines.
+# Phi-nance — Live Backtest Workbench
+# Enforced dark purple/orange theme
 
 [server]
 address = "0.0.0.0"
@@ -10,3 +10,11 @@ enableXsrfProtection = false
 [browser]
 gatherUsageStats = false
 serverAddress = "165.245.142.100"
+
+[theme]
+base = "dark"
+primaryColor = "#a855f7"
+backgroundColor = "#0a0a12"
+secondaryBackgroundColor = "#12121e"
+textColor = "#e2e8f0"
+font = "monospace"
