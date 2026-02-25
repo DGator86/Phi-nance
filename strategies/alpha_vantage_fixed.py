@@ -148,9 +148,10 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
                     result = self._fetch_av_csv(url, symbol)
                     if result is None:
                         continue
-                    if result == "PREMIUM":
+                    if isinstance(result, str) and result == "PREMIUM":
                         continue
-                    data = result
+                    if isinstance(result, pd.DataFrame):
+                        data = result
                     break
             else:
                 interval_map = {
@@ -167,7 +168,7 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
                     f"&interval={interval}&outputsize=compact&datatype=csv&apikey={self.config.API_KEY}"
                 )
                 result = self._fetch_av_csv(url, symbol)
-                if result is not None and result != "PREMIUM":
+                if isinstance(result, pd.DataFrame):
                     data = result
 
             if data is None or (isinstance(data, pd.DataFrame) and data.empty):
