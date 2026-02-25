@@ -164,6 +164,93 @@ def _compute_accuracy(strat):
     return compute_prediction_accuracy(strat)
 
 
+def _run_fully_automated(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    capital: float,
+    use_ollama: bool,
+    ollama_host: str,
+):
+    """One-shot: pipeline + backtest. Fully automated."""
+    progress = st.progress(0, text="Fully automated: starting... 0%")
+    result_holder = [None]
+    exc_holder = [None]
+
+    def run():
+        try:
+            # pylint: disable=import-outside-toplevel
+            from phi.phiai.auto_pipeline import run_fully_automated as run_pipeline
+
+            progress.progress(0.1, text="Fetching data... 10%")
+            cfg, indicators, blend_method, explanation = run_pipeline(
+                symbol=symbol,
+                start_date=start_date,
+                end_date=end_date,
+                initial_capital=capital,
+                ollama_host=ollama_host,
+                use_ollama=use_ollama,
+            )
+
+            progress.progress(0.5, text="Running backtest... 50%")
+
+            use_blended = len(indicators) >= 2
+            if use_blended:
+                strat_cls = _load_strategy(
+                    "strategies.blended_workbench_strategy.BlendedWorkbenchStrategy"
+                )
+                params = {
+                    "symbol": symbol,
+                    "indicators": indicators,
+                    "blend_method": blend_method,
+                    "blend_weights": {k: 1.0 / len(indicators) for k in indicators},
+                    "signal_threshold": 0.15,
+                    "lookback_bars": 200,
+                }
+            else:
+                first = list(indicators.keys())[0]
+                info = INDICATOR_CATALOG.get(first, {})
+                strat_str = info.get("strategy", "strategies.buy_and_hold.BuyAndHold")
+                strat_cls = _load_strategy(strat_str)
+                p_defaults = {k: default for k, (_, _, default) in info.get("params", {}).items()}
+                params = {**p_defaults, **indicators[first].get("params", {})}
+                params["symbol"] = symbol
+
+            results, strat = _run_backtest(strat_cls, params, cfg)
+            sc = _compute_accuracy(strat) if hasattr(strat, "prediction_log") else {}
+            result_holder[0] = (cfg, results, strat, indicators, blend_method, sc, explanation)
+        except Exception as e:
+            exc_holder[0] = e
+
+    th = threading.Thread(target=run)
+    th.start()
+    pct = 10
+    start_t = time.time()
+    while th.is_alive():
+        time.sleep(0.4)
+        elapsed = time.time() - start_t
+        pct = min(95, 10 + int(elapsed * 1.2))
+        progress.progress(pct / 100, text=f"Fully automated... {pct}%")
+
+    if exc_holder[0]:
+        progress.empty()
+        st.error(str(exc_holder[0]))
+        st.exception(exc_holder[0])
+        return
+
+    progress.progress(1.0, text="Complete — 100%")
+    time.sleep(0.5)
+    progress.empty()
+
+    cfg, results, strat, indicators, blend_method, sc, explanation = result_holder[0]
+    blend_weights = {k: 1.0 / len(indicators) for k in indicators}
+
+    with st.expander("AI decisions", expanded=True):
+        st.text(explanation)
+
+    _display_results(cfg, results, strat, indicators, blend_method, blend_weights, sc)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 1 — Dataset Builder
 # ─────────────────────────────────────────────────────────────────────────────
@@ -507,7 +594,7 @@ def render_run_and_results(
             elif (phiai_res := phiai_result[0]) is not None:
                 assert isinstance(phiai_res, (list, tuple))
                 if len(phiai_res) == 2:
-                    # pylint: disable=unbalanced-tuple-unpacking
+                    # pylint: disable=unpacking-non-sequence
                     indicators_to_use, phiai_explanation = phiai_res
                     st.session_state["phiai_explanation"] = phiai_explanation
             phiai_progress.progress(1.0, text="PhiAI complete — 100%")
@@ -633,7 +720,7 @@ def render_run_and_results(
             def run_bt():
                 try:
                     result_holder[0] = _run_backtest(strat_cls, params, config)
-                except Exception as e:  # pylint: disable=broad-exception-caught
+                except Exception as e:  # pylint: disable=broad-except
                     exc_holder[0] = e
 
             th = threading.Thread(target=run_bt)
@@ -657,7 +744,7 @@ def render_run_and_results(
             if (res_h := result_holder[0]) is not None:
                 assert isinstance(res_h, (list, tuple))
                 if len(res_h) == 2:
-                    # pylint: disable=unbalanced-tuple-unpacking
+                    # pylint: disable=unpacking-non-sequence
                     results, strat = res_h
                 progress.progress(
                     1.0, text="Complete — 100%"
@@ -751,7 +838,9 @@ def _display_results(
             f"{dd:.1%}" if isinstance(dd, (int, float)) else "—"
         )
         acc = sc.get('accuracy', 0)
-        acc_text = f"{acc:.1%}" if sc and isinstance(acc, (int, float)) else "—"
+        acc_text = (
+            f"{acc:.1%}" if sc and isinstance(acc, (int, float)) else "—"
+        )
         st.metric("Direction Accuracy", acc_text)
     with tab_curve:
         if pv and len(pv) > 1:
@@ -832,20 +921,32 @@ def render_ai_agents():
             if ok:
                 st.success("Ollama is running")
             else:
-                st.error("Ollama not reachable. Install from ollama.com and run it.")
+                st.error(
+                    "Ollama not reachable. Install from ollama.com and run it."
+                )
     with col_list:
         if st.button("List models"):
             # pylint: disable=import-outside-toplevel
             from phi.agents import list_ollama_models
             models = list_ollama_models(host)
             if models:
-                names = [m.get("name", "").split(":")[0] for m in models if m.get("name")]
+                names = [
+                    m.get("name", "").split(":")[0]
+                    for m in models if m.get("name")
+                ]
                 st.session_state["ollama_models"] = list(dict.fromkeys(names))
-                st.success(f"Found {len(st.session_state['ollama_models'])} model(s)")
+                st.success(
+                    f"Found {len(st.session_state['ollama_models'])} model(s)"
+                )
             else:
-                st.warning("No models or Ollama not running. Run: ollama pull llama3.2")
+                msg = (
+                    "No models or Ollama not running. "
+                    "Run: ollama pull llama3.2"
+                )
+                st.warning(msg)
 
-    model_list = st.session_state.get("ollama_models", ["llama3.2", "0xroyce/plutus"])
+    m_def = ["llama3.2", "0xroyce/plutus"]
+    model_list = st.session_state.get("ollama_models", m_def)
     model = st.selectbox(
         "Model",
         options=model_list,
@@ -856,7 +957,10 @@ def render_ai_agents():
 
     prompt = st.text_area(
         "Ask AI (regime, strategy, indicators, etc.)",
-        placeholder="e.g. What does RSI oversold mean? When to use regime-weighted blending?",
+        placeholder=(
+            "e.g. What does RSI oversold mean? "
+            "When to use regime-weighted blending?"
+        ),
         key="ollama_prompt",
         height=80,
     )
@@ -867,7 +971,10 @@ def render_ai_agents():
                 agent = OllamaAgent(model=model, host=host)
                 reply = agent.chat(
                     prompt,
-                    system="You are a quantitative trading assistant. Be concise.",
+                    system=(
+                        "You are a quantitative trading assistant. "
+                        "Be concise."
+                    ),
                 )
                 st.markdown("**Reply:**")
                 st.markdown(reply)
@@ -924,6 +1031,35 @@ def main():
         "Fetch → Select → Blend → PhiAI → Run — Reproducible. Cached. Dark."
     )
 
+    # ── Fully Automated (one-click) ─────────────────────────────────────────
+    with st.expander("⚡ Run Fully Automated", expanded=True):
+        st.caption(
+            "One click: fetch data → AI picks indicators → tune params → run backtest. "
+            "Uses Ollama when available for smarter selection."
+        )
+        fa_col1, fa_col2, fa_col3 = st.columns(3)
+        with fa_col1:
+            fa_sym = st.text_input("Symbol", value="SPY", key="fa_sym")
+            fa_start = st.date_input("Start", value=date(2020, 1, 1), key="fa_start")
+        with fa_col2:
+            fa_end = st.date_input("End", value=date(2024, 12, 31), key="fa_end")
+            fa_cap = st.number_input("Capital ($)", value=100_000, min_value=1000, key="fa_cap")
+        with fa_col3:
+            fa_ollama = st.checkbox("Use Ollama for AI selection", value=True, key="fa_ollama")
+            fa_host = st.text_input("Ollama host", value="http://localhost:11434", key="fa_host")
+
+        if st.button("Run Fully Automated", type="primary", key="fa_run"):
+            _run_fully_automated(
+                symbol=fa_sym or "SPY",
+                start_date=str(fa_start),
+                end_date=str(fa_end),
+                capital=fa_cap,
+                use_ollama=fa_ollama,
+                ollama_host=fa_host,
+            )
+
+    st.markdown("---")
+    st.markdown("**Or configure step-by-step:**")
     config = render_dataset_builder()
     indicators = render_indicator_selection()
     blend_method = "weighted_sum"
