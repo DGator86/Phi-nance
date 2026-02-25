@@ -58,6 +58,13 @@ python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budg
 | Live Workbench | `app_streamlit/live_workbench.py` |
 | Architecture | `Architecture.md` |
 
+
+## External Ecosystem Notes
+
+A curated landscape of external options/data projects (with recommended integration order for Phi-nance) is maintained in:
+
+- `docs/external-options-data-landscape.md`
+
 ---
 
 ## Dependencies
