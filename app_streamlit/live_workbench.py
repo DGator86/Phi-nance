@@ -157,7 +157,7 @@ def render_dataset_builder():
     with col_tf:
         timeframe = st.selectbox("Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf")
     with col_vendor:
-        vendor = st.selectbox("Data Vendor", ["Alpha Vantage"], key="ds_vendor")
+        vendor = st.selectbox("Data Vendor", ["Alpha Vantage", "yfinance", "Binance Public"], key="ds_vendor")
     with col_cap:
         initial_capital = st.number_input(
             "Initial Capital ($)",
@@ -178,7 +178,8 @@ def render_dataset_builder():
     with col_use:
         use_cached = st.button("Use Cached Data", key="ds_use")
 
-    vendor_key = "alphavantage"
+    vendor_map = {"Alpha Vantage": "alphavantage", "yfinance": "yfinance", "Binance Public": "binance_public"}
+    vendor_key = vendor_map.get(vendor, "alphavantage")
     symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
     if not symbols:
         st.warning("Enter at least one symbol.")
@@ -400,11 +401,11 @@ def render_run_and_results(config: dict, indicators: dict, blend_method: str, bl
                         ohlcv = dfs.get(sym)
                         if ohlcv is None:
                             from phi.data import get_cached_dataset
-                            ohlcv = get_cached_dataset("alphavantage", sym, "1D",
+                            ohlcv = get_cached_dataset(config.get("vendor", "alphavantage"), sym, "1D",
                                                        str(config["start"].date()), str(config["end"].date()))
                         if ohlcv is None:
                             from phi.data import fetch_and_cache
-                            ohlcv = fetch_and_cache("alphavantage", sym, "1D",
+                            ohlcv = fetch_and_cache(config.get("vendor", "alphavantage"), sym, "1D",
                                                     str(config["start"].date()), str(config["end"].date()))
                         if ohlcv is None or ohlcv.empty:
                             raise ValueError("No data for options backtest. Fetch data first.")
@@ -412,6 +413,7 @@ def render_run_and_results(config: dict, indicators: dict, blend_method: str, bl
                         from phi.options import run_options_backtest
                         opt_result[0] = run_options_backtest(
                             ohlcv,
+                            symbol=sym,
                             strategy_type=bt_opts.get("strategy_type", "long_call"),
                             initial_capital=config.get("initial_capital", 100_000),
                             position_pct=0.1,
@@ -510,12 +512,27 @@ def render_run_and_results(config: dict, indicators: dict, blend_method: str, bl
             st.exception(e)
 
 
+def _extract_scalar(val):
+    """Extract a scalar float from a value that may be a dict (lumibot wraps some metrics)."""
+    if isinstance(val, dict):
+        # lumibot may return {"drawdown": float, ...} or {"value": float, ...}
+        for key in ("drawdown", "value", "max_drawdown", "return"):
+            if key in val:
+                return val[key]
+        # fallback: first numeric value found
+        for v in val.values():
+            if isinstance(v, (int, float)):
+                return v
+        return None
+    return val
+
+
 def _display_results(config, results, strat, indicators, blend_method, blend_weights, sc=None):
     sc = sc or {}
-    tr = getattr(results, "total_return", None) or results.get("total_return")
-    cagr = getattr(results, "cagr", None) or results.get("cagr")
-    dd = getattr(results, "max_drawdown", None) or results.get("max_drawdown")
-    sharpe = getattr(results, "sharpe", None) or results.get("sharpe")
+    tr = _extract_scalar(getattr(results, "total_return", None) or results.get("total_return"))
+    cagr = _extract_scalar(getattr(results, "cagr", None) or results.get("cagr"))
+    dd = _extract_scalar(getattr(results, "max_drawdown", None) or results.get("max_drawdown"))
+    sharpe = _extract_scalar(getattr(results, "sharpe", None) or results.get("sharpe"))
     cap = config.get("initial_capital", 100_000)
     pv = getattr(results, "portfolio_value", None) or results.get("portfolio_value")
     end_cap = pv[-1] if pv and len(pv) else cap
@@ -556,7 +573,10 @@ def _display_results(config, results, strat, indicators, blend_method, blend_wei
         else:
             st.caption("No trade log.")
     with tab_metrics:
-        st.json({"total_return": tr, "cagr": cagr, "max_drawdown": dd, "sharpe": sharpe, "accuracy": sc.get("accuracy")})
+        payload = {"total_return": tr, "cagr": cagr, "max_drawdown": dd, "sharpe": sharpe, "accuracy": sc.get("accuracy")}
+        if isinstance(results, dict) and results.get("options_snapshot"):
+            payload["options_snapshot"] = results.get("options_snapshot")
+        st.json(payload)
 
     from phi.run_config import RunConfig, RunHistory
     run_cfg = RunConfig(

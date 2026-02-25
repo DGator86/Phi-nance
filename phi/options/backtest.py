@@ -2,19 +2,20 @@
 Options Backtest — Simplified Delta-Based Simulation
 
 Simulates long call/put P&L using underlying OHLCV and delta approximation.
-Uses Alpha Vantage options chain when available for entry premium/delta.
+Uses MarketDataApp options chain snapshot when available for delta anchoring.
 """
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 import pandas as pd
+
+from .market_data import get_marketdataapp_snapshot
 
 
 def run_options_backtest(
     ohlcv: pd.DataFrame,
+    symbol: str = "SPY",
     strategy_type: str = "long_call",
     initial_capital: float = 100_000.0,
     position_pct: float = 0.1,
@@ -47,6 +48,13 @@ def run_options_backtest(
         return {"portfolio_value": [initial_capital], "total_return": 0, "cagr": 0, "max_drawdown": 0, "sharpe": 0}
 
     mult = 1.0 if strategy_type == "long_call" else -1.0
+
+    # Try to anchor delta with an actual options chain snapshot from MarketDataApp.
+    spot = float(close[0])
+    snap = get_marketdataapp_snapshot(symbol=symbol, spot_price=spot, option_type="call" if mult > 0 else "put")
+    if snap and snap.delta is not None:
+        delta_assumption = float(abs(snap.delta))
+
     returns = np.diff(close) / close[:-1] * mult
 
     capital = initial_capital
@@ -86,7 +94,7 @@ def run_options_backtest(
     pv_ret = np.diff(pv_series) / np.maximum(pv_series[:-1], 1e-8)
     sharpe = float(np.mean(pv_ret) / np.std(pv_ret) * np.sqrt(252)) if np.std(pv_ret) > 0 else 0
 
-    return {
+    out = {
         "portfolio_value": list(pv_series),
         "total_return": total_return,
         "cagr": cagr,
@@ -94,3 +102,13 @@ def run_options_backtest(
         "sharpe": sharpe,
         "trades": [],
     }
+    if snap:
+        out["options_snapshot"] = {
+            "source": snap.source,
+            "strike": snap.strike,
+            "expiry": snap.expiry,
+            "mid": snap.mid,
+            "delta": snap.delta,
+            "implied_volatility": snap.implied_volatility,
+        }
+    return out
