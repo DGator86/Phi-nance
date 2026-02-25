@@ -19,7 +19,7 @@ from datetime import datetime
 # Suppress Lumibot credential checks by forcing backtesting mode
 os.environ["IS_BACKTESTING"] = "True"
 
-from lumibot.backtesting import AlphaVantageBacktesting
+from strategies.alpha_vantage_fixed import AlphaVantageFixedDataSource as AlphaVantageBacktesting
 from lumibot.strategies.strategy import Strategy
 
 from strategies.prediction_tracker import PredictionMixin

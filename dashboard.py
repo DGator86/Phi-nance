@@ -70,8 +70,8 @@ def _strat(name: str):
 
 def _av_backtesting():
     if "AlphaVantageBacktesting" not in _LUMIBOT_CACHE:
-        from lumibot.backtesting import AlphaVantageBacktesting  # noqa: PLC0415
-        _LUMIBOT_CACHE["AlphaVantageBacktesting"] = AlphaVantageBacktesting
+        from strategies.alpha_vantage_fixed import AlphaVantageFixedDataSource  # noqa: PLC0415
+        _LUMIBOT_CACHE["AlphaVantageBacktesting"] = AlphaVantageFixedDataSource
     return _LUMIBOT_CACHE["AlphaVantageBacktesting"]
 
 

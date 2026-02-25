@@ -86,4 +86,5 @@ def YahooDataBacktesting():
 
 def AlphaVantageBacktesting():
     """Lazy accessor — call as AlphaVantageBacktesting() to get the class."""
-    return _lazy("lumibot.backtesting", "AlphaVantageBacktesting")
+    from strategies.alpha_vantage_fixed import AlphaVantageFixedDataSource
+    return AlphaVantageFixedDataSource

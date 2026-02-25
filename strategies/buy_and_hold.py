@@ -18,7 +18,8 @@ from datetime import datetime
 # Suppress Lumibot credential checks by forcing backtesting mode
 os.environ["IS_BACKTESTING"] = "True"
 
-from lumibot.backtesting import AlphaVantageBacktesting
+from strategies.alpha_vantage_fixed import AlphaVantageFixedDataSource
+AlphaVantageBacktesting = AlphaVantageFixedDataSource
 from lumibot.strategies.strategy import Strategy
 
 from strategies.prediction_tracker import PredictionMixin
@@ -36,11 +37,20 @@ class BuyAndHold(PredictionMixin, Strategy):
     def on_trading_iteration(self):
         symbol = self.parameters["symbol"]
         price = self.get_last_price(symbol)
+        
+        print(f"DEBUG: [Strategy] Symbol: {symbol}, Price: {price}")
+        if hasattr(self, "broker") and hasattr(self.broker, "data_source"):
+             print(f"DEBUG: [Strategy] Datasource class: {self.broker.data_source.__class__}")
+        print(f"DEBUG: [Strategy] Current time: {self.get_datetime()}")
 
         # Prediction: always bullish
         self.record_prediction(symbol, "UP", price)
 
         if self.first_iteration:
+            if price is None:
+                self.log_message(f"WARNING: Price is None for {symbol} at {self.get_datetime()}. Skipping.")
+                return
+
             quantity = int(self.portfolio_value // price)
             if quantity > 0:
                 order = self.create_order(symbol, quantity, "buy")

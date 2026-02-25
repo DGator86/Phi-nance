@@ -18,7 +18,9 @@ from datetime import datetime
 # Suppress Lumibot credential checks by forcing backtesting mode
 os.environ["IS_BACKTESTING"] = "True"
 
-from lumibot.backtesting import AlphaVantageBacktesting, YahooDataBacktesting
+# os.environ["IS_BACKTESTING"] = "True" (moved or kept)
+# Wait, I'll just remove the line.
+from strategies.alpha_vantage_fixed import AlphaVantageFixedDataSource
 
 from strategies.bollinger import BollingerBands
 from strategies.breakout import ChannelBreakout
@@ -77,6 +79,13 @@ def parse_args():
         default="SPY",
         help="Benchmark symbol for comparison (default: SPY)",
     )
+    parser.add_argument(
+        "--timestep",
+        type=str,
+        choices=["minute", "day"],
+        default="minute",
+        help="Backtest timestep (default: minute)",
+    )
     return parser.parse_args()
 
 
@@ -86,13 +95,13 @@ def main():
 
     # Use Alpha Vantage as primary data source
     av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
-    datasource_class = AlphaVantageBacktesting
+    datasource_class = AlphaVantageFixedDataSource
 
     print(f"Running backtest: {args.strategy}")
     print(f"  Period: {args.start.date()} to {args.end.date()}")
     print(f"  Budget: ${args.budget:,.0f}")
     print(f"  Benchmark: {args.benchmark}")
-    print(f"  Data Source: Alpha Vantage")
+    print("  Data Source: Alpha Vantage")
     print()
 
     results, _ = strategy_class.run_backtest(
@@ -102,6 +111,7 @@ def main():
         budget=args.budget,
         benchmark_asset=args.benchmark,
         api_key=av_api_key,
+        timestep=args.timestep,
         show_plot=False,
         show_tearsheet=False,
         save_tearsheet=False,
