@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+_MAX_PARALLEL_INDICATORS = 4
+
 import numpy as np
 import pandas as pd
 
@@ -217,7 +219,7 @@ def run_phiai_optimization(
         )
         return name, cfg, (best_params, best_score)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(indicators), 4) or 1) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(indicators), _MAX_PARALLEL_INDICATORS) or 1) as executor:
         futures = list(executor.map(_tune_one, indicators.items()))
 
     for name, cfg, result in futures:

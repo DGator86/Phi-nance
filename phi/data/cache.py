@@ -19,6 +19,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+_SECONDS_PER_DAY = 86400
+
 import pandas as pd
 import requests
 
@@ -322,7 +324,7 @@ class DataCache:
                         fetched_at_str = meta.get("fetched_at")
                         if fetched_at_str:
                             fetched_at = datetime.fromisoformat(fetched_at_str)
-                            age_days = (datetime.now(timezone.utc).replace(tzinfo=None) - fetched_at).total_seconds() / 86400
+                            age_days = (datetime.now(timezone.utc).replace(tzinfo=None) - fetched_at).total_seconds() / _SECONDS_PER_DAY
                             is_intraday = timeframe != "1D"
                             max_age = 1 if is_intraday else 7
                             if age_days > max_age:
