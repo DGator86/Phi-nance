@@ -525,3 +525,114 @@ class AlphaVantageMCP:
         )
         resp.raise_for_status()
         return resp.json().get("tools", [])
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# yfinance options chain fetcher (free, no API key required)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class YFinanceOptionsFetcher:
+    """
+    Fetch options chains from Yahoo Finance via yfinance.
+
+    Returns the same normalized schema expected by GammaSurface and
+    OptionsEngine (columns: strike, expiration, optiontype, openinterest,
+    impliedvolatility, delta, gamma, theta, vega, bid, ask, last, volume).
+
+    Note: yfinance does not supply live Greeks; delta/gamma/theta/vega are
+    set to 0 unless supplemented by a pricing model.  Implied volatility
+    and all price/volume fields are fully available.
+
+    Usage
+    -----
+    >>> fetcher = YFinanceOptionsFetcher()
+    >>> chain = fetcher.options_chain('AAPL', max_exps=3)
+    # DataFrame with normalized columns
+    """
+
+    def __init__(self, max_exps: int = 4) -> None:
+        self.max_exps = max_exps
+
+    def options_chain(
+        self,
+        symbol:   str,
+        max_exps: Optional[int] = None,
+    ) -> "pd.DataFrame":
+        """
+        Fetch and normalize options chain for *symbol*.
+
+        Parameters
+        ----------
+        symbol   : equity ticker (e.g. 'AAPL')
+        max_exps : max expiry dates to include (default: self.max_exps)
+
+        Returns
+        -------
+        pd.DataFrame with normalized columns, or empty DataFrame on error.
+        """
+        n = max_exps if max_exps is not None else self.max_exps
+        try:
+            import yfinance as yf
+            tk   = yf.Ticker(symbol)
+            exps = tk.options
+        except Exception as exc:
+            logger.warning("YFinanceOptionsFetcher(%s): %s", symbol, exc)
+            return pd.DataFrame()
+
+        if not exps:
+            logger.warning("YFinanceOptionsFetcher(%s): no expirations found", symbol)
+            return pd.DataFrame()
+
+        frames = []
+        for exp in list(exps)[:n]:
+            try:
+                ch = tk.option_chain(exp)
+            except Exception as exc:
+                logger.debug("yfinance option_chain(%s, %s): %s", symbol, exp, exc)
+                continue
+            for df, opt_type in [(ch.calls, "call"), (ch.puts, "put")]:
+                df = df.copy()
+                df["optiontype"] = opt_type
+                df["expiration"] = exp
+                frames.append(df)
+
+        if not frames:
+            return pd.DataFrame()
+
+        combined = pd.concat(frames, ignore_index=True)
+        return self._normalize(combined)
+
+    @staticmethod
+    def _normalize(df: "pd.DataFrame") -> "pd.DataFrame":
+        """Normalize yfinance columns to the standard schema."""
+        df = df.copy()
+        df.columns = [str(c).lower().replace(" ", "").replace("_", "") for c in df.columns]
+
+        rename = {
+            "lastprice":         "last",
+            "impliedvolatility": "impliedvolatility",
+            "openinterest":      "openinterest",
+            "contractsymbol":    "contractid",
+        }
+        df.rename(columns={k: v for k, v in rename.items() if k in df.columns}, inplace=True)
+
+        # yfinance does not provide live Greeks
+        for col in ("delta", "gamma", "theta", "vega"):
+            if col not in df.columns:
+                df[col] = 0.0
+
+        # Fallback: use volume as openinterest if missing
+        if "openinterest" not in df.columns and "volume" in df.columns:
+            df["openinterest"] = df["volume"].fillna(0)
+
+        keep = [
+            "strike", "expiration", "optiontype", "openinterest",
+            "impliedvolatility", "delta", "gamma", "theta", "vega",
+            "bid", "ask", "last", "volume",
+        ]
+        result = df[[c for c in keep if c in df.columns]].copy()
+        for num_col in ("strike", "openinterest", "impliedvolatility",
+                        "delta", "gamma", "theta", "vega", "bid", "ask", "last", "volume"):
+            if num_col in result.columns:
+                result[num_col] = pd.to_numeric(result[num_col], errors="coerce").fillna(0.0)
+        return result
