@@ -558,21 +558,21 @@ def render_run_and_results(
         phiai_explanation = ""
 
         # PhiAI optimization when enabled
-        if phiai_full and st.session_state.get("workbench_dataset"):
+        workbench_data = st.session_state.get("workbench_dataset") or {}
+        if phiai_full and workbench_data:
             phiai_progress = st.progress(0, text="PhiAI optimizing... 0%")
             phiai_result = [None]
             phiai_exc = [None]
+            _sym = config["symbols"][0]
+            _ohlcv = workbench_data.get(_sym)
 
             def run_phiai():
                 try:
-                    dfs = st.session_state["workbench_dataset"]
-                    sym = config["symbols"][0]
-                    ohlcv = dfs.get(sym)
-                    if ohlcv is not None and len(ohlcv) > 100:
+                    if _ohlcv is not None and len(_ohlcv) > 100:
                         # pylint: disable=import-outside-toplevel
                         from phi.phiai import run_phiai_optimization
                         phiai_result[0] = run_phiai_optimization(
-                            ohlcv, indicators_to_use, max_iter_per_indicator=15
+                            _ohlcv, indicators_to_use, max_iter_per_indicator=15
                         )
                 except Exception as ex:  # pylint: disable=broad-except
                     phiai_exc[0] = ex
