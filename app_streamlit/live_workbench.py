@@ -109,6 +109,8 @@ def _av_datasource():
 
 def _run_backtest(strategy_class, params: dict, config: dict):
     av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
+    tf = config.get("timeframe", "1D")
+    timestep = "day" if tf == "1D" else "minute"
     results, strat = strategy_class.run_backtest(
         datasource_class=_av_datasource(),
         backtesting_start=config["start"],
@@ -117,6 +119,7 @@ def _run_backtest(strategy_class, params: dict, config: dict):
         benchmark_asset=config.get("benchmark", "SPY"),
         parameters=params,
         api_key=av_api_key,
+        timestep=timestep,
         show_plot=False,
         show_tearsheet=False,
         save_tearsheet=False,

@@ -33,9 +33,9 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
         
         # Extract timestep from kwargs if present (e.g. from run_backtest)
         timestep = kwargs.get("timestep")
-        if timestep:
-            print(f"!!!! AV FIXED INIT setting _timestep={timestep} from kwargs !!!!")
-            self._timestep = timestep
+        self._timestep = timestep if timestep else getattr(
+            self, '_timestep', 'day'
+        )
         
         # Ensure self.config is set (AlphaVantageData.__init__ does this, but being safe)
         if config:
@@ -43,8 +43,6 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
         
         # Initialize an improved data store that accounts for timestep
         self._fixed_data_store = {}
-        
-        print(f"!!!! AV FIXED INIT DONE !!!! api_key={self.config.API_KEY if hasattr(self.config, 'API_KEY') else 'NONE'} _timestep={self._timestep}")
 
     def set_timestep(self, timestep):
         print(f"!!!! AV FIXED set_timestep({timestep}) !!!!")
