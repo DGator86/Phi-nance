@@ -5,5 +5,7 @@ __pycache__/
 *.egg-info/
 .DS_Store
 data/cache/
+data_cache/
+runs/
 logs/
 *.parquet
