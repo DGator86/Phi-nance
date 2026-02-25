@@ -21,7 +21,7 @@ python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budg
 
 ## Live Backtest Workbench
 
-1. **Dataset Builder** — Fetch & cache OHLCV (Alpha Vantage, yfinance for daily)
+1. **Dataset Builder** — Fetch & cache OHLCV (Alpha Vantage, yfinance, Binance Public)
 2. **Indicator Selection** — RSI, MACD, Bollinger, Dual SMA, Mean Reversion, Breakout, Buy & Hold
 3. **Blending Panel** — Weighted Sum, Regime-Weighted, Voting, PhiAI Chooses
 4. **PhiAI Panel** — Full auto mode for indicator/param/blend optimization
@@ -41,7 +41,7 @@ python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budg
 | **UI** | 6-tab dashboard | `app_streamlit/live_workbench.py` — step-by-step Workbench |
 | **Blending** | MFT blender in dashboard | `phi.blending` — Weighted Sum, Voting, Regime-Weighted |
 | **PhiAI** | None | `phi.phiai` — auto_tune_params, PhiAI orchestrator |
-| **Options** | None | `phi.options` — stub for future options backtest |
+| **Options** | None | `phi.options` — delta backtest + optional MarketDataApp snapshot |
 | **Theme** | Default | Dark only, purple (#a855f7) + orange (#f97316) |
 
 ---
@@ -70,3 +70,8 @@ A curated landscape of external options/data projects (with recommended integrat
 ## Dependencies
 
 See `requirements.txt`. Key: lumibot, streamlit, pandas, yfinance, scikit-learn, lightgbm.
+
+
+## Optional API keys
+
+- `MARKETDATAAPP_API_TOKEN`: enables real options-chain snapshots in options mode to tune delta assumptions when available.

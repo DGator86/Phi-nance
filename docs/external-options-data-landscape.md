@@ -28,3 +28,10 @@ This note summarizes external repositories that can complement Phi-nance's optio
 - Extend `phi/options/` from stub to include normalized options chain schema and caching.
 - Add Streamlit panel cards for options OI/IV visualizations inspired by external projects.
 - Keep all third-party integrations optional to preserve current lightweight local workflows.
+
+
+## Current implementation status in Phi-nance
+
+- ✅ Added multi-vendor dataset support in `phi.data.fetch_and_cache` for `alphavantage`, `yfinance` (1D), and `binance_public`.
+- ✅ Added options-chain snapshot integration path from MarketDataApp (env-gated with `MARKETDATAAPP_API_TOKEN`) and wired it into options backtest delta selection.
+- 🚧 Remaining repositories in this note are still roadmap references and not directly integrated yet.
