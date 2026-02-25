@@ -18,17 +18,20 @@ Do this automatically at the end of any session where you modified files. Do not
 
 After pushing, include this in your response:
 
-**Pull & start (local / VPS):**
+**VPS (Linux) — use start.sh or run step-by-step:**
 ```bash
-cd ~/Phi-nance; git pull origin MAIN; source venv/bin/activate; python -m streamlit run app_streamlit/live_workbench.py --server.port 8501 --server.address 0.0.0.0
+cd ~/Phi-nance
+git pull origin MAIN
+source venv/bin/activate
+./start.sh
 ```
+Or one-liner: `cd ~/Phi-nance && git pull origin MAIN && ./start.sh`
 
 **Windows PowerShell:**
 ```powershell
-cd "c:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance"; git pull origin MAIN; python -m streamlit run app_streamlit/live_workbench.py --server.port 8501 --server.address 0.0.0.0
+cd "c:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance"
+git pull origin MAIN
+python -m streamlit run app_streamlit/live_workbench.py --server.port 8501 --server.address 0.0.0.0
 ```
 
-On Windows with venv:
-```powershell
-cd "c:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance"; git pull origin MAIN; .\venv\Scripts\Activate.ps1; python -m streamlit run app_streamlit/live_workbench.py --server.port 8501 --server.address 0.0.0.0
-```
+If `0.0.0.0` causes socket error on VPS, the config already sets it; try: `python -m streamlit run app_streamlit/live_workbench.py --server.port 8501`

@@ -72,7 +72,7 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
             **kwargs
         )
         
-        if data is None or data.empty:
+        if data is None or (isinstance(data, pd.DataFrame) and data.empty):
             return None
 
         # Parse into Bars object
