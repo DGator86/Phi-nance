@@ -1,5 +1,5 @@
 from lumibot.data_sources import AlphaVantageData, DataSourceBacktesting
-from lumibot.entities import Asset, Bars
+from lumibot.entities import Asset
 from lumibot.tools.lumibot_logger import get_logger
 import pandas as pd
 import requests
@@ -15,7 +15,9 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
     A fixed version of AlphaVantageBacktesting that implements the required
     abstract methods for Lumibot backtesting.
     """
-    def __init__(self, datetime_start, datetime_end, config=None, api_key=None, **kwargs):
+    def __init__(
+        self, datetime_start, datetime_end, config=None, api_key=None, **kwargs
+    ):
         # Handle API Key / Config consistency
         if config is None:
             # Create a simple config object if api_key is passed directly
@@ -50,7 +52,10 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
         print(f"!!!! AV FIXED set_timestep({timestep}) !!!!")
         self._timestep = timestep
 
-    def get_historical_prices(self, asset, length, timestep="", timeshift=None, quote=None, exchange=None, include_after_hours=True, **kwargs):
+    def get_historical_prices(
+        self, asset, length, timestep="", timeshift=None, quote=None,
+        exchange=None, include_after_hours=True, **kwargs
+    ):
         """
         Implementation of the abstract method required by DataSource.
         """
@@ -96,9 +101,9 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
                 response = requests.get(url, timeout=30)
                 content = response.text
                 if content.strip().startswith("{"):
-                    import json
                     try:
-                        msg = json.loads(content).get("Information", "") or json.loads(content).get("Note", "")
+                        resp_json = json.loads(content)
+                        msg = resp_json.get("Information", "") or resp_json.get("Note", "")
                     except Exception:
                         msg = content[:120]
                     print(f"!!!! AV FIXED API returned JSON instead of CSV: {content[:100]}... !!!!")
@@ -112,6 +117,7 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
                         delay *= 2
                         continue
                     return None
+                    return None
 
                 df = pd.read_csv(StringIO(content))
                 return df
@@ -121,7 +127,10 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
                     _time.sleep(5)
         return None
 
-    def _pull_source_symbol_bars(self, asset, timestep="minute", timeshift=None, quote=None, exchange=None, include_after_hours=True, **kwargs):
+    def _pull_source_symbol_bars(
+        self, asset, timestep="minute", timeshift=None, quote=None,
+        exchange=None, include_after_hours=True, **kwargs
+    ):
         """
         Override _pull_source_symbol_bars to fix Alpha Vantage API calls and add caching.
         Uses TIME_SERIES_DAILY (free tier) for daily data, with automatic fallback.
