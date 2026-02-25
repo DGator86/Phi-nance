@@ -10,10 +10,25 @@ After making any code or config changes to this project:
 1. **Stage** all modified files: `git add -A` (or specific paths)
 2. **Commit** with a clear message describing the change
 3. **Push** to `origin MAIN`
-
-Example:
-```
-git add -A && git commit -m "Brief description of change" && git push origin MAIN
-```
+4. **Give the user** the pull-and-start master command so they can deploy
 
 Do this automatically at the end of any session where you modified files. Do not ask for permission—just commit and push.
+
+## Master Command to Provide
+
+After pushing, include this in your response:
+
+**Pull & start (local / VPS):**
+```bash
+cd ~/Phi-nance; git pull origin MAIN; source venv/bin/activate; python -m streamlit run app_streamlit/live_workbench.py --server.port 8501 --server.address 0.0.0.0
+```
+
+**Windows PowerShell:**
+```powershell
+cd "c:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance"; git pull origin MAIN; python -m streamlit run app_streamlit/live_workbench.py --server.port 8501 --server.address 0.0.0.0
+```
+
+On Windows with venv:
+```powershell
+cd "c:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance"; git pull origin MAIN; .\venv\Scripts\Activate.ps1; python -m streamlit run app_streamlit/live_workbench.py --server.port 8501 --server.address 0.0.0.0
+```
