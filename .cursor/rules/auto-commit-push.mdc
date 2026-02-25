@@ -1,0 +1,19 @@
+---
+description: Auto-commit and push changes after edits
+alwaysApply: true
+---
+
+# Auto Commit & Push
+
+After making any code or config changes to this project:
+
+1. **Stage** all modified files: `git add -A` (or specific paths)
+2. **Commit** with a clear message describing the change
+3. **Push** to `origin MAIN`
+
+Example:
+```
+git add -A && git commit -m "Brief description of change" && git push origin MAIN
+```
+
+Do this automatically at the end of any session where you modified files. Do not ask for permission—just commit and push.
