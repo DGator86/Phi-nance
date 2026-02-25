@@ -104,21 +104,77 @@ def _load_strategy(module_cls: str):
     return getattr(mod, cls_name)
 
 
-def _av_datasource():
-    from strategies.alpha_vantage_fixed import AlphaVantageFixedDataSource
-    return AlphaVantageFixedDataSource
-
-
 def _run_backtest(strategy_class, params: dict, config: dict):
-    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
+    """
+    Run a Lumibot backtest.
+
+    Prefers PandasDataBacktesting (data from local cache — works offline,
+    no API rate limits).  Falls back to AlphaVantageFixedDataSource only
+    when no cached data is available.
+    """
+    from lumibot.entities import Asset
+
     tf = config.get("timeframe", "1D")
     timestep = "day" if tf == "1D" else "minute"
+    symbol = config["symbols"][0]
+    start = config["start"]
+    end = config["end"]
+    vendor = config.get("vendor", "yfinance")
+
+    # ── Try to load cached OHLCV data first ──────────────────────────────────
+    from phi.data import get_cached_dataset, fetch_and_cache
+    df = get_cached_dataset(vendor, symbol, tf, str(start.date()), str(end.date()))
+
+    if df is None or df.empty:
+        # Auto-fetch if not cached (yfinance always works, no key needed)
+        _api_key = os.getenv("FINNHUB_API_KEY") if vendor == "finnhub" else os.getenv("AV_API_KEY")
+        try:
+            df = fetch_and_cache(vendor, symbol, tf, str(start.date()), str(end.date()), api_key=_api_key)
+        except Exception:
+            df = None
+
+    if df is not None and not df.empty:
+        # Normalise column names to lowercase
+        df.columns = [c.lower() for c in df.columns]
+        df.index = pd.to_datetime(df.index)
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        df = df.sort_index()
+
+        # Build pandas_data dict for PandasDataBacktesting
+        asset = Asset(symbol, asset_type=Asset.AssetTypes.STOCK)
+        try:
+            from lumibot.backtesting import PandasDataBacktesting
+            pandas_data = {asset: {"df": df, "timestep": timestep}}
+            results, strat = strategy_class.run_backtest(
+                datasource_class=PandasDataBacktesting,
+                backtesting_start=start,
+                backtesting_end=end,
+                budget=config["initial_capital"],
+                benchmark_asset=config.get("benchmark", symbol),
+                parameters=params,
+                pandas_data=pandas_data,
+                show_plot=False,
+                show_tearsheet=False,
+                save_tearsheet=False,
+                show_indicators=False,
+                show_progress_bar=False,
+                quiet_logs=True,
+            )
+            return results, strat
+        except Exception as e:
+            # PandasDataBacktesting failed — log and fall through to AV
+            print(f"PandasDataBacktesting failed ({e}), falling back to AV data source")
+
+    # ── Fallback: AlphaVantageFixedDataSource ────────────────────────────────
+    from strategies.alpha_vantage_fixed import AlphaVantageFixedDataSource
+    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
     results, strat = strategy_class.run_backtest(
-        datasource_class=_av_datasource(),
-        backtesting_start=config["start"],
-        backtesting_end=config["end"],
+        datasource_class=AlphaVantageFixedDataSource,
+        backtesting_start=start,
+        backtesting_end=end,
         budget=config["initial_capital"],
-        benchmark_asset=config.get("benchmark", "SPY"),
+        benchmark_asset=config.get("benchmark", symbol),
         parameters=params,
         api_key=av_api_key,
         timestep=timestep,
@@ -157,7 +213,12 @@ def render_dataset_builder():
     with col_tf:
         timeframe = st.selectbox("Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf")
     with col_vendor:
-        vendor = st.selectbox("Data Vendor", ["Alpha Vantage"], key="ds_vendor")
+        vendor = st.selectbox(
+            "Data Vendor",
+            ["yFinance (free)", "Finnhub (free, 60 req/min)", "Alpha Vantage (25 req/day)"],
+            key="ds_vendor",
+            help="yFinance is the most reliable free source for daily data.",
+        )
     with col_cap:
         initial_capital = st.number_input(
             "Initial Capital ($)",
@@ -178,7 +239,12 @@ def render_dataset_builder():
     with col_use:
         use_cached = st.button("Use Cached Data", key="ds_use")
 
-    vendor_key = "alphavantage"
+    _VENDOR_KEY_MAP = {
+        "yfinance (free)": "yfinance",
+        "finnhub (free, 60 req/min)": "finnhub",
+        "alpha vantage (25 req/day)": "alphavantage",
+    }
+    vendor_key = _VENDOR_KEY_MAP.get(vendor.lower(), "yfinance")
     symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
     if not symbols:
         st.warning("Enter at least one symbol.")
@@ -194,9 +260,11 @@ def render_dataset_builder():
             for sym in symbols:
                 try:
                     if fetch_clicked:
+                        _api_key = os.getenv("FINNHUB_API_KEY") if vendor_key == "finnhub" else os.getenv("AV_API_KEY")
                         df = fetch_and_cache(
                             vendor_key, sym, timeframe,
                             str(start_d), str(end_d),
+                            api_key=_api_key,
                         )
                     else:
                         df = get_cached_dataset(

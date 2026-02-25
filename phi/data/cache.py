@@ -129,6 +129,57 @@ class DataCache:
         return results
 
 
+def _fetch_yfinance(symbol: str, timeframe: str, start_s: str, end_s: str) -> pd.DataFrame:
+    """Fetch OHLCV from yfinance and return normalised DataFrame."""
+    import yfinance as yf
+
+    tf_map = {"1D": "1d", "4H": "1h", "1H": "1h", "15m": "15m", "5m": "5m", "1m": "1m"}
+    interval = tf_map.get(timeframe, "1d")
+    tkr = yf.Ticker(symbol)
+    df = tkr.history(start=start_s, end=end_s, interval=interval, auto_adjust=True)
+    if df.empty:
+        raise ValueError(f"yFinance: no data for {symbol}")
+    df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
+    df = df[["open", "high", "low", "close", "volume"]]
+    df.index = pd.to_datetime(df.index)
+    if df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
+    return df
+
+
+def _fetch_finnhub(symbol: str, timeframe: str, start_s: str, end_s: str, api_key: str) -> pd.DataFrame:
+    """Fetch OHLCV from Finnhub REST API. Free tier: 60 req/min."""
+    import requests
+    import time as _time
+
+    res_map = {"1D": "D", "4H": "60", "1H": "60", "15m": "15", "5m": "5", "1m": "1"}
+    resolution = res_map.get(timeframe, "D")
+
+    from_ts = int(pd.Timestamp(start_s).timestamp())
+    to_ts = int(pd.Timestamp(end_s).timestamp())
+
+    url = (
+        f"https://finnhub.io/api/v1/stock/candle"
+        f"?symbol={symbol}&resolution={resolution}"
+        f"&from={from_ts}&to={to_ts}&token={api_key}"
+    )
+    resp = requests.get(url, timeout=20)
+    data = resp.json()
+
+    if data.get("s") != "ok":
+        raise ValueError(f"Finnhub: {data.get('s', 'error')} for {symbol} — check API key or symbol")
+
+    df = pd.DataFrame({
+        "open":   data["o"],
+        "high":   data["h"],
+        "low":    data["l"],
+        "close":  data["c"],
+        "volume": data["v"],
+    }, index=pd.to_datetime(data["t"], unit="s"))
+    df.index.name = "datetime"
+    return df
+
+
 def fetch_and_cache(
     vendor: str,
     symbol: str,
@@ -140,43 +191,47 @@ def fetch_and_cache(
     """
     Fetch OHLCV from vendor and cache. Returns DataFrame.
     Reuses cache if available and fresh.
+    Supported vendors: alphavantage, yfinance, finnhub.
     """
     start_s = str(start)[:10]
     end_s = str(end)[:10]
+    vendor_l = vendor.lower().replace(" ", "").replace("_", "")
     cache = DataCache()
     existing = cache.load(vendor, symbol.upper(), timeframe, start_s, end_s)
     if existing is not None and len(existing) > 0:
         return existing
 
-    if vendor.lower() in ("alphavantage", "alpha_vantage"):
-        # For 1D over long ranges, use yfinance (AV intraday is ~30 days max)
+    if vendor_l in ("alphavantage", "alphavantagefixed"):
+        # For 1D, use yfinance (AV intraday is ~30 days max on free tier)
         if timeframe == "1D":
-            try:
-                import yfinance as yf
-                tkr = yf.Ticker(symbol)
-                df = tkr.history(start=start_s, end=end_s, auto_adjust=True)
-                if df.empty:
-                    raise ValueError(f"No daily data for {symbol}")
-                df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
-                df = df[["open", "high", "low", "close", "volume"]]
-            except Exception as e:
-                raise ValueError(f"Failed to fetch daily data for {symbol}: {e}") from e
+            df = _fetch_yfinance(symbol, timeframe, start_s, end_s)
         else:
             from regime_engine.data_fetcher import AlphaVantageFetcher
-
             av = AlphaVantageFetcher(api_key=api_key)
             interval_map = {"4H": "60min", "1H": "60min", "15m": "15min", "5m": "5min", "1m": "1min"}
             interval = interval_map.get(timeframe, "1min")
-
             raw = av.intraday(symbol, interval=interval, outputsize="full", cache_ttl=0)
             if raw.empty:
                 raise ValueError(f"No data for {symbol}")
             df = raw[(raw.index >= pd.Timestamp(start_s)) & (raw.index <= pd.Timestamp(end_s))]
 
-        cache.save(df, vendor, symbol.upper(), timeframe, start_s, end_s)
-        return df
+    elif vendor_l == "yfinance":
+        df = _fetch_yfinance(symbol, timeframe, start_s, end_s)
+
+    elif vendor_l == "finnhub":
+        key = api_key or os.getenv("FINNHUB_API_KEY", "")
+        if not key:
+            raise ValueError("FINNHUB_API_KEY not set — add it to .env")
+        df = _fetch_finnhub(symbol, timeframe, start_s, end_s, key)
+
     else:
-        raise ValueError(f"Unknown vendor: {vendor}")
+        raise ValueError(f"Unknown vendor: {vendor!r}. Supported: alphavantage, yfinance, finnhub")
+
+    if df is None or df.empty:
+        raise ValueError(f"No data returned for {symbol} from {vendor}")
+
+    cache.save(df, vendor, symbol.upper(), timeframe, start_s, end_s)
+    return df
 
 
 def get_cached_dataset(
