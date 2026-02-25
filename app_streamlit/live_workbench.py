@@ -510,12 +510,27 @@ def render_run_and_results(config: dict, indicators: dict, blend_method: str, bl
             st.exception(e)
 
 
+def _extract_scalar(val):
+    """Extract a scalar float from a value that may be a dict (lumibot wraps some metrics)."""
+    if isinstance(val, dict):
+        # lumibot may return {"drawdown": float, ...} or {"value": float, ...}
+        for key in ("drawdown", "value", "max_drawdown", "return"):
+            if key in val:
+                return val[key]
+        # fallback: first numeric value found
+        for v in val.values():
+            if isinstance(v, (int, float)):
+                return v
+        return None
+    return val
+
+
 def _display_results(config, results, strat, indicators, blend_method, blend_weights, sc=None):
     sc = sc or {}
-    tr = getattr(results, "total_return", None) or results.get("total_return")
-    cagr = getattr(results, "cagr", None) or results.get("cagr")
-    dd = getattr(results, "max_drawdown", None) or results.get("max_drawdown")
-    sharpe = getattr(results, "sharpe", None) or results.get("sharpe")
+    tr = _extract_scalar(getattr(results, "total_return", None) or results.get("total_return"))
+    cagr = _extract_scalar(getattr(results, "cagr", None) or results.get("cagr"))
+    dd = _extract_scalar(getattr(results, "max_drawdown", None) or results.get("max_drawdown"))
+    sharpe = _extract_scalar(getattr(results, "sharpe", None) or results.get("sharpe"))
     cap = config.get("initial_capital", 100_000)
     pv = getattr(results, "portfolio_value", None) or results.get("portfolio_value")
     end_cap = pv[-1] if pv and len(pv) else cap
