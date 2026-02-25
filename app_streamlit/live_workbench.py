@@ -182,7 +182,8 @@ def _run_fully_automated(
             # pylint: disable=import-outside-toplevel
             from phi.phiai.auto_pipeline import run_fully_automated as run_pipeline
 
-            progress.progress(0.1, text="Fetching data... 10%")
+            # NOTE: Do not call progress.progress() here — Streamlit widgets
+            # require the main thread; this runs in a worker thread.
             cfg, indicators, blend_method, explanation = run_pipeline(
                 symbol=symbol,
                 start_date=start_date,
@@ -191,8 +192,6 @@ def _run_fully_automated(
                 ollama_host=ollama_host,
                 use_ollama=use_ollama,
             )
-
-            progress.progress(0.5, text="Running backtest... 50%")
 
             use_blended = len(indicators) >= 2
             if use_blended:
