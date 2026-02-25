@@ -289,7 +289,6 @@ def render_phiai():
     st.markdown("### Step 4 — PhiAI Panel")
     phiai_full = st.toggle("PhiAI Full Auto", value=False, key="phiai_full",
                            help="Auto-enable/disable indicators, tune params, select blend")
-    st.session_state["phiai_full"] = phiai_full
     if phiai_full:
         st.info("PhiAI will optimize indicators, parameters, and blend. Regime-aware adjustments applied.")
         max_ind = st.number_input("Max indicators", 1, 10, 5, key="phiai_max")
