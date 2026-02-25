@@ -19,6 +19,8 @@ Run:
 
 import os
 import sys
+import time
+import threading
 from pathlib import Path
 
 # Ensure project root on path
@@ -349,63 +351,101 @@ def render_run_and_results(config: dict, indicators: dict, blend_method: str, bl
 
         # PhiAI optimization when enabled
         if phiai_full and st.session_state.get("workbench_dataset"):
-            progress = st.progress(0, text="PhiAI optimizing...")
-            try:
-                dfs = st.session_state["workbench_dataset"]
-                sym = config["symbols"][0]
-                ohlcv = dfs.get(sym)
-                if ohlcv is not None and len(ohlcv) > 100:
-                    from phi.phiai import run_phiai_optimization
-                    indicators_to_use, phiai_explanation = run_phiai_optimization(
-                        ohlcv, indicators_to_use, max_iter_per_indicator=15
-                    )
-                    st.session_state["phiai_explanation"] = phiai_explanation
-            except Exception as ex:
-                st.warning(f"PhiAI optimization skipped: {ex}")
-            progress.empty()
+            phiai_progress = st.progress(0, text="PhiAI optimizing... 0%")
+            phiai_result = [None]
+            phiai_exc = [None]
+
+            def run_phiai():
+                try:
+                    dfs = st.session_state["workbench_dataset"]
+                    sym = config["symbols"][0]
+                    ohlcv = dfs.get(sym)
+                    if ohlcv is not None and len(ohlcv) > 100:
+                        from phi.phiai import run_phiai_optimization
+                        phiai_result[0] = run_phiai_optimization(
+                            ohlcv, indicators_to_use, max_iter_per_indicator=15
+                        )
+                except Exception as ex:
+                    phiai_exc[0] = ex
+
+            th_phiai = threading.Thread(target=run_phiai)
+            th_phiai.start()
+            pct = 0
+            start_t = time.time()
+            while th_phiai.is_alive():
+                time.sleep(0.3)
+                elapsed = time.time() - start_t
+                pct = min(95, int(elapsed * 12))  # ~8 sec to 95%
+                phiai_progress.progress(pct / 100, text=f"PhiAI optimizing... {pct}%")
+            if phiai_exc[0]:
+                st.warning(f"PhiAI optimization skipped: {phiai_exc[0]}")
+            elif phiai_result[0]:
+                indicators_to_use, phiai_explanation = phiai_result[0]
+                st.session_state["phiai_explanation"] = phiai_explanation
+            phiai_progress.progress(1.0, text="PhiAI complete — 100%")
+            time.sleep(0.3)
+            phiai_progress.empty()
 
         # Options mode: use phi.options.backtest
         if trading_mode == "options":
-            progress = st.progress(0, text="Running options backtest...")
             try:
-                dfs = st.session_state.get("workbench_dataset", {})
-                sym = config["symbols"][0]
-                ohlcv = dfs.get(sym)
-                if ohlcv is None:
-                    from phi.data import get_cached_dataset
-                    ohlcv = get_cached_dataset("alphavantage", sym, "1D",
-                                               str(config["start"].date()), str(config["end"].date()))
-                if ohlcv is None:
-                    from phi.data import fetch_and_cache
-                    ohlcv = fetch_and_cache("alphavantage", sym, "1D",
-                                            str(config["start"].date()), str(config["end"].date()))
-                if ohlcv is None or ohlcv.empty:
-                    raise ValueError("No data for options backtest. Fetch data first.")
-                bt_opts = st.session_state.get("bt_options_controls", {})
-                from phi.options import run_options_backtest
-                results = run_options_backtest(
-                    ohlcv,
-                    strategy_type=bt_opts.get("strategy_type", "long_call"),
-                    initial_capital=config.get("initial_capital", 100_000),
-                    position_pct=0.1,
-                    exit_profit_pct=bt_opts.get("exit_profit_pct", 0.5),
-                    exit_stop_pct=bt_opts.get("exit_stop_pct", -0.3),
-                )
-                progress.progress(100)
-                progress.empty()
+                opt_progress = st.progress(0, text="Running options backtest... 0%")
+                opt_result = [None]
+                opt_exc = [None]
+
+                def run_opt():
+                    try:
+                        dfs = st.session_state.get("workbench_dataset", {})
+                        sym = config["symbols"][0]
+                        ohlcv = dfs.get(sym)
+                        if ohlcv is None:
+                            from phi.data import get_cached_dataset
+                            ohlcv = get_cached_dataset("alphavantage", sym, "1D",
+                                                       str(config["start"].date()), str(config["end"].date()))
+                        if ohlcv is None:
+                            from phi.data import fetch_and_cache
+                            ohlcv = fetch_and_cache("alphavantage", sym, "1D",
+                                                    str(config["start"].date()), str(config["end"].date()))
+                        if ohlcv is None or ohlcv.empty:
+                            raise ValueError("No data for options backtest. Fetch data first.")
+                        bt_opts = st.session_state.get("bt_options_controls", {})
+                        from phi.options import run_options_backtest
+                        opt_result[0] = run_options_backtest(
+                            ohlcv,
+                            strategy_type=bt_opts.get("strategy_type", "long_call"),
+                            initial_capital=config.get("initial_capital", 100_000),
+                            position_pct=0.1,
+                            exit_profit_pct=bt_opts.get("exit_profit_pct", 0.5),
+                            exit_stop_pct=bt_opts.get("exit_stop_pct", -0.3),
+                        )
+                    except Exception as e:
+                        opt_exc[0] = e
+
+                th_opt = threading.Thread(target=run_opt)
+                th_opt.start()
+                pct = 0
+                start_t = time.time()
+                while th_opt.is_alive():
+                    time.sleep(0.2)
+                    elapsed = time.time() - start_t
+                    pct = min(95, int(elapsed * 25))  # ramps quickly
+                    opt_progress.progress(pct / 100, text=f"Running options backtest... {pct}%")
+                if opt_exc[0]:
+                    opt_progress.empty()
+                    raise opt_exc[0]
+                results = opt_result[0]
+                opt_progress.progress(1.0, text="Complete — 100%")
+                time.sleep(0.3)
+                opt_progress.empty()
                 _display_results(config, results, None, indicators_to_use, blend_method, blend_weights)
             except Exception as e:
-                progress.empty()
                 st.error(str(e))
                 st.exception(e)
             return
 
         # Equities: use blended or single strategy
-        progress = st.progress(0, text="Loading data...")
         use_blended = len(indicators_to_use) >= 2
-        progress.progress(20, text="Computing indicators..." if use_blended else "Running strategy...")
-        progress.progress(40, text="Applying blend..." if use_blended else "")
-        progress.progress(60, text="Simulating trades...")
+        progress = st.progress(0, text="Preparing backtest... 0%")
 
         try:
             if use_blended:
@@ -427,8 +467,34 @@ def render_run_and_results(config: dict, indicators: dict, blend_method: str, bl
                              for k, v in indicators_to_use[first_name].get("params", {}).items()}}
                 params["symbol"] = config["symbols"][0]
 
-            results, strat = _run_backtest(strat_cls, params, config)
-            progress.progress(100, text="Complete")
+            # Run backtest in thread with live progress %
+            result_holder = [None]
+            exc_holder = [None]
+
+            def run_bt():
+                try:
+                    result_holder[0] = _run_backtest(strat_cls, params, config)
+                except Exception as e:
+                    exc_holder[0] = e
+
+            th = threading.Thread(target=run_bt)
+            th.start()
+
+            pct = 5
+            start_t = time.time()
+            while th.is_alive():
+                time.sleep(0.4)
+                elapsed = time.time() - start_t
+                # Estimate progress: ramp 5% -> 95% over ~60 seconds
+                pct = min(95, 5 + int(elapsed * 1.5))
+                progress.progress(pct / 100, text=f"Running backtest... {pct}%")
+
+            if exc_holder[0]:
+                raise exc_holder[0]
+
+            results, strat = result_holder[0]
+            progress.progress(1.0, text="Complete — 100%")
+            time.sleep(0.5)
             progress.empty()
 
             sc = _compute_accuracy(strat) if hasattr(strat, "prediction_log") else {}
