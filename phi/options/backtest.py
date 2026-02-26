@@ -13,6 +13,44 @@ import pandas as pd
 from .market_data import get_marketdataapp_snapshot
 
 
+def compute_greeks(
+    delta: float,
+    gamma: float = None,
+    theta: float = None,
+    vega: float = None,
+) -> dict:
+    """Return a dictionary of option Greeks.
+
+    Parameters
+    ----------
+    delta : float
+        Rate of change of option price with respect to underlying price.
+        Positive for calls (0 to 1), negative for puts (-1 to 0).
+    gamma : float, optional
+        Rate of change of delta with respect to underlying price.
+    theta : float, optional
+        Time decay — daily dollar decay of the option value.
+    vega : float, optional
+        Sensitivity to 1 percentage-point change in implied volatility.
+
+    Returns
+    -------
+    dict
+        ``{"delta": delta, "gamma": gamma, "theta": theta, "vega": vega}``
+
+    Examples
+    --------
+    >>> compute_greeks(0.5, gamma=0.05, theta=-0.02, vega=0.10)
+    {'delta': 0.5, 'gamma': 0.05, 'theta': -0.02, 'vega': 0.10}
+    """
+    return {
+        "delta": delta,
+        "gamma": gamma,
+        "theta": theta,
+        "vega": vega,
+    }
+
+
 def run_options_backtest(
     ohlcv: pd.DataFrame,
     symbol: str = "SPY",

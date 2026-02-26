@@ -1,5 +1,15 @@
 """
 Indicator Blending Engine
+=========================
+
+Provides :func:`blend_signals`, which combines multiple indicator signal columns
+into a single composite signal using one of four methods:
+
+- ``weighted_sum`` — linear weighted average of all indicator signals.
+- ``voting`` — majority-vote across indicators (each votes -1, 0, or +1).
+- ``regime_weighted`` — weights boosted/penalised per market regime using
+  ``REGIME_INDICATOR_BOOST`` (vectorized implementation).
+- ``phiai_chooses`` — placeholder; falls back to ``weighted_sum``.
 """
 
 from __future__ import annotations
@@ -76,28 +86,26 @@ def blend_signals(
         return majority.clip(-1, 1)
 
     if method == "regime_weighted" and regime_probs is not None:
-        # Scale weights by regime appropriateness per bar
+        # Vectorized: align regime_probs to signals index, compute per-indicator
+        # adjusted weights using numpy, then compute weighted sum in one pass.
         rp_aligned = regime_probs.reindex(signals.index).ffill().bfill()
-        out = pd.Series(0.0, index=signals.index)
-        for idx in signals.index:
-            if idx not in rp_aligned.index or rp_aligned.loc[idx].isna().all():
-                rp = pd.Series(1.0 / 8, index=REGIME_BINS)
-            else:
-                rp = rp_aligned.loc[idx]
-            total_w = 0.0
-            weighted_sum = 0.0
-            for c in cols:
-                base_w = w.get(c, 1.0 / len(cols))
-                boost = 1.0
-                for regime, prob in rp.items():
-                    if regime in REGIME_INDICATOR_BOOST.get(c, {}):
-                        boost += REGIME_INDICATOR_BOOST[c][regime] * prob
-                adj_w = base_w * max(0.3, boost)
-                total_w += adj_w
-                s_val = signals.loc[idx, c] if pd.notna(signals.loc[idx, c]) else 0.0
-                weighted_sum += s_val * adj_w
-            if total_w > 0:
-                out.loc[idx] = weighted_sum / total_w
+        # Fill any remaining NaNs with uniform distribution
+        rp_aligned = rp_aligned.fillna(1.0 / max(len(rp_aligned.columns), 1))
+
+        adj_weights = pd.DataFrame(index=signals.index, columns=cols, dtype=float)
+        for c in cols:
+            base_w = w.get(c, 1.0 / len(cols))
+            boost_map = REGIME_INDICATOR_BOOST.get(c, {})
+            # boost = 1 + sum(boost_factor * regime_prob) for each regime
+            boost = pd.Series(1.0, index=signals.index)
+            for regime, factor in boost_map.items():
+                if regime in rp_aligned.columns:
+                    boost = boost + rp_aligned[regime] * factor
+            adj_weights[c] = base_w * boost.clip(lower=0.3)
+
+        total_w = adj_weights.sum(axis=1).replace(0, 1.0)
+        filled = signals[cols].fillna(0.0)
+        out = (filled * adj_weights).sum(axis=1) / total_w
         return out.fillna(0)
 
     if method == "phiai_chooses":

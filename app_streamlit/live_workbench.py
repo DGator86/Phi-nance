@@ -306,6 +306,39 @@ def render_dataset_builder():
     if dev.is_phone:
         trading_mode = st.selectbox("Trading Mode", ["Equities", "Options"], key="ds_mode")
         symbols_raw = st.text_input("Symbol(s)", value="SPY", key="ds_symbols",
+                                    help="Comma-separated: SPY, QQQ, AAPL")
+    with col_range:
+        start_d = st.date_input(
+            "Start", value=date(2020, 1, 1), key="ds_start"
+        )
+        end_d = st.date_input(
+            "End", value=date(2024, 12, 31), key="ds_end"
+        )
+
+    if start_d >= end_d:
+        st.error("Start date must be before end date.")
+        return None
+
+    col_tf, col_vendor, col_cap = st.columns(3)
+    with col_tf:
+        timeframe = st.selectbox(
+            "Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf"
+        )
+    with col_vendor:
+        vendor = st.selectbox(
+            "Data Vendor",
+            ["Alpha Vantage", "yfinance", "Binance Public"],
+            key="ds_vendor"
+        )
+    with col_cap:
+        initial_capital = st.number_input(
+            "Initial Capital ($)",
+            value=100_000,
+            min_value=1_000,
+            step=10_000,
+            key="ds_cap",
+            help="Starting capital for backtest",
+        )
                                      help="Comma-separated: SPY, QQQ, AAPL")
         start_d = st.date_input("Start", value=date(2020, 1, 1), key="ds_start")
         end_d = st.date_input("End", value=date(2024, 12, 31), key="ds_end")
@@ -345,10 +378,18 @@ def render_dataset_builder():
     vendor_key = vendor_map.get(vendor, "alphavantage")
     symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
     if not symbols:
-        st.warning("Enter at least one symbol.")
+        st.error("Enter at least one symbol.")
         return None
 
     dfs = {}
+
+    date_range_years = (end_d - start_d).days / 365.25
+    if date_range_years > 5:
+        st.warning(
+            "⚠️ Date range > 5 years selected — this may take longer to process. "
+            "Consider reducing the date range for faster results."
+        )
+
     if fetch_clicked or use_cached:
         from phi.data import fetch_and_cache, get_cached_dataset
         with st.status("Loading data...", expanded=True) as s:
@@ -441,6 +482,11 @@ def render_indicator_selection():
                         del selected[name]
 
     st.session_state["workbench_indicators"] = selected
+    if len(selected) > 4:
+        st.warning(
+            "⚠️ More than 4 indicators selected — this may slow down results significantly. "
+            "Consider reducing scope for faster performance."
+        )
 
     if selected:
         names = ', '.join(selected.keys())
