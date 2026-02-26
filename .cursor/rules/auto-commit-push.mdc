@@ -1,0 +1,37 @@
+---
+description: Auto-commit and push changes after edits
+alwaysApply: true
+---
+
+# Auto Commit & Push
+
+After making any code or config changes to this project:
+
+1. **Stage** all modified files: `git add -A` (or specific paths)
+2. **Commit** with a clear message describing the change
+3. **Push** to `origin MAIN`
+4. **Give the user** the pull-and-start master command so they can deploy
+
+Do this automatically at the end of any session where you modified files. Do not ask for permission—just commit and push.
+
+## Master Command to Provide
+
+After pushing, include this in your response:
+
+**VPS (Linux) — use start.sh or run step-by-step:**
+```bash
+cd ~/Phi-nance
+git pull origin MAIN
+source venv/bin/activate
+./start.sh
+```
+Or one-liner: `cd ~/Phi-nance && git pull origin MAIN && ./start.sh`
+
+**Windows PowerShell:**
+```powershell
+cd "c:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance"
+git pull origin MAIN
+python -m streamlit run app_streamlit/live_workbench.py --server.port 8501 --server.address 0.0.0.0
+```
+
+If `0.0.0.0` causes socket error on VPS, the config already sets it; try: `python -m streamlit run app_streamlit/live_workbench.py --server.port 8501`

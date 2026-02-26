@@ -28,13 +28,13 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
                         self.API_KEY = k
                 config = Config(key)
 
-        print(f"!!!! AV FIXED INSTANTIATED !!!! config={config}")
-        
         # Initialize AlphaVantageData explicitly
         AlphaVantageData.__init__(self, config=config, **kwargs)
         # Initialize DataSourceBacktesting explicitly
         DataSourceBacktesting.__init__(self, datetime_start, datetime_end, config=config, **kwargs)
-        
+        self.datetime_start = datetime_start
+        self.datetime_end = datetime_end
+
         # Extract timestep from kwargs if present (e.g. from run_backtest)
         timestep = kwargs.get("timestep")
         self._timestep = timestep if timestep else getattr(
@@ -49,7 +49,6 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
         self._fixed_data_store = {}
 
     def set_timestep(self, timestep):
-        print(f"!!!! AV FIXED set_timestep({timestep}) !!!!")
         self._timestep = timestep
 
     def get_historical_prices(
@@ -63,8 +62,6 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
         if not timestep:
             timestep = self.get_timestep()
             
-        print(f"!!!! AV FIXED get_historical_prices for {asset.symbol} length={length} timestep={timestep} !!!!")
-        
         data = self._pull_source_symbol_bars(
             asset, 
             timestep=timestep, 
@@ -75,13 +72,11 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
             **kwargs
         )
         
-        if data is None or data.empty:
-            print(f"!!!! AV FIXED get_historical_prices NO DATA for {asset.symbol} !!!!")
+        if data is None or (isinstance(data, pd.DataFrame) and data.empty):
             return None
-            
+
         # Parse into Bars object
         bars = self._parse_source_symbol_bars(data, asset, quote=quote, length=length)
-        print(f"!!!! AV FIXED get_historical_prices success for {asset.symbol}, bars length={len(bars)} !!!!")
         return bars
 
     # Daily endpoint candidates: ADJUSTED requires premium; fall back to basic daily.
@@ -103,26 +98,25 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
                 if content.strip().startswith("{"):
                     try:
                         resp_json = json.loads(content)
-                        msg = resp_json.get("Information", "") or resp_json.get("Note", "")
+                        msg = resp_json.get("Information", "") or resp_json.get("Note", "") or content[:120]
                     except Exception:
                         msg = content[:120]
-                    print(f"!!!! AV FIXED API returned JSON instead of CSV: {content[:100]}... !!!!")
+                    logger.debug("AV API returned JSON (rate-limit or premium): %s", str(msg)[:80])
                     # Premium-only endpoint → signal caller to try next endpoint
                     if "premium" in msg.lower() or "premium" in content.lower():
                         return "PREMIUM"
                     # Rate-limit hit → wait and retry
                     if attempt < retries - 1:
-                        print(f"!!!! AV FIXED rate-limit hit, waiting {delay}s before retry {attempt+1}/{retries} !!!!")
+                        logger.warning("AV rate-limit, waiting %ds before retry %d/%d", delay, attempt + 1, retries)
                         _time.sleep(delay)
                         delay *= 2
                         continue
-                    return None
                     return None
 
                 df = pd.read_csv(StringIO(content))
                 return df
             except Exception as e:
-                print(f"!!!! AV FIXED _fetch_av_csv EXCEPTION (attempt {attempt+1}): {e} !!!!")
+                logger.warning("AV fetch exception (attempt %d): %s", attempt + 1, e)
                 if attempt < retries - 1:
                     _time.sleep(5)
         return None
@@ -133,56 +127,100 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
     ):
         """
         Override _pull_source_symbol_bars to fix Alpha Vantage API calls and add caching.
-        Uses TIME_SERIES_DAILY (free tier) for daily data, with automatic fallback.
+        Uses phi.data cache first for daily data (same data as workbench), then AV/yfinance.
         """
         symbol = asset.symbol
-        print(f"!!!! AV FIXED _pull_source_symbol_bars for {symbol} timestep={timestep} !!!!")
 
-        # Check cache first
+        # Check in-memory cache first
         cache_key = (asset, timestep)
         if cache_key in self._fixed_data_store:
-            print(f"!!!! AV FIXED cache hit for {symbol} {timestep} !!!!")
             data = self._fixed_data_store[cache_key]
         else:
             data = None
             if timestep == "day":
-                # Try free-tier endpoint first, then premium
-                for endpoint in self._DAILY_ENDPOINTS:
-                    url = (
-                        f"https://www.alphavantage.co/query"
-                        f"?function={endpoint}&symbol={symbol}"
-                        f"&outputsize=full&datatype=csv&apikey={self.config.API_KEY}"
-                    )
-                    print(f"!!!! AV FIXED API URL: {url.replace(self.config.API_KEY, 'SECRET')} !!!!")
-                    result = self._fetch_av_csv(url, symbol)
-                    if result is None:
-                        continue
-                    if result == "PREMIUM":
-                        print(f"!!!! AV FIXED {endpoint} requires premium, trying next !!!!")
-                        continue
-                    data = result
-                    break
-            else:
-                interval_map = {
-                    "minute": "1min",
-                    "5min": "5min",
-                    "15min": "15min",
-                    "30min": "30min",
-                    "hour": "60min",
-                }
-                interval = interval_map.get(timestep, "1min")
-                url = (
-                    f"https://www.alphavantage.co/query"
-                    f"?function=TIME_SERIES_INTRADAY&symbol={symbol}"
-                    f"&interval={interval}&outputsize=full&datatype=csv&apikey={self.config.API_KEY}"
-                )
-                print(f"!!!! AV FIXED API URL: {url.replace(self.config.API_KEY, 'SECRET')} !!!!")
-                result = self._fetch_av_csv(url, symbol)
-                if result is not None and result != "PREMIUM":
-                    data = result
+                # Prefer phi.data cache (written by workbench / run_pipeline) — reliable
+                start_dt = getattr(self, "datetime_start", None)
+                end_dt = getattr(self, "datetime_end", None)
+                if start_dt is not None and end_dt is not None:
+                    try:
+                        from phi.data import get_cached_dataset
+                        start_s = str(start_dt)[:10]
+                        end_s = str(end_dt)[:10]
+                        cached = get_cached_dataset("alphavantage", symbol, "1D", start_s, end_s)
+                        if cached is not None and len(cached) >= 50:
+                            data = cached.copy()
+                            if not isinstance(data.index, pd.DatetimeIndex):
+                                data.index = pd.to_datetime(data.index)
+                            if data.index.tz is None:
+                                data.index = data.index.tz_localize(LUMIBOT_DEFAULT_PYTZ)
+                            else:
+                                data.index = data.index.tz_convert(LUMIBOT_DEFAULT_PYTZ)
+                    except Exception as cache_err:
+                        logger.debug("phi cache load failed: %s", cache_err)
 
             if data is None or (isinstance(data, pd.DataFrame) and data.empty):
-                print(f"!!!! AV FIXED get_historical_prices NO DATA for {symbol} !!!!")
+                if timestep == "day":
+                    # Try free-tier endpoint first, then premium
+                    for endpoint in self._DAILY_ENDPOINTS:
+                        url = (
+                            f"https://www.alphavantage.co/query"
+                            f"?function={endpoint}&symbol={symbol}"
+                            f"&outputsize=compact&datatype=csv&apikey={self.config.API_KEY}"
+                        )
+                        result = self._fetch_av_csv(url, symbol)
+                        if result is None:
+                            continue
+                        if isinstance(result, str) and result == "PREMIUM":
+                            continue
+                        if isinstance(result, pd.DataFrame):
+                            data = result
+                        break
+                else:
+                    interval_map = {
+                        "minute": "1min",
+                        "5min": "5min",
+                        "15min": "15min",
+                        "30min": "30min",
+                        "hour": "60min",
+                    }
+                    interval = interval_map.get(timestep, "1min")
+                    url = (
+                        f"https://www.alphavantage.co/query"
+                        f"?function=TIME_SERIES_INTRADAY&symbol={symbol}"
+                        f"&interval={interval}&outputsize=compact&datatype=csv&apikey={self.config.API_KEY}"
+                    )
+                    result = self._fetch_av_csv(url, symbol)
+                    if isinstance(result, pd.DataFrame):
+                        data = result
+
+            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+                # Fallback to yfinance for daily data when AV fails (rate limit / premium)
+                if timestep == "day":
+                    try:
+                        import yfinance as yf
+                        ticker = yf.Ticker(symbol)
+                        start_dt = getattr(self, "datetime_start", None) or pd.Timestamp.now() - pd.Timedelta(days=365*5)
+                        end_dt = getattr(self, "datetime_end", None) or pd.Timestamp.now()
+                        df = ticker.history(
+                            start=start_dt,
+                            end=end_dt,
+                            auto_adjust=True
+                        )
+                        if df is not None and len(df) > 10:
+                            df = df.rename(columns={
+                                "Open": "open", "High": "high",
+                                "Low": "low", "Close": "close", "Volume": "volume"
+                            })[["open", "high", "low", "close", "volume"]]
+                            if df.index.tz is None:
+                                df.index = df.index.tz_localize(LUMIBOT_DEFAULT_PYTZ)
+                            else:
+                                df.index = df.index.tz_convert(LUMIBOT_DEFAULT_PYTZ)
+                            data = df
+                            self._fixed_data_store[cache_key] = data
+                    except Exception as yf_err:
+                        logger.debug("yfinance fallback failed: %s", yf_err)
+
+            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
                 return None
 
             try:
@@ -191,15 +229,19 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
                 elif "time" in data.columns:
                     data = data.set_index("time")
 
-                # Convert index to datetime objects
-                data.index = pd.to_datetime(data.index).tz_localize(tz=LUMIBOT_DEFAULT_PYTZ).astype("O")
+                # Convert index to datetime objects (handle both tz-naive and tz-aware)
+                idx = pd.to_datetime(data.index)
+                if idx.tz is None:
+                    idx = idx.tz_localize(LUMIBOT_DEFAULT_PYTZ)
+                else:
+                    idx = idx.tz_convert(LUMIBOT_DEFAULT_PYTZ)
+                data.index = idx.astype("O")
                 # Sort ascending (Alpha Vantage returns descending)
                 data = data.sort_index()
 
                 self._fixed_data_store[cache_key] = data
-                print(f"!!!! AV FIXED cache populated for {symbol} {timestep}, rows={len(data)} !!!!")
             except Exception as e:
-                print(f"!!!! AV FIXED _pull_source_symbol_bars EXCEPTION: {e} !!!!")
+                logger.warning("AV _pull_source_symbol_bars exception: %s", e)
                 return None
 
         # Filter by current simulation time (self._datetime from DataSourceBacktesting)
@@ -214,25 +256,16 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
         return data
 
     def get_last_price(self, asset, quote=None, exchange=None):
-        """
-        Implementation of the abstract method required by DataSource.
-        """
-        print(f"!!!! AV FIXED get_last_price for {asset.symbol} !!!!")
+        """Implementation of the abstract method required by DataSource."""
         try:
-            # Try to use the same timestep as the backtest
             timestep = self.get_timestep()
-            print(f"!!!! AV FIXED get_last_price using timestep={timestep} !!!!")
-            
-            # Explicitly pass timestep to get_historical_prices
-            bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+            bars = self.get_historical_prices(
+                asset, 1, timestep=timestep, quote=quote, exchange=exchange
+            )
             if bars:
-                last_price = bars.get_last_price()
-                print(f"!!!! AV FIXED get_last_price for {asset.symbol} = {last_price} !!!!")
-                return last_price
+                return bars.get_last_price()
         except Exception as e:
-            print(f"!!!! AV FIXED get_last_price ERROR: {e} !!!!")
-            import traceback
-            traceback.print_exc()
+            logger.debug("get_last_price error for %s: %s", asset.symbol, e)
         return None
 
     def get_chains(self, asset: Asset, quote: Asset = None):

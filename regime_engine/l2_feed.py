@@ -287,6 +287,14 @@ class PolygonL2Client:
             return dict(self.ZERO_SIGNALS)
         return self._book.snapshot()
 
+    def get_l2_signals_for_features(self) -> Dict[str, float]:
+        """
+        Return L2 signals in the format expected by Mixer._liquidity_confidence().
+        Keys: book_imbalance, ofi_true, spread_bps, depth_ratio, depth_trend.
+        Always safe to call — returns ZERO_SIGNALS when offline.
+        """
+        return self.get_snapshot()
+
     @property
     def is_connected(self) -> bool:
         """True if currently authenticated and receiving data."""
@@ -479,3 +487,12 @@ class PolygonRestClient:
         except Exception as exc:
             logger.debug("PolygonRestClient.get_snapshot(%s) failed: %s", ticker, exc)
             return dict(PolygonL2Client.ZERO_SIGNALS)
+
+    def get_l2_signals_for_features(self, ticker: str) -> Dict[str, float]:
+        """
+        REST-based version. Ticker required (stateless client).
+        Return L2 signals in the format expected by Mixer._liquidity_confidence().
+        Keys: book_imbalance, ofi_true, spread_bps, depth_ratio, depth_trend.
+        Always safe to call — returns ZERO_SIGNALS on any failure.
+        """
+        return self.get_snapshot(ticker)
