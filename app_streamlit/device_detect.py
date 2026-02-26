@@ -93,14 +93,7 @@ _JS_DETECT = """
         }
     }
 
-    // Load Material Symbols font into parent document (for expander icons)
-    if (!doc.getElementById('phi-material-font')) {
-        var link = doc.createElement('link');
-        link.id = 'phi-material-font';
-        link.rel = 'stylesheet';
-        link.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap';
-        doc.head.appendChild(link);
-    }
+    // Material Symbols font no longer needed — CSS-only arrow fix replaces glyphs
 })();
 </script>
 """

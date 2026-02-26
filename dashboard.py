@@ -528,27 +528,55 @@ def _cache_is_fresh(path: str, end) -> bool:
 
 
 def _load_ohlcv(symbol: str, start, end) -> Optional[pd.DataFrame]:
+    """Load daily OHLCV — tries local cache → yfinance → Alpha Vantage."""
     cache_path = _ohlcv_cache_path(symbol, start, end)
     if _cache_is_fresh(cache_path, end):
         try:
             return pd.read_parquet(cache_path)
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # Vendor fallback chain: yfinance (free, no key) → Alpha Vantage
+    # ------------------------------------------------------------------
+    start_s, end_s = str(start)[:10], str(end)[:10]
+
+    # 1) yfinance — free, reliable for daily US equities
     try:
-        from regime_engine.data_fetcher import AlphaVantageFetcher
-        av = AlphaVantageFetcher()
-        raw = av.intraday(symbol, outputsize="full")
-        raw = raw[(raw.index >= pd.Timestamp(start)) & (raw.index <= pd.Timestamp(end))]
-        if raw.empty:
-            return None
-        try:
-            raw.to_parquet(cache_path)
-        except Exception:
-            pass
-        return raw
+        import yfinance as yf
+        tkr = yf.Ticker(symbol)
+        raw = tkr.history(start=start_s, end=end_s, auto_adjust=True)
+        if raw is not None and not raw.empty:
+            # Normalize columns to lowercase
+            raw.columns = [c.lower() for c in raw.columns]
+            for col in ("open", "high", "low", "close", "volume"):
+                if col not in raw.columns:
+                    raise ValueError(f"yfinance missing column: {col}")
+            raw = raw[["open", "high", "low", "close", "volume"]]
+            raw.index = pd.to_datetime(raw.index)
+            raw = raw.sort_index()
+            try:
+                raw.to_parquet(cache_path)
+            except Exception:
+                pass
+            return raw
+    except Exception as e:
+        st.warning(f"yfinance failed for {symbol}: {e} — trying Alpha Vantage…")
+
+    # 2) Alpha Vantage daily — falls through to AV REST API
+    try:
+        from phi.data.cache import fetch_and_cache
+        raw = fetch_and_cache("alphavantage", symbol, "1D", start_s, end_s)
+        if raw is not None and not raw.empty:
+            try:
+                raw.to_parquet(cache_path)
+            except Exception:
+                pass
+            return raw
     except Exception as e:
         st.error(f"Download failed for {symbol}: {e}")
-        return None
+
+    return None
 
 
 def _run_engine_with_config(ohlcv: pd.DataFrame, cfg: dict) -> Optional[dict]:

@@ -1673,16 +1673,37 @@ footer { visibility: hidden; }
 header[data-testid="stHeader"] > div:first-child { display: none; }
 
 /* -- FIX: Material Symbols font fallback (prevents raw text like _arrow_right) */
-/* Font is loaded via <link> tag in Python — this CSS ensures proper rendering */
+/* Pure CSS fix: hide text content and replace with CSS triangle.                */
+/* This works even if the Google Fonts CDN is blocked or slow on iOS Safari.     */
 
-/* Hide any raw material icon text that leaks through */
 .material-symbols-rounded {
-    font-family: 'Material Symbols Rounded' !important;
-    font-size: 24px !important;
+    font-size: 0 !important;        /* hide raw text like "arrow_right" */
+    width: 20px !important;
+    height: 20px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     overflow: hidden !important;
-    /* If font still fails, ensure we don't show text */
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
+    line-height: 0 !important;
+    vertical-align: middle !important;
+}
+
+/* CSS-only arrow triangle replaces the icon glyph */
+.material-symbols-rounded::before {
+    content: '' !important;
+    display: block !important;
+    width: 0 !important;
+    height: 0 !important;
+    border-left: 5px solid currentColor !important;
+    border-top: 4px solid transparent !important;
+    border-bottom: 4px solid transparent !important;
+    transition: transform 0.2s ease !important;
+}
+
+/* Rotate arrow when expander is open */
+[data-testid="stExpander"][open] .material-symbols-rounded::before,
+details[open] .material-symbols-rounded::before {
+    transform: rotate(90deg) !important;
 }
 
 /* =============================================================================
@@ -1792,12 +1813,8 @@ body[data-phi-touch="true"] .stTabs [data-baseweb="tab"] {
     /* Show mobile header */
     .phi-mobile-header { display: flex; }
 
-    /* Fix Streamlit expander arrow rendering as text on iOS */
-    [data-testid="stExpander"] summary svg,
-    div[data-testid="stExpander"] details summary span[data-testid="stExpanderToggleIcon"] {
-        font-size: 0 !important;
-    }
-    [data-testid="stExpander"] summary svg {
+    /* Expander arrow sizing for small screens */
+    .material-symbols-rounded {
         width: 16px !important;
         height: 16px !important;
     }
