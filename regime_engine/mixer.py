@@ -106,6 +106,7 @@ class Mixer:
         node_log_probs: pd.DataFrame,
         features: pd.DataFrame,
         registry: Optional["VariableRegistry"] = None,
+        l2_signals: Optional[Dict[str, float]] = None,
     ) -> pd.DataFrame:
         """
         Parameters
@@ -116,6 +117,9 @@ class Mixer:
         features       : (T, F) feature DataFrame (needs volume_zscore, gap_score)
         registry       : VariableRegistry — if provided, uses adaptive α_j
                          and M_interaction(t) instead of fixed config values.
+        l2_signals     : optional dict of real-time L2 order-book signals
+                         (book_imbalance, ofi_true, spread_bps, depth_ratio,
+                         depth_trend) from PolygonL2Client / PolygonRestClient.
 
         Returns
         -------
@@ -127,7 +131,7 @@ class Mixer:
         s_composite = self._composite_signal(signals, weights, eps, registry)
         c_field     = self._field_confidence(node_log_probs)
         c_consensus = self._consensus_confidence(signals, weights, eps)
-        c_liquidity = self._liquidity_confidence(features)
+        c_liquidity = self._liquidity_confidence(features, l2_signals=l2_signals)
 
         score = s_composite * c_field * c_consensus * c_liquidity
 
@@ -319,16 +323,30 @@ class Mixer:
     # Liquidity confidence
     # ------------------------------------------------------------------
 
-    def _liquidity_confidence(self, features: pd.DataFrame) -> pd.Series:
+    def _liquidity_confidence(
+        self,
+        features: pd.DataFrame,
+        l2_signals: Optional[Dict[str, float]] = None,
+    ) -> pd.Series:
         """
         C_liq = sigmoid(vol_zscore * vol_scale) × sigmoid(-|gap_zscore| * gap_scale)
 
-        Both inputs are robust z-scores (output of FeatureEngine.compute()).
+        When l2_signals is provided, further multiplied by:
+          × sigmoid((book_imbalance - 0.5) * book_scale)
+          × sigmoid(ofi_true * ofi_scale)
+          × sigmoid(-spread_bps * spread_scale)
+          × sigmoid((depth_ratio - 1.0) * depth_scale)
+
+        Both OHLCV inputs are robust z-scores (output of FeatureEngine.compute()).
         High volume z-score → more liquidity confidence.
         Large absolute gap z-score → less liquidity confidence (illiquid open).
 
-        vol_scale : multiplier for volume z-score (default 0.5)
-        gap_scale : penalty multiplier for gap z-score (default 0.5)
+        vol_scale    : multiplier for volume z-score (default 0.5)
+        gap_scale    : penalty multiplier for gap z-score (default 0.5)
+        book_scale   : scale for book imbalance (default 5.0)
+        ofi_scale    : scale for OFI signal (default 0.3)
+        spread_scale : penalty scale for spread_bps (default 0.05)
+        depth_scale  : scale for depth_ratio (default 1.0)
         """
         vol_scale = float(self.cfg.get("liquidity_volume_scale", 0.5))
         gap_scale = float(self.cfg.get("liquidity_gap_scale",    0.5))
@@ -347,6 +365,27 @@ class Mixer:
         c_gap = _sigmoid(-gs * gap_scale)
 
         c_liq = c_vol * c_gap
+
+        if l2_signals:
+            book_scale   = float(self.cfg.get("liquidity_book_scale",   5.0))
+            ofi_scale    = float(self.cfg.get("liquidity_ofi_scale",    0.3))
+            spread_scale = float(self.cfg.get("liquidity_spread_scale", 0.05))
+            depth_scale  = float(self.cfg.get("liquidity_depth_scale",  1.0))
+
+            book_imb = float(l2_signals.get("book_imbalance", 0.5))
+            ofi      = float(l2_signals.get("ofi_true",       0.0))
+            spread   = float(l2_signals.get("spread_bps",     0.0))
+            depth_r  = float(l2_signals.get("depth_ratio",    1.0))
+
+            # Compute a single scalar multiplier from the L2 snapshot,
+            # then broadcast once across the time axis.
+            l2_mult = (
+                _sigmoid(np.array([(book_imb - 0.5) * book_scale]))[0]
+                * _sigmoid(np.array([ofi * ofi_scale]))[0]
+                * _sigmoid(np.array([-spread * spread_scale]))[0]
+                * _sigmoid(np.array([(depth_r - 1.0) * depth_scale]))[0]
+            )
+            c_liq = c_liq * l2_mult
 
         return pd.Series(c_liq, index=features.index, name="c_liquidity")
 
