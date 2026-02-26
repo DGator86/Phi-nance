@@ -85,13 +85,13 @@ def run_fully_automated(
     ollama_host: str = "http://localhost:11434",
     ollama_model: str = "llama3.2",
     use_ollama: bool = True,
-) -> Tuple[Dict[str, Any], Dict[str, Dict], str, str]:
+) -> Tuple[Dict[str, Any], Dict[str, Dict], str, str, pd.DataFrame]:
     """
     Fully automated pipeline: data → indicators → params → blend.
 
     Returns
     -------
-    (config, indicators, blend_method, explanation)
+    (config, indicators, blend_method, explanation, ohlcv)
     """
     from phi.data import fetch_and_cache
     from phi.phiai import run_phiai_optimization
@@ -149,4 +149,4 @@ def run_fully_automated(
     }
 
     full_explanation = "\n".join(explanation_parts)
-    return config, indicators, blend_method, full_explanation
+    return config, indicators, blend_method, full_explanation, ohlcv

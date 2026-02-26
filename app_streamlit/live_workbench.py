@@ -184,7 +184,7 @@ def _run_fully_automated(
 
             # NOTE: Do not call progress.progress() here — Streamlit widgets
             # require the main thread; this runs in a worker thread.
-            cfg, indicators, blend_method, explanation = run_pipeline(
+            cfg, indicators, blend_method, explanation, ohlcv = run_pipeline(
                 symbol=symbol,
                 start_date=start_date,
                 end_date=end_date,
@@ -193,29 +193,19 @@ def _run_fully_automated(
                 use_ollama=use_ollama,
             )
 
-            use_blended = len(indicators) >= 2
-            if use_blended:
-                strat_cls = _load_strategy(
-                    "strategies.blended_workbench_strategy.BlendedWorkbenchStrategy"
-                )
-                params = {
-                    "symbol": symbol,
-                    "indicators": indicators,
-                    "blend_method": blend_method,
-                    "blend_weights": {k: 1.0 / len(indicators) for k in indicators},
-                    "signal_threshold": 0.15,
-                    "lookback_bars": 200,
-                }
-            else:
-                first = list(indicators.keys())[0]
-                info = INDICATOR_CATALOG.get(first, {})
-                strat_str = info.get("strategy", "strategies.buy_and_hold.BuyAndHold")
-                strat_cls = _load_strategy(strat_str)
-                p_defaults = {k: default for k, (_, _, default) in info.get("params", {}).items()}
-                params = {**p_defaults, **indicators[first].get("params", {})}
-                params["symbol"] = symbol
+            # Direct backtest on pipeline OHLCV — bypasses Lumibot/datasource
+            blend_weights = {k: 1.0 / len(indicators) for k in indicators}
+            from phi.backtest import run_direct_backtest
 
-            results, strat = _run_backtest(strat_cls, params, cfg)
+            results, strat = run_direct_backtest(
+                ohlcv=ohlcv,
+                symbol=symbol,
+                indicators=indicators,
+                blend_weights=blend_weights,
+                blend_method=blend_method,
+                signal_threshold=0.15,
+                initial_capital=capital,
+            )
             sc = _compute_accuracy(strat) if hasattr(strat, "prediction_log") else {}
             result_holder[0] = (cfg, results, strat, indicators, blend_method, sc, explanation)
         except Exception as e:
