@@ -53,7 +53,7 @@ class LiquidityPoolStrategy(PredictionMixin, Strategy):
         lookback = self.parameters["lookback"]
         strength = self.parameters["swing_strength"]
 
-        needed = lookback + strength + 1
+        needed = lookback + 1
         bars = self.get_bars([symbol], needed, timestep="day")
         if not bars:
             return
@@ -63,7 +63,7 @@ class LiquidityPoolStrategy(PredictionMixin, Strategy):
             return
 
         df = bars[asset_key].df
-        if len(df) < needed - 1:
+        if len(df) < max(needed - 1, 2):
             return
 
         highs = df["high"]
@@ -77,15 +77,18 @@ class LiquidityPoolStrategy(PredictionMixin, Strategy):
         swing_highs = []
         swing_lows = []
 
-        for i in range(strength, len(df) - strength):
-            # Swing high: higher high than `strength` bars on each side
-            if all(highs.iloc[i] >= highs.iloc[i - j] for j in range(1, strength + 1)) and \
-               all(highs.iloc[i] >= highs.iloc[i + j] for j in range(1, strength + 1)):
+        # Only search bars that have `strength` confirmed bars on BOTH sides.
+        # search_end is exclusive — the last `strength` bars lack right-side confirmation.
+        search_end = len(df) - strength
+        for i in range(strength, search_end):
+            # Swing high: strictly higher than `strength` bars on each side
+            if all(highs.iloc[i] > highs.iloc[i - j] for j in range(1, strength + 1)) and \
+               all(highs.iloc[i] > highs.iloc[i + j] for j in range(1, strength + 1)):
                 swing_highs.append(highs.iloc[i])
 
-            # Swing low: lower low than `strength` bars on each side
-            if all(lows.iloc[i] <= lows.iloc[i - j] for j in range(1, strength + 1)) and \
-               all(lows.iloc[i] <= lows.iloc[i + j] for j in range(1, strength + 1)):
+            # Swing low: strictly lower than `strength` bars on each side
+            if all(lows.iloc[i] < lows.iloc[i - j] for j in range(1, strength + 1)) and \
+               all(lows.iloc[i] < lows.iloc[i + j] for j in range(1, strength + 1)):
                 swing_lows.append(lows.iloc[i])
 
         if not swing_highs and not swing_lows:
@@ -100,15 +103,17 @@ class LiquidityPoolStrategy(PredictionMixin, Strategy):
         nearest_below = pools_below[0] if pools_below else None
 
         # --- Check for sweep (price already pierced a pool) ---
-        today_high = highs.iloc[-1]
-        today_low = lows.iloc[-1]
-        today_close = closes.iloc[-1]
-        today_open = opens.iloc[-1]
+        # Use the previous completed bar (iloc[-2]) — not the live bar (iloc[-1])
+        prev_high  = highs.iloc[-2]
+        prev_low   = lows.iloc[-2]
+        prev_close = closes.iloc[-2]
+        current_open  = opens.iloc[-1]
+        current_close = closes.iloc[-1]
 
-        # Swept buy-side liquidity (poked above a swing high) -> reversal DOWN
-        swept_highs = [h for h in swing_highs if today_high >= h > today_close]
-        # Swept sell-side liquidity (poked below a swing low) -> reversal UP
-        swept_lows = [l for l in swing_lows if today_low <= l < today_close]
+        # Swept buy-side: yesterday's high pierced above a swing high but closed below it
+        swept_highs = [h for h in swing_highs if prev_high >= h > prev_close]
+        # Swept sell-side: yesterday's low pierced below a swing low but closed above it
+        swept_lows  = [l for l in swing_lows  if prev_low  <= l < prev_close]
 
         if swept_highs:
             self.record_prediction(symbol, "DOWN", current_price)
@@ -134,20 +139,20 @@ class LiquidityPoolStrategy(PredictionMixin, Strategy):
         # --- No sweep: predict price drawn toward nearest pool ---
         dist_above = (nearest_above - current_price) if nearest_above else float("inf")
         dist_below = (current_price - nearest_below) if nearest_below else float("inf")
-        bullish_candle = today_close > today_open
+        bullish_candle = current_close > current_open
 
-        if dist_above <= dist_below and bullish_candle and nearest_above:
-            # Closer pool is overhead and momentum is up -> drawn to buy-side
+        if dist_above <= dist_below and nearest_above:
+            # Closer pool is overhead -> price drawn to buy-side liquidity
             self.record_prediction(symbol, "UP", current_price)
-            if position is None:
+            if position is None and bullish_candle:
                 quantity = int(self.portfolio_value * 0.95 // current_price)
                 if quantity > 0:
                     order = self.create_order(symbol, quantity, "buy")
                     self.submit_order(order)
-        elif dist_below < dist_above and not bullish_candle and nearest_below:
-            # Closer pool is below and momentum is down -> drawn to sell-side
+        elif dist_below < dist_above and nearest_below:
+            # Closer pool is below -> price drawn to sell-side liquidity
             self.record_prediction(symbol, "DOWN", current_price)
-            if position is not None:
+            if position is not None and not bullish_candle:
                 self.sell_all()
         else:
             self.record_prediction(symbol, "NEUTRAL", current_price)
