@@ -127,49 +127,71 @@ class AlphaVantageFixedDataSource(DataSourceBacktesting, AlphaVantageData):
     ):
         """
         Override _pull_source_symbol_bars to fix Alpha Vantage API calls and add caching.
-        Uses TIME_SERIES_DAILY (free tier) for daily data, with automatic fallback.
+        Uses phi.data cache first for daily data (same data as workbench), then AV/yfinance.
         """
         symbol = asset.symbol
 
-        # Check cache first
+        # Check in-memory cache first
         cache_key = (asset, timestep)
         if cache_key in self._fixed_data_store:
             data = self._fixed_data_store[cache_key]
         else:
             data = None
             if timestep == "day":
-                # Try free-tier endpoint first, then premium
-                for endpoint in self._DAILY_ENDPOINTS:
+                # Prefer phi.data cache (written by workbench / run_pipeline) — reliable
+                start_dt = getattr(self, "datetime_start", None)
+                end_dt = getattr(self, "datetime_end", None)
+                if start_dt is not None and end_dt is not None:
+                    try:
+                        from phi.data import get_cached_dataset
+                        start_s = str(start_dt)[:10]
+                        end_s = str(end_dt)[:10]
+                        cached = get_cached_dataset("alphavantage", symbol, "1D", start_s, end_s)
+                        if cached is not None and len(cached) >= 50:
+                            data = cached.copy()
+                            if not isinstance(data.index, pd.DatetimeIndex):
+                                data.index = pd.to_datetime(data.index)
+                            if data.index.tz is None:
+                                data.index = data.index.tz_localize(LUMIBOT_DEFAULT_PYTZ)
+                            else:
+                                data.index = data.index.tz_convert(LUMIBOT_DEFAULT_PYTZ)
+                    except Exception as cache_err:
+                        logger.debug("phi cache load failed: %s", cache_err)
+
+            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+                if timestep == "day":
+                    # Try free-tier endpoint first, then premium
+                    for endpoint in self._DAILY_ENDPOINTS:
+                        url = (
+                            f"https://www.alphavantage.co/query"
+                            f"?function={endpoint}&symbol={symbol}"
+                            f"&outputsize=compact&datatype=csv&apikey={self.config.API_KEY}"
+                        )
+                        result = self._fetch_av_csv(url, symbol)
+                        if result is None:
+                            continue
+                        if isinstance(result, str) and result == "PREMIUM":
+                            continue
+                        if isinstance(result, pd.DataFrame):
+                            data = result
+                        break
+                else:
+                    interval_map = {
+                        "minute": "1min",
+                        "5min": "5min",
+                        "15min": "15min",
+                        "30min": "30min",
+                        "hour": "60min",
+                    }
+                    interval = interval_map.get(timestep, "1min")
                     url = (
                         f"https://www.alphavantage.co/query"
-                        f"?function={endpoint}&symbol={symbol}"
-                        f"&outputsize=compact&datatype=csv&apikey={self.config.API_KEY}"
+                        f"?function=TIME_SERIES_INTRADAY&symbol={symbol}"
+                        f"&interval={interval}&outputsize=compact&datatype=csv&apikey={self.config.API_KEY}"
                     )
                     result = self._fetch_av_csv(url, symbol)
-                    if result is None:
-                        continue
-                    if isinstance(result, str) and result == "PREMIUM":
-                        continue
                     if isinstance(result, pd.DataFrame):
                         data = result
-                    break
-            else:
-                interval_map = {
-                    "minute": "1min",
-                    "5min": "5min",
-                    "15min": "15min",
-                    "30min": "30min",
-                    "hour": "60min",
-                }
-                interval = interval_map.get(timestep, "1min")
-                url = (
-                    f"https://www.alphavantage.co/query"
-                    f"?function=TIME_SERIES_INTRADAY&symbol={symbol}"
-                    f"&interval={interval}&outputsize=compact&datatype=csv&apikey={self.config.API_KEY}"
-                )
-                result = self._fetch_av_csv(url, symbol)
-                if isinstance(result, pd.DataFrame):
-                    data = result
 
             if data is None or (isinstance(data, pd.DataFrame) and data.empty):
                 # Fallback to yfinance for daily data when AV fails (rate limit / premium)
