@@ -737,6 +737,95 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
 
         def run_phiai():
             try:
+                opt_progress = st.progress(
+                    0, text="Running options backtest... 0%"
+                )
+                opt_result = [None]
+                opt_exc = [None]
+
+                def run_opt():
+                    try:
+                        dfs = st.session_state.get("workbench_dataset", {})
+                        sym = config["symbols"][0]
+                        ohlcv = dfs.get(sym)
+                        if ohlcv is None or ohlcv.empty:
+                            msg = "No data for options backtest. Fetch first."
+                            raise ValueError(msg)
+
+                        bt_opts = st.session_state.get(
+                            "bt_options_controls", {}
+                        )
+                        # pylint: disable=import-outside-toplevel
+                        from phi.options import run_options_backtest
+                        opt_result[0] = run_options_backtest(
+                            ohlcv,
+                            symbol=sym,
+                            strategy_type=bt_opts.get(
+                                "strategy_type", "long_call"
+                            ),
+                            initial_capital=config.get(
+                                "initial_capital", 100_000
+                            ),
+                            position_pct=0.1,
+                            exit_profit_pct=bt_opts.get(
+                                "exit_profit_pct", 0.5
+                            ),
+                            exit_stop_pct=bt_opts.get(
+                                "exit_stop_pct", -0.3
+                            ),
+                        )
+                    except Exception as e:  # pylint: disable=broad-except
+                        opt_exc[0] = e
+
+                th_opt = threading.Thread(target=run_opt)
+                th_opt.start()
+                pct = 0
+                start_t = time.time()
+                while th_opt.is_alive():
+                    time.sleep(0.2)
+                    elapsed = time.time() - start_t
+                    pct = min(95, int(elapsed * 25))  # ramps quickly
+                    opt_progress.progress(
+                        pct / 100,
+                        text=f"Running options backtest... {pct}%"
+                    )
+                if (oe := opt_exc[0]) is not None:
+                    opt_progress.empty()
+                    # pylint: disable=raising-bad-type
+                    raise oe
+                results = opt_result[0]
+                opt_progress.progress(1.0, text="Complete — 100%")
+                time.sleep(0.3)
+                opt_progress.empty()
+                if results:
+                    _display_results(
+                        config, results, None, indicators_to_use,
+                        blend_method, blend_weights
+                    )
+                else:
+                    st.error("Options backtest returned no results.")
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                st.error(str(e))
+                st.exception(e)
+            return
+
+        # Equities: direct vectorized backtest (no Lumibot dependency)
+        progress = st.progress(0, text="Preparing backtest... 0%")
+
+        try:
+            sym = config["symbols"][0]
+            dfs = st.session_state.get("workbench_dataset", {})
+            ohlcv = dfs.get(sym)
+            if ohlcv is None or (hasattr(ohlcv, "empty") and ohlcv.empty):
+                progress.empty()
+                st.error(
+                    "No dataset loaded. Complete Step 1 (Fetch & Cache Data) first."
+                )
+                return
+
+            # Run direct backtest in thread with live progress %
+            result_holder = [None]
+            exc_holder = [None]
                 if _ohlcv is not None and len(_ohlcv) > 100:
                     from phi.phiai import run_phiai_optimization
                     phiai_result[0] = run_phiai_optimization(_ohlcv, indicators_to_use, max_iter_per_indicator=15)
@@ -766,6 +855,19 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
 
             def run_opt():
                 try:
+                    # pylint: disable=import-outside-toplevel
+                    from phi.backtest import run_direct_backtest
+                    result_holder[0] = run_direct_backtest(
+                        ohlcv=ohlcv,
+                        symbol=sym,
+                        indicators=indicators_to_use,
+                        blend_weights=blend_weights,
+                        blend_method=blend_method,
+                        signal_threshold=0.15,
+                        initial_capital=config["initial_capital"],
+                    )
+                except Exception as e:  # pylint: disable=broad-except
+                    exc_holder[0] = e
                     dfs = st.session_state.get("workbench_dataset", {})
                     sym = config["symbols"][0]
                     ohlcv = dfs.get(sym)
@@ -788,6 +890,29 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
             th.start()
             start_t = time.time()
             while th.is_alive():
+                time.sleep(0.3)
+                elapsed = time.time() - start_t
+                pct = min(95, 5 + int(elapsed * 8))
+                progress.progress(
+                    pct / 100, text=f"Running backtest... {pct}%"
+                )
+
+            if (eh := exc_holder[0]) is not None:
+                # pylint: disable=raising-bad-type
+                raise eh
+
+            if (res_h := result_holder[0]) is not None:
+                results, strat = res_h
+                progress.progress(1.0, text="Complete — 100%")
+                time.sleep(0.3)
+                progress.empty()
+
+                has_log = hasattr(strat, "prediction_log")
+                sc = _compute_accuracy(strat) if has_log else {}
+                _display_results(
+                    config, results, strat, indicators_to_use,
+                    blend_method, blend_weights, sc
+                )
                 time.sleep(0.2)
                 pct = min(95, int((time.time() - start_t) * 25))
                 opt_progress.progress(pct / 100, text=f"Options backtest... {pct}%")
