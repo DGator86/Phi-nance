@@ -41,12 +41,6 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-# Inject dark theme CSS
-_CSS_PATH = _ROOT / ".streamlit" / "styles.css"
-if _CSS_PATH.exists():
-    with open(_CSS_PATH, encoding="utf-8") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Indicator catalog (maps to strategies)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -115,6 +109,129 @@ POSITION_SIZING = ["Fixed %", "Fixed shares"]
 
 # Visual spec — chart colors (purple/orange theme)
 CHART_COLORS = ["#a855f7", "#f97316", "#22c55e", "#06b6d4", "#eab308"]
+
+
+def _inject_css():
+    """Inject custom CSS from styles.css file."""
+    _CSS_PATH = _ROOT / ".streamlit" / "styles.css"
+    if _CSS_PATH.exists():
+        with open(_CSS_PATH, encoding="utf-8") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+
+def _sidebar():
+    """Render the branded sidebar with navigation info."""
+    with st.sidebar:
+        st.markdown(
+            """
+            <div style="text-align:center; padding: 0.5rem 0 1.5rem;">
+                <div style="font-size:2rem; margin-bottom:0.3rem;">📊</div>
+                <div style="font-size:1.3rem; font-weight:700;
+                            background:linear-gradient(135deg,#a855f7,#f97316);
+                            -webkit-background-clip:text;
+                            -webkit-text-fill-color:transparent;
+                            background-clip:text;">
+                    Phi-nance
+                </div>
+                <div style="color:#71717a; font-size:0.75rem;
+                            letter-spacing:0.08em; text-transform:uppercase;
+                            margin-top:0.2rem;">
+                    Live Backtest Workbench
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            """
+            <div style="color:#52525b; font-size:0.72rem;
+                        text-transform:uppercase; letter-spacing:0.1em;
+                        font-weight:600; margin-bottom:0.6rem; padding:0 0.2rem;">
+                Workflow
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        steps = [
+            ("1", "Dataset Builder", "Fetch & cache OHLCV"),
+            ("2", "Indicators", "Select & tune signals"),
+            ("3", "Blending", "Combine multiple signals"),
+            ("4", "PhiAI", "Auto-optimize everything"),
+            ("5", "Backtest", "Run & review results"),
+        ]
+        for num, name, desc in steps:
+            st.markdown(
+                f"""
+                <div style="display:flex; align-items:center; gap:0.7rem;
+                            padding:0.55rem 0.6rem; border-radius:8px;
+                            margin-bottom:0.3rem;
+                            border:1px solid rgba(168,85,247,0.08);
+                            background:rgba(168,85,247,0.04);">
+                    <div style="min-width:22px; height:22px;
+                                background:linear-gradient(135deg,#a855f7,#7c3aed);
+                                border-radius:50%; display:flex;
+                                align-items:center; justify-content:center;
+                                color:#fff; font-size:0.7rem; font-weight:700;
+                                box-shadow:0 2px 6px rgba(168,85,247,0.4);">
+                        {num}
+                    </div>
+                    <div>
+                        <div style="color:#e4e4e7; font-size:0.82rem;
+                                    font-weight:600; line-height:1.2;">{name}</div>
+                        <div style="color:#71717a; font-size:0.72rem;">{desc}</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div style="border-top:1px solid rgba(168,85,247,0.12);
+                        padding-top:1rem; color:#52525b; font-size:0.72rem;
+                        text-align:center; line-height:1.6;">
+                Regime-aware &bull; Cached &bull; Reproducible<br>
+                <span style="color:rgba(168,85,247,0.5);">&#9632;</span>
+                Purple = signals &nbsp;
+                <span style="color:rgba(249,115,22,0.5);">&#9632;</span>
+                Orange = caution
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def _section_header(num: str, title: str, subtitle: str = ""):
+    """Render a styled step section header."""
+    sub_html = (
+        f'<div style="color:#71717a; font-size:0.82rem; '
+        f'margin-top:0.2rem;">{subtitle}</div>'
+        if subtitle else ""
+    )
+    st.markdown(
+        f"""
+        <div style="display:flex; align-items:center; gap:0.75rem;
+                    margin: 1.8rem 0 0.8rem;">
+            <div style="min-width:32px; height:32px;
+                        background:linear-gradient(135deg,#a855f7,#7c3aed);
+                        border-radius:50%; display:flex; align-items:center;
+                        justify-content:center; color:#fff; font-size:0.85rem;
+                        font-weight:700;
+                        box-shadow:0 2px 10px rgba(168,85,247,0.45);">
+                {num}
+            </div>
+            <div>
+                <div style="color:#e4e4e7; font-size:1.1rem; font-weight:700;
+                            letter-spacing:-0.01em;">{title}</div>
+                {sub_html}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _load_strategy(module_cls: str):
@@ -255,7 +372,7 @@ def _run_fully_automated(
 # ─────────────────────────────────────────────────────────────────────────────
 def render_dataset_builder():
     """Render Step 1: Data fetching and caching UI."""
-    st.markdown("### Step 1 — Dataset Builder")
+    _section_header("1", "Dataset Builder", "Fetch & cache OHLCV data from your chosen vendor")
 
     col_mode, col_sym, col_range = st.columns([1, 2, 2])
     with col_mode:
@@ -357,10 +474,6 @@ def render_dataset_builder():
                     label=f"Cached {bars_count:,} bars",
                     state="complete"
                 )
-                s.update(
-                    label=f"Cached {bars_count:,} bars",
-                    state="complete"
-                )
             else:
                 s.update(label="No data", state="error")
 
@@ -384,7 +497,7 @@ def render_dataset_builder():
 # ─────────────────────────────────────────────────────────────────────────────
 def render_indicator_selection():
     """Render Step 2: Strategy indicator selection and manual tuning."""
-    st.markdown("### Step 2 — Indicator Selection")
+    _section_header("2", "Indicator Selection", "Choose and tune trading signals")
 
     selected = st.session_state.get("workbench_indicators", {})
 
@@ -439,7 +552,7 @@ def render_blending(indicators: dict):
         st.caption("Select 2+ indicators to enable blending.")
         return "weighted_sum", {}
 
-    st.markdown("### Step 3 — Blending Panel")
+    _section_header("3", "Blending Panel", "Combine multiple signal streams")
     method = st.selectbox("Blend Mode", BLEND_METHODS, key="blend_method")
     method_map = {
         "Weighted Sum": "weighted_sum",
@@ -465,7 +578,7 @@ def render_phiai():
     """
     Render the PhiAI panel for automated optimization.
     """
-    st.markdown("### Step 4 — PhiAI Panel")
+    _section_header("4", "PhiAI Panel", "Regime-aware automated optimization")
     phiai_full = st.toggle(
         "PhiAI Full Auto", value=False, key="phiai_full",
         help="Auto-enable/disable indicators, tune params, select blend"
@@ -490,7 +603,7 @@ def render_backtest_controls(config: dict):
     if not config:
         return {}
 
-    st.markdown("### Step 5 — Backtest Controls")
+    _section_header("5", "Backtest Controls", "Position sizing and exit rules")
     mode = config.get("trading_mode", "equities")
 
     if mode == "equities":
@@ -541,8 +654,17 @@ def render_run_and_results(
         st.info("Complete Steps 1–2 to run a backtest.")
         return
 
-    st.markdown("---")
-    st.markdown("## Run Backtest")
+    st.markdown(
+        """
+        <div style="border-top:1px solid rgba(168,85,247,0.15);
+                    margin:2rem 0 1.5rem;"></div>
+        <div style="font-size:1.4rem; font-weight:700; color:#e4e4e7;
+                    letter-spacing:-0.02em; margin-bottom:0.8rem;">
+            Run Backtest
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.selectbox("Primary metric", METRICS, key="primary_metric")
     col_run, _ = st.columns(2)
@@ -816,7 +938,16 @@ def _display_results(
     net_pl = end_cap - cap
     net_pct = (net_pl / cap) * 100 if cap else 0
 
-    st.markdown("### Results")
+    st.markdown(
+        """
+        <div style="font-size:1.15rem; font-weight:700; color:#e4e4e7;
+                    letter-spacing:-0.01em; margin:1.5rem 0 0.8rem;">
+            Results
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     r1, r2, r3, r4, r5 = st.columns(5)
     r1.metric("Start Capital", f"${cap:,.0f}")
     r2.metric("End Capital", f"${end_cap:,.0f}")
@@ -847,7 +978,9 @@ def _display_results(
             fig.add_trace(
                 go.Scatter(
                     y=pv, mode="lines",
-                    line=dict(color=CHART_COLORS[0], width=2)
+                    line=dict(color=CHART_COLORS[0], width=2),
+                    fill="tozeroy",
+                    fillcolor="rgba(168,85,247,0.07)",
                 )
             )
             fig.update_layout(
@@ -856,6 +989,8 @@ def _display_results(
                 plot_bgcolor="#1a1a1f",
                 font_color="#e4e4e7",
                 margin=dict(l=40, r=40, t=40, b=40),
+                xaxis=dict(gridcolor="rgba(168,85,247,0.08)", showgrid=True),
+                yaxis=dict(gridcolor="rgba(168,85,247,0.08)", showgrid=True),
             )
             st.plotly_chart(fig, use_container_width=True)
     with tab_trades:
@@ -1022,18 +1157,78 @@ def main():
     st.set_page_config(
         page_title="Phi-nance Live Workbench",
         page_icon="📊",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="expanded",
     )
 
-    st.title("Phi-nance Live Backtest Workbench")
-    st.caption(
-        "Fetch → Select → Blend → PhiAI → Run — Reproducible. Cached. Dark."
+    _inject_css()
+    _sidebar()
+
+    # ── Hero header ─────────────────────────────────────────────────────────
+    st.markdown(
+        """
+        <div style="
+            background: linear-gradient(135deg,
+                rgba(168,85,247,0.1) 0%,
+                rgba(124,58,237,0.06) 50%,
+                rgba(249,115,22,0.05) 100%);
+            border: 1px solid rgba(168,85,247,0.2);
+            border-radius: 16px;
+            padding: 1.8rem 2.2rem;
+            margin-bottom: 1.5rem;
+            position: relative;
+            overflow: hidden;
+        ">
+            <div style="
+                position:absolute; top:-60%; left:-10%; width:50%; height:220%;
+                background: radial-gradient(ellipse,
+                    rgba(168,85,247,0.06) 0%, transparent 70%);
+                pointer-events:none;
+            "></div>
+            <div style="display:flex; align-items:center; gap:1.2rem; flex-wrap:wrap;">
+                <div style="font-size:2.5rem; line-height:1;">📊</div>
+                <div style="flex:1; min-width:200px;">
+                    <div style="
+                        font-size:1.7rem; font-weight:800;
+                        background:linear-gradient(135deg,#a855f7 0%,#c084fc 45%,#f97316 100%);
+                        -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+                        background-clip:text; letter-spacing:-0.03em; line-height:1.1;
+                    ">Phi-nance Live Workbench</div>
+                    <div style="color:#71717a; font-size:0.9rem; margin-top:0.3rem;">
+                        Regime-aware quant research &nbsp;&bull;&nbsp;
+                        Fetch &rarr; Select &rarr; Blend &rarr; PhiAI &rarr; Run
+                    </div>
+                </div>
+                <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:center;">
+                    <span style="
+                        background:rgba(168,85,247,0.12); color:#c084fc;
+                        border:1px solid rgba(168,85,247,0.25);
+                        border-radius:20px; padding:0.25rem 0.75rem;
+                        font-size:0.75rem; font-weight:600; letter-spacing:0.04em;
+                    ">DARK THEME</span>
+                    <span style="
+                        background:rgba(249,115,22,0.1); color:#fb923c;
+                        border:1px solid rgba(249,115,22,0.25);
+                        border-radius:20px; padding:0.25rem 0.75rem;
+                        font-size:0.75rem; font-weight:600; letter-spacing:0.04em;
+                    ">CACHED</span>
+                    <span style="
+                        background:rgba(34,197,94,0.08); color:#4ade80;
+                        border:1px solid rgba(34,197,94,0.2);
+                        border-radius:20px; padding:0.25rem 0.75rem;
+                        font-size:0.75rem; font-weight:600; letter-spacing:0.04em;
+                    ">REPRODUCIBLE</span>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     # ── Fully Automated (one-click) ─────────────────────────────────────────
-    with st.expander("⚡ Run Fully Automated", expanded=True):
+    with st.expander("⚡ Run Fully Automated — one click to results", expanded=True):
         st.caption(
-            "One click: fetch data → AI picks indicators → tune params → run backtest. "
+            "Fetch data → AI picks indicators → tune params → run backtest. "
             "Uses Ollama when available for smarter selection."
         )
         fa_col1, fa_col2, fa_col3 = st.columns(3)
@@ -1057,8 +1252,24 @@ def main():
                 ollama_host=fa_host,
             )
 
-    st.markdown("---")
-    st.markdown("**Or configure step-by-step:**")
+    # ── Divider ─────────────────────────────────────────────────────────────
+    st.markdown(
+        """
+        <div style="
+            display:flex; align-items:center; gap:1rem;
+            margin:1.5rem 0 0.5rem; color:#52525b;
+        ">
+            <div style="flex:1; border-top:1px solid rgba(168,85,247,0.12);"></div>
+            <div style="font-size:0.8rem; font-weight:600; letter-spacing:0.06em;
+                        text-transform:uppercase; white-space:nowrap;">
+                Or configure step-by-step
+            </div>
+            <div style="flex:1; border-top:1px solid rgba(168,85,247,0.12);"></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     config = render_dataset_builder()
     indicators = render_indicator_selection()
     blend_method = "weighted_sum"
@@ -1071,7 +1282,13 @@ def main():
 
     render_run_and_results(config, indicators, blend_method, blend_weights)
 
-    st.markdown("---")
+    st.markdown(
+        """
+        <div style="border-top:1px solid rgba(168,85,247,0.12);
+                    margin:2.5rem 0 1rem;"></div>
+        """,
+        unsafe_allow_html=True,
+    )
     tab_hist, tab_cache, tab_agents = st.tabs(
         ["Run History", "Cache Manager", "AI Agents"]
     )
