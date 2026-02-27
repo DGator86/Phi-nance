@@ -17,9 +17,17 @@ Run:
     python -m streamlit run app_streamlit/live_workbench.py
 """
 
-import os, sys, time, threading, importlib
+import os
+import sys
+import time
+import threading
+import importlib
+import warnings
 from pathlib import Path
 from datetime import date, datetime
+
+# Suppress Lumibot pandas FutureWarning (Series.__getitem__)
+warnings.filterwarnings("ignore", category=FutureWarning, module="lumibot.entities.bars")
 
 import pandas as pd
 import streamlit as st

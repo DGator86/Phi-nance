@@ -14,7 +14,11 @@ import random
 import threading
 import importlib
 import hashlib
+import warnings
 from pathlib import Path
+
+# Suppress Lumibot pandas FutureWarning (Series.__getitem__)
+warnings.filterwarnings("ignore", category=FutureWarning, module="lumibot.entities.bars")
 from datetime import date, datetime, timedelta
 from typing import Optional, Dict, Any
 
