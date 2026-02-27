@@ -19,8 +19,11 @@ Run:
     python -m streamlit run dashboard.py
 """
 
-import copy, io, os, subprocess, sys, time, json, hashlib
+import copy, io, os, subprocess, sys, time, json, hashlib, warnings
 from contextlib import redirect_stdout, redirect_stderr
+
+# Suppress Lumibot pandas FutureWarning (Series.__getitem__)
+warnings.filterwarnings("ignore", category=FutureWarning, module="lumibot.entities.bars")
 from datetime import datetime, date, timedelta
 from typing import Dict, Optional
 from pathlib import Path
