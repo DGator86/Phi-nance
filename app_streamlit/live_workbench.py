@@ -665,50 +665,37 @@ def render_run_and_results(
                 st.exception(e)
             return
 
-        # Equities: use blended or single strategy
-        use_blended = len(indicators_to_use) >= 2
+        # Equities: direct vectorized backtest (no Lumibot dependency)
         progress = st.progress(0, text="Preparing backtest... 0%")
 
         try:
-            if use_blended:
-                strat_path = (
-                    "strategies.blended_workbench_strategy"
-                    ".BlendedWorkbenchStrategy"
+            sym = config["symbols"][0]
+            dfs = st.session_state.get("workbench_dataset", {})
+            ohlcv = dfs.get(sym)
+            if ohlcv is None or (hasattr(ohlcv, "empty") and ohlcv.empty):
+                progress.empty()
+                st.error(
+                    "No dataset loaded. Complete Step 1 (Fetch & Cache Data) first."
                 )
-                strat_cls = _load_strategy(strat_path)
-                params = {
-                    "symbol": config["symbols"][0],
-                    "indicators": indicators_to_use,
-                    "blend_method": blend_method,
-                    "blend_weights": blend_weights,
-                    "signal_threshold": 0.15,
-                    "lookback_bars": 200,
-                }
-            else:
-                first_name = list(indicators_to_use.keys())[0]
-                info = INDICATOR_CATALOG[first_name]
-                strat_str = str(info["strategy"])
-                strat_cls = _load_strategy(strat_str)
-                # pylint: disable=import-outside-toplevel
-                p_defaults = {
-                    k: default for k, (_, _, default) in info["params"].items()
-                }
-                p_user = {
-                    k: int(v) if isinstance(v, float) and v == int(v) else v
-                    for k, v in indicators_to_use[first_name].get(
-                        "params", {}
-                    ).items()
-                }
-                params = {**p_defaults, **p_user}
-                params["symbol"] = config["symbols"][0]
+                return
 
-            # Run backtest in thread with live progress %
+            # Run direct backtest in thread with live progress %
             result_holder = [None]
             exc_holder = [None]
 
             def run_bt():
                 try:
-                    result_holder[0] = _run_backtest(strat_cls, params, config)
+                    # pylint: disable=import-outside-toplevel
+                    from phi.backtest import run_direct_backtest
+                    result_holder[0] = run_direct_backtest(
+                        ohlcv=ohlcv,
+                        symbol=sym,
+                        indicators=indicators_to_use,
+                        blend_weights=blend_weights,
+                        blend_method=blend_method,
+                        signal_threshold=0.15,
+                        initial_capital=config["initial_capital"],
+                    )
                 except Exception as e:  # pylint: disable=broad-except
                     exc_holder[0] = e
 
@@ -718,10 +705,9 @@ def render_run_and_results(
             pct = 5
             start_t = time.time()
             while th.is_alive():
-                time.sleep(0.4)
+                time.sleep(0.3)
                 elapsed = time.time() - start_t
-                # Estimate progress: ramp 5% -> 95%
-                pct = min(95, 5 + int(elapsed * 1.5))
+                pct = min(95, 5 + int(elapsed * 8))
                 progress.progress(
                     pct / 100, text=f"Running backtest... {pct}%"
                 )
@@ -731,14 +717,9 @@ def render_run_and_results(
                 raise eh
 
             if (res_h := result_holder[0]) is not None:
-                assert isinstance(res_h, (list, tuple))
-                if len(res_h) == 2:
-                    # pylint: disable=unpacking-non-sequence
-                    results, strat = res_h
-                progress.progress(
-                    1.0, text="Complete — 100%"
-                )
-                time.sleep(0.5)
+                results, strat = res_h
+                progress.progress(1.0, text="Complete — 100%")
+                time.sleep(0.3)
                 progress.empty()
 
                 has_log = hasattr(strat, "prediction_log")
