@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pandas as pd
-import pytest
 
 from phi.options.backtest import compute_greeks, run_options_backtest
 
