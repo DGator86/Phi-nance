@@ -1,3 +1,257 @@
+/* Phi-nance Live Backtest Workbench — Production Dark Theme */
+/* Primary accents: #a855f7 (purple), #f97316 (orange) */
+/* Background: #0f0f12 (deep charcoal), #1a1a1f (cards) */
+
+/* ── App background ── */
+[data-testid="stAppViewContainer"] {
+    background: linear-gradient(160deg, #0f0f12 0%, #131318 60%, #0d0d10 100%);
+    min-height: 100vh;
+}
+
+[data-testid="stMain"] {
+    background: transparent;
+}
+
+/* ── Header bar ── */
+[data-testid="stHeader"] {
+    background: rgba(15, 15, 18, 0.95);
+    border-bottom: 1px solid rgba(168, 85, 247, 0.25);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0f0f12 0%, #131318 100%);
+    border-right: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+[data-testid="stSidebar"] > div:first-child {
+    padding-top: 1.5rem;
+}
+
+[data-testid="stSidebar"] .stMarkdown h1,
+[data-testid="stSidebar"] .stMarkdown h2,
+[data-testid="stSidebar"] .stMarkdown h3 {
+    color: #a855f7;
+}
+
+[data-testid="stSidebar"] .stMarkdown {
+    color: #c4c4c8;
+}
+
+/* ── Typography ── */
+h2, h3 {
+    color: #e4e4e7;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+/* ── Metric cards ── */
+[data-testid="stMetricValue"] {
+    color: #a855f7;
+    font-weight: 700;
+    font-size: 1.6rem !important;
+}
+
+[data-testid="stMetricLabel"] {
+    color: #a1a1aa;
+    font-size: 0.8rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+}
+
+[data-testid="stMetricDelta"] {
+    color: #22c55e;
+    font-weight: 600;
+}
+
+[data-testid="metric-container"] {
+    background: linear-gradient(135deg, #1a1a1f 0%, #1e1e24 100%);
+    border: 1px solid rgba(168, 85, 247, 0.15);
+    border-radius: 12px;
+    padding: 1.2rem 1.4rem;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.03);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+[data-testid="metric-container"]:hover {
+    border-color: rgba(168, 85, 247, 0.35);
+    box-shadow: 0 4px 32px rgba(168, 85, 247, 0.12), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* ── Buttons ── */
+.stButton > button {
+    background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    letter-spacing: 0.01em;
+    padding: 0.55rem 1.4rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 12px rgba(168, 85, 247, 0.3);
+}
+
+.stButton > button:hover {
+    background: linear-gradient(135deg, #b76cff 0%, #9333ea 100%);
+    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.5);
+    transform: translateY(-1px);
+}
+
+.stButton > button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(168, 85, 247, 0.3);
+}
+
+.stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #c084fc 0%, #a855f7 100%);
+    box-shadow: 0 4px 24px rgba(168, 85, 247, 0.55), 0 0 0 1px rgba(249, 115, 22, 0.4);
+}
+
+/* ── Expander ── */
+div[data-testid="stExpander"] {
+    background: linear-gradient(135deg, #1a1a1f 0%, #1e1e24 100%);
+    border: 1px solid rgba(168, 85, 247, 0.15);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.25);
+}
+
+div[data-testid="stExpander"] summary {
+    padding: 0.9rem 1.2rem;
+    font-weight: 600;
+    color: #e4e4e7;
+}
+
+div[data-testid="stExpander"] summary:hover {
+    background: rgba(168, 85, 247, 0.06);
+}
+
+/* ── Tabs ── */
+[data-testid="stTabs"] [role="tablist"] {
+    border-bottom: 1px solid rgba(168, 85, 247, 0.2);
+    gap: 0;
+}
+
+[data-testid="stTabs"] button[role="tab"] {
+    color: #71717a;
+    font-weight: 500;
+    font-size: 0.9rem;
+    padding: 0.6rem 1.2rem;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+    background: transparent;
+}
+
+[data-testid="stTabs"] button[role="tab"]:hover {
+    color: #c4c4c8;
+    background: rgba(168, 85, 247, 0.05);
+}
+
+[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+    color: #a855f7;
+    border-bottom-color: #a855f7;
+    font-weight: 600;
+}
+
+/* ── Inputs ── */
+.stTextInput input,
+.stNumberInput input,
+.stTextArea textarea {
+    background: #1a1a1f !important;
+    border: 1px solid rgba(168, 85, 247, 0.2) !important;
+    border-radius: 8px !important;
+    color: #e4e4e7 !important;
+    transition: border-color 0.2s ease;
+}
+
+.stTextInput input:focus,
+.stNumberInput input:focus,
+.stTextArea textarea:focus {
+    border-color: rgba(168, 85, 247, 0.6) !important;
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1) !important;
+}
+
+/* ── Select boxes ── */
+[data-testid="stSelectbox"] > div > div {
+    background: #1a1a1f;
+    border: 1px solid rgba(168, 85, 247, 0.2);
+    border-radius: 8px;
+    color: #e4e4e7;
+}
+
+/* ── Progress bars ── */
+[data-testid="stProgress"] > div > div {
+    background: linear-gradient(90deg, #a855f7, #f97316);
+    border-radius: 4px;
+}
+
+[data-testid="stProgress"] > div {
+    background: rgba(168, 85, 247, 0.1);
+    border-radius: 4px;
+}
+
+/* ── Alerts ── */
+.stSuccess {
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-left: 4px solid #22c55e;
+    border-radius: 8px;
+    color: #86efac;
+}
+
+.stWarning {
+    background: rgba(249, 115, 22, 0.08);
+    border: 1px solid rgba(249, 115, 22, 0.3);
+    border-left: 4px solid #f97316;
+    border-radius: 8px;
+    color: #fdba74;
+}
+
+.stError {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-left: 4px solid #ef4444;
+    border-radius: 8px;
+    color: #fca5a5;
+}
+
+.stInfo {
+    background: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.25);
+    border-left: 4px solid #06b6d4;
+    border-radius: 8px;
+    color: #67e8f9;
+}
+
+/* ── Cards / containers ── */
+div[data-testid="column"] > div {
+    background: #1a1a1f;
+    border-radius: 8px;
+    padding: 1rem;
+    border: 1px solid rgba(168, 85, 247, 0.1);
+}
+
+/* ── DataFrames ── */
+[data-testid="stDataFrame"] {
+    border: 1px solid rgba(168, 85, 247, 0.15);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+/* ── Dividers ── */
+hr {
+    border: none;
+    border-top: 1px solid rgba(168, 85, 247, 0.15);
+    margin: 1.5rem 0;
+}
+
+/* ── Chart containers — match theme ── */
+[data-testid="stVerticalBlock"] > div[style*="border"] {
+    border-color: rgba(168, 85, 247, 0.2) !important;
 /* =============================================================================
    PHI-NANCE PREMIUM DASHBOARD v3.0
    $250/mo SaaS-Grade UI
@@ -2309,4 +2563,52 @@ body[data-phi-touch="true"] .stTabs [data-baseweb="tab"] {
     .phi-logo-text { animation: none !important; }
     .phi-hero-title { animation: none !important; }
     .phi-gradient-bar { animation: none !important; }
+}
+
+.js-plotly-plot {
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #131318;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(168, 85, 247, 0.3);
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(168, 85, 247, 0.5);
+}
+
+/* ── Date input ── */
+[data-testid="stDateInput"] input {
+    background: #1a1a1f !important;
+    border: 1px solid rgba(168, 85, 247, 0.2) !important;
+    color: #e4e4e7 !important;
+}
+
+/* ── Status widget ── */
+[data-testid="stStatusWidget"] {
+    background: #1a1a1f;
+    border: 1px solid rgba(168, 85, 247, 0.2);
+    border-radius: 10px;
+}
+
+/* ── Caption ── */
+.stCaption, [data-testid="stCaptionContainer"] {
+    color: #71717a;
+    font-size: 0.82rem;
+}
+
+/* ── JSON ── */
+[data-testid="stJson"] {
+    background: #131318;
+    border: 1px solid rgba(168, 85, 247, 0.15);
+    border-radius: 8px;
 }
