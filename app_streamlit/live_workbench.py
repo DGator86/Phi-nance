@@ -953,6 +953,527 @@ def render_ai_agents():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Options Workbench
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Strategy display names (imported from engine at render time to avoid top-level import)
+_OW_STRATEGY_LABELS = [
+    "Long Call",
+    "Long Put",
+    "Covered Call",
+    "Cash-Secured Put",
+    "Bull Call Spread",
+    "Bear Put Spread",
+    "Straddle",
+    "Strangle",
+    "Iron Condor",
+]
+_OW_STRATEGY_KEYS = [
+    "long_call",
+    "long_put",
+    "covered_call",
+    "cash_secured_put",
+    "bull_call_spread",
+    "bear_put_spread",
+    "straddle",
+    "strangle",
+    "iron_condor",
+]
+_OW_STRATEGY_MAP = dict(zip(_OW_STRATEGY_LABELS, _OW_STRATEGY_KEYS))
+
+_OW_STRATEGY_TOOLTIPS = {
+    "Long Call":        "Buy an ATM call. Profits from upward moves. Loss capped at premium.",
+    "Long Put":         "Buy an ATM put. Profits from downward moves. Loss capped at premium.",
+    "Covered Call":     "Hold 100 shares + sell OTM call. Generates income; caps upside.",
+    "Cash-Secured Put": "Sell OTM put backed by full cash reserve. Collects premium; capped downside.",
+    "Bull Call Spread": "Buy ATM call, sell OTM call. Lower cost; capped profit and loss.",
+    "Bear Put Spread":  "Buy ATM put, sell OTM put. Lower cost bearish play; capped P&L.",
+    "Straddle":         "Buy ATM call + put. Profits from large moves in either direction.",
+    "Strangle":         "Buy OTM call + OTM put. Cheaper than straddle; needs bigger move.",
+    "Iron Condor":      "Sell OTM strangle, buy wider strangle. Profits in low-volatility range.",
+}
+
+
+def _ow_compute_signal(
+    ohlcv: pd.DataFrame,
+    indicator_names: list,
+) -> pd.Series:
+    """Compute blended entry signal from selected indicators on the OHLCV."""
+    # pylint: disable=import-outside-toplevel
+    from phi.indicators.simple import compute_indicator
+    from phi.blending import blend_signals
+
+    signals: dict = {}
+    for name in indicator_names:
+        info = INDICATOR_CATALOG.get(name, {})
+        defaults = {k: default for k, (_, _, default) in info.get("params", {}).items()}
+        sig = compute_indicator(name, ohlcv, defaults)
+        if sig is not None and not sig.empty:
+            signals[name] = sig
+
+    if not signals:
+        return pd.Series(0.0, index=ohlcv.index)
+
+    sig_df = pd.DataFrame(signals).reindex(ohlcv.index).ffill().bfill()
+    return blend_signals(sig_df, method="weighted_sum")
+
+
+def _ow_display_results(results: dict, initial_capital: float) -> None:
+    """Render options workbench results: metrics, charts, trade log."""
+    if not results or not results.get("portfolio_value"):
+        st.error("No results to display.")
+        return
+
+    pv = results["portfolio_value"]
+    end_cap = pv[-1] if pv else initial_capital
+    net_pl = end_cap - initial_capital
+    net_pct = (net_pl / initial_capital * 100) if initial_capital else 0
+
+    # ── Top metric strip ─────────────────────────────────────────────────────
+    st.markdown("### Options Backtest Results")
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("Start Capital",  f"${initial_capital:,.0f}")
+    m2.metric("End Capital",    f"${end_cap:,.0f}")
+    m3.metric("Net P/L",        f"${net_pl:+,.0f}", f"{net_pct:+.1f}%")
+    cagr = results.get("cagr", 0)
+    m4.metric("CAGR",   f"{cagr:+.1%}" if isinstance(cagr, float) else "—")
+    sharpe = results.get("sharpe", 0)
+    m5.metric("Sharpe", f"{sharpe:.2f}" if isinstance(sharpe, float) else "—")
+    dd = results.get("max_drawdown", 0)
+    m6.metric("Max DD", f"{dd:.1%}" if isinstance(dd, float) else "—")
+
+    # ── Trade stats strip ────────────────────────────────────────────────────
+    s1, s2, s3, s4, s5 = st.columns(5)
+    n_trades = results.get("total_trades", 0)
+    s1.metric("Total Trades",  str(n_trades))
+    wr = results.get("win_rate", 0)
+    s2.metric("Win Rate",      f"{wr:.1%}" if n_trades else "—")
+    pf = results.get("profit_factor", 0)
+    s3.metric("Profit Factor", f"{pf:.2f}" if pf != float("inf") else "∞")
+    aw = results.get("avg_win", 0)
+    s4.metric("Avg Win $",     f"${aw:+,.0f}" if n_trades else "—")
+    al = results.get("avg_loss", 0)
+    s5.metric("Avg Loss $",    f"${al:+,.0f}" if n_trades else "—")
+
+    # ── Tabs ─────────────────────────────────────────────────────────────────
+    tab_curve, tab_trades, tab_pnl_dist, tab_iv, tab_metrics = st.tabs([
+        "Equity Curve", "Trade Log", "P&L Distribution", "IV History", "Full Metrics"
+    ])
+
+    with tab_curve:
+        if len(pv) > 1:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                y=pv, mode="lines",
+                line=dict(color=CHART_COLORS[0], width=2),
+                name="Portfolio Value",
+                hovertemplate="$%{y:,.0f}<extra></extra>",
+            ))
+            # Shade drawdown
+            pv_arr = pd.Series(pv)
+            rolling_max = pv_arr.cummax()
+            dd_arr = (pv_arr - rolling_max) / rolling_max.clip(lower=1e-8)
+            fig.add_trace(go.Scatter(
+                y=rolling_max, mode="lines",
+                line=dict(color=CHART_COLORS[2], width=1, dash="dot"),
+                name="Rolling High",
+                opacity=0.5,
+                hovertemplate="$%{y:,.0f}<extra></extra>",
+            ))
+            fig.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="#0f0f12", plot_bgcolor="#1a1a1f",
+                font_color="#e4e4e7",
+                margin=dict(l=40, r=40, t=30, b=40),
+                legend=dict(orientation="h", y=1.02, x=0),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.caption("Not enough data for equity curve.")
+
+    with tab_trades:
+        trade_log = results.get("trade_log")
+        if trade_log is not None and not trade_log.empty:
+            # Color-code P&L column
+            st.dataframe(trade_log, use_container_width=True)
+            csv = trade_log.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "Download Trade Log (CSV)", csv, "options_trades.csv", "text/csv"
+            )
+        else:
+            st.caption("No trades recorded. Check signal threshold, DTE, and position sizing.")
+
+    with tab_pnl_dist:
+        pnls = results.get("pnls", [])
+        if pnls:
+            fig2 = go.Figure()
+            fig2.add_trace(go.Histogram(
+                x=pnls,
+                nbinsx=min(30, max(10, len(pnls) // 3)),
+                marker_color=CHART_COLORS[1],
+                name="P&L per Trade ($)",
+            ))
+            fig2.add_vline(x=0, line_color="#e4e4e7", line_dash="dash")
+            fig2.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="#0f0f12", plot_bgcolor="#1a1a1f",
+                font_color="#e4e4e7",
+                xaxis_title="Trade P&L ($)",
+                yaxis_title="Count",
+                margin=dict(l=40, r=40, t=30, b=40),
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+
+            # Waterfall for cumulative P&L
+            cumulative = pd.Series(pnls).cumsum().tolist()
+            fig3 = go.Figure()
+            fig3.add_trace(go.Scatter(
+                y=cumulative, mode="lines+markers",
+                line=dict(color=CHART_COLORS[3], width=2),
+                marker=dict(
+                    color=[CHART_COLORS[2] if p >= 0 else CHART_COLORS[1] for p in pnls],
+                    size=5,
+                ),
+                name="Cumulative P&L",
+            ))
+            fig3.add_hline(y=0, line_color="#e4e4e7", line_dash="dot")
+            fig3.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="#0f0f12", plot_bgcolor="#1a1a1f",
+                font_color="#e4e4e7",
+                yaxis_title="Cumulative P&L ($)",
+                xaxis_title="Trade #",
+                margin=dict(l=40, r=40, t=30, b=40),
+            )
+            st.plotly_chart(fig3, use_container_width=True)
+        else:
+            st.caption("No P&L data.")
+
+    with tab_iv:
+        iv_series = results.get("iv_series", [])
+        if iv_series:
+            fig4 = go.Figure()
+            fig4.add_trace(go.Scatter(
+                y=[v * 100 for v in iv_series], mode="lines",
+                line=dict(color=CHART_COLORS[4], width=1),
+                name="Realized IV × Factor (%)",
+            ))
+            fig4.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="#0f0f12", plot_bgcolor="#1a1a1f",
+                font_color="#e4e4e7",
+                yaxis_title="IV (%)",
+                xaxis_title="Bar",
+                margin=dict(l=40, r=40, t=30, b=40),
+            )
+            st.plotly_chart(fig4, use_container_width=True)
+        else:
+            st.caption("No IV data.")
+
+    with tab_metrics:
+        payload = {
+            "total_return":    results.get("total_return"),
+            "cagr":            results.get("cagr"),
+            "max_drawdown":    results.get("max_drawdown"),
+            "sharpe":          results.get("sharpe"),
+            "total_trades":    results.get("total_trades"),
+            "win_rate":        results.get("win_rate"),
+            "profit_factor":   results.get("profit_factor"),
+            "avg_win":         results.get("avg_win"),
+            "avg_loss":        results.get("avg_loss"),
+            "gross_win":       results.get("gross_win"),
+            "gross_loss":      results.get("gross_loss"),
+            "max_consec_loss": results.get("max_consec_loss"),
+        }
+        st.json({k: (round(v, 6) if isinstance(v, float) else v) for k, v in payload.items()})
+
+
+def render_options_workbench() -> None:
+    """
+    Full options strategy testing bench.
+
+    Uses the dataset already loaded in Step 1 (workbench_dataset) when
+    available. Falls back to an inline symbol/date fetch otherwise.
+    Supports 9 strategy types with Black-Scholes pricing, 4 exit rules,
+    signal-driven or periodic entry, and full result visualizations.
+    """
+    st.markdown("### Options Workbench")
+
+    # ── Dataset source ────────────────────────────────────────────────────────
+    dfs = st.session_state.get("workbench_dataset", {})
+    cfg = st.session_state.get("workbench_config", {})
+
+    if dfs:
+        sym_choices = list(dfs.keys())
+        st.success(
+            f"Using dataset from Step 1: {', '.join(sym_choices)}"
+        )
+        ow_sym = st.selectbox("Symbol", sym_choices, key="ow_sym_picker")
+        ohlcv_source = dfs.get(ow_sym)
+        initial_capital = float(cfg.get("initial_capital", 100_000))
+    else:
+        st.info(
+            "No dataset loaded yet. "
+            "Complete Step 1 above, or fetch inline below."
+        )
+        col_s, col_d1, col_d2, col_cap = st.columns([1, 1, 1, 1])
+        with col_s:
+            ow_sym = st.text_input("Symbol", value="SPY", key="ow_sym_inline")
+        with col_d1:
+            ow_start = st.date_input("Start", value=date(2020, 1, 1), key="ow_start_inline")
+        with col_d2:
+            ow_end = st.date_input("End", value=date(2024, 12, 31), key="ow_end_inline")
+        with col_cap:
+            initial_capital = float(st.number_input(
+                "Capital ($)", value=100_000, min_value=1_000, step=10_000, key="ow_cap_inline"
+            ))
+
+        if st.button("Fetch Data for Options", key="ow_fetch_inline"):
+            with st.spinner("Fetching..."):
+                try:
+                    # pylint: disable=import-outside-toplevel
+                    from phi.data import fetch_and_cache
+                    df_fetched = fetch_and_cache(
+                        "alphavantage", ow_sym, "1D",
+                        str(ow_start), str(ow_end)
+                    )
+                    if df_fetched is not None and not df_fetched.empty:
+                        st.session_state["ow_inline_dataset"] = {
+                            ow_sym: df_fetched
+                        }
+                        st.success(f"Fetched {len(df_fetched):,} bars for {ow_sym}.")
+                    else:
+                        st.error("No data returned.")
+                except Exception as e:  # pylint: disable=broad-except
+                    st.error(str(e))
+
+        inline_dfs = st.session_state.get("ow_inline_dataset", {})
+        ohlcv_source = inline_dfs.get(ow_sym)
+
+    if ohlcv_source is None or (hasattr(ohlcv_source, "empty") and ohlcv_source.empty):
+        st.caption("Load a dataset above to configure the workbench.")
+        return
+
+    st.markdown("---")
+
+    # ── Strategy type ─────────────────────────────────────────────────────────
+    strat_col, entry_col = st.columns([2, 2])
+    with strat_col:
+        strat_label = st.selectbox(
+            "Strategy Type", _OW_STRATEGY_LABELS, key="ow_strategy",
+            help="Select the options structure to simulate."
+        )
+        strategy_type = _OW_STRATEGY_MAP[strat_label]
+        st.caption(_OW_STRATEGY_TOOLTIPS.get(strat_label, ""))
+    with entry_col:
+        entry_mode_label = st.selectbox(
+            "Entry Mode",
+            ["Signal-Driven", "Periodic"],
+            key="ow_entry_mode",
+            help="Signal-Driven uses indicator signals; Periodic enters every N bars.",
+        )
+        entry_mode = "signal" if entry_mode_label == "Signal-Driven" else "periodic"
+
+    st.markdown("---")
+
+    # ── Entry parameters ──────────────────────────────────────────────────────
+    if entry_mode == "signal":
+        st.markdown("**Entry Signal**")
+        ind_col, thresh_col = st.columns([3, 1])
+        with ind_col:
+            ind_names = st.multiselect(
+                "Indicators for Entry Signal",
+                list(INDICATOR_CATALOG.keys()),
+                default=["RSI", "MACD"],
+                key="ow_signal_inds",
+                help="Composite of selected indicators determines entry timing.",
+            )
+        with thresh_col:
+            sig_threshold = st.slider(
+                "Threshold", 0.05, 0.5, 0.15, 0.01, key="ow_sig_thresh",
+                help="Minimum signal magnitude to trigger entry.",
+            )
+        periodic_days = 21
+    else:
+        p_col, _ = st.columns([1, 3])
+        with p_col:
+            periodic_days = st.slider(
+                "Enter Every N Bars", 5, 90, 21, key="ow_periodic",
+                help="Open a new position every N price bars.",
+            )
+        ind_names = []
+        sig_threshold = 0.0
+
+    st.markdown("---")
+
+    # ── Option parameters ─────────────────────────────────────────────────────
+    st.markdown("**Option Parameters**")
+    op1, op2, op3, op4 = st.columns(4)
+    with op1:
+        dte = st.slider(
+            "DTE at Entry (days)", 7, 120, 30, key="ow_dte",
+            help="Days to expiration when the position is opened.",
+        )
+    with op2:
+        iv_factor = st.slider(
+            "IV Factor (× realized vol)", 0.5, 3.0, 1.0, 0.05, key="ow_iv_factor",
+            help="Multiplier on historical realized vol to estimate implied vol.",
+        )
+    with op3:
+        otm_pct_int = st.slider(
+            "OTM % (spreads / condor)", 1, 20, 5, key="ow_otm_pct",
+            help="OTM % for short strikes in spread and condor strategies.",
+        )
+        otm_pct = otm_pct_int / 100.0
+    with op4:
+        rfr = st.slider(
+            "Risk-Free Rate %", 0.0, 10.0, 4.5, 0.1, key="ow_rfr",
+            help="Annualized risk-free rate used in Black-Scholes pricing.",
+        ) / 100.0
+
+    iv_lb_col, _ = st.columns([1, 3])
+    with iv_lb_col:
+        iv_lookback = st.slider(
+            "IV Lookback (bars)", 5, 63, 21, key="ow_iv_lb",
+            help="Number of bars used to compute realized volatility.",
+        )
+
+    st.markdown("---")
+
+    # ── Position sizing ───────────────────────────────────────────────────────
+    st.markdown("**Position Sizing**")
+    ps1, ps2 = st.columns(2)
+    with ps1:
+        pos_pct = st.slider(
+            "Position Size (% of Capital)", 1, 50, 5, key="ow_pos_pct",
+            help=(
+                "Budget per trade = pos_pct × current capital. "
+                "Covered Call / Cash-Secured Put require larger allocations "
+                "(10–30%) to fund share/cash reserves."
+            ),
+        ) / 100.0
+    with ps2:
+        max_trades = st.slider(
+            "Max Concurrent Positions", 1, 10, 3, key="ow_max_trades",
+            help="Maximum number of simultaneously open option positions.",
+        )
+
+    if strategy_type in ("covered_call", "cash_secured_put") and pos_pct < 0.10:
+        st.warning(
+            f"**{strat_label}** typically requires 10–30% position sizing "
+            "to fund share/cash reserves. Increase 'Position Size' above."
+        )
+
+    st.markdown("---")
+
+    # ── Exit rules ────────────────────────────────────────────────────────────
+    st.markdown("**Exit Rules**")
+    hold_to_expiry = st.toggle(
+        "Hold to Expiry (ignore all other exit rules)",
+        value=False, key="ow_hold_expiry"
+    )
+
+    if not hold_to_expiry:
+        ex1, ex2, ex3 = st.columns(3)
+        with ex1:
+            profit_target = st.slider(
+                "Profit Target (% of allocated)", 10, 300, 50, key="ow_profit",
+                help="Close when unrealized P&L reaches this % of allocated capital.",
+            ) / 100.0
+        with ex2:
+            stop_loss = st.slider(
+                "Stop Loss (% of allocated)", 10, 100, 50, key="ow_stop",
+                help="Close when loss reaches this % of allocated capital.",
+            ) / 100.0
+        with ex3:
+            dte_exit = st.slider(
+                "DTE Exit Threshold (days)", 0, 30, 5, key="ow_dte_exit",
+                help="Close when remaining DTE drops to or below this value.",
+            )
+    else:
+        profit_target = 1.0
+        stop_loss = 1.0
+        dte_exit = 0
+
+    st.markdown("---")
+
+    # ── Run button ────────────────────────────────────────────────────────────
+    run_col, _ = st.columns([1, 3])
+    with run_col:
+        run_clicked = st.button(
+            "Run Options Backtest", type="primary", key="ow_run"
+        )
+
+    if not run_clicked:
+        return
+
+    # ── Execute ───────────────────────────────────────────────────────────────
+    progress = st.progress(0, text="Computing options backtest... 0%")
+    result_holder: list = [None]
+    exc_holder: list = [None]
+
+    def _run():
+        try:
+            # pylint: disable=import-outside-toplevel
+            from phi.options.engine import run_options_backtest_full
+
+            # Compute entry signal
+            entry_signal = None
+            if entry_mode == "signal" and ind_names:
+                entry_signal = _ow_compute_signal(ohlcv_source, ind_names)
+
+            result_holder[0] = run_options_backtest_full(
+                ohlcv=ohlcv_source,
+                symbol=ow_sym,
+                strategy_type=strategy_type,
+                entry_mode=entry_mode,
+                entry_signal=entry_signal,
+                signal_threshold=sig_threshold,
+                dte=dte,
+                iv_factor=iv_factor,
+                iv_lookback=iv_lookback,
+                position_pct=pos_pct,
+                otm_pct=otm_pct,
+                exit_profit_pct=profit_target,
+                exit_stop_pct=stop_loss,
+                exit_dte=dte_exit,
+                hold_to_expiry=hold_to_expiry,
+                max_open_trades=max_trades,
+                risk_free_rate=rfr,
+                initial_capital=initial_capital,
+                periodic_entry_days=periodic_days,
+            )
+        except Exception as e:  # pylint: disable=broad-except
+            exc_holder[0] = e
+
+    th = threading.Thread(target=_run)
+    th.start()
+    pct = 5
+    t0 = time.time()
+    while th.is_alive():
+        time.sleep(0.25)
+        elapsed = time.time() - t0
+        pct = min(95, 5 + int(elapsed * 10))
+        progress.progress(pct / 100, text=f"Computing options backtest... {pct}%")
+
+    if exc_holder[0]:
+        progress.empty()
+        st.error(str(exc_holder[0]))
+        st.exception(exc_holder[0])
+        return
+
+    progress.progress(1.0, text="Complete — 100%")
+    time.sleep(0.3)
+    progress.empty()
+
+    results = result_holder[0]
+    if results:
+        _ow_display_results(results, initial_capital)
+    else:
+        st.error("Options backtest returned no results.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Run History
 # ─────────────────────────────────────────────────────────────────────────────
 def render_run_history():
@@ -1043,9 +1564,11 @@ def main():
     render_run_and_results(config, indicators, blend_method, blend_weights)
 
     st.markdown("---")
-    tab_hist, tab_cache, tab_agents = st.tabs(
-        ["Run History", "Cache Manager", "AI Agents"]
+    tab_opts, tab_hist, tab_cache, tab_agents = st.tabs(
+        ["Options Workbench", "Run History", "Cache Manager", "AI Agents"]
     )
+    with tab_opts:
+        render_options_workbench()
     with tab_hist:
         render_run_history()
     with tab_cache:
