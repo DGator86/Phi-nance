@@ -1,19 +1,29 @@
-# Phi-nance — Live Backtest Workbench
-# Dark mode only. Purple + orange accents.
+# Phi-nance Premium v3.0 — Quantitative Research Platform
+# Dark glassmorphism + neural purple/orange theme
 
 [server]
 address = "0.0.0.0"
 port = 8501
 enableCORS = false
 enableXsrfProtection = false
+maxUploadSize = 200
 
 [browser]
 gatherUsageStats = false
+serverAddress = "0.0.0.0"
+serverPort = 8501
 
 [theme]
 base = "dark"
 primaryColor = "#a855f7"
-backgroundColor = "#0f0f12"
-secondaryBackgroundColor = "#1a1a1f"
-textColor = "#e4e4e7"
+backgroundColor = "#06060a"
+secondaryBackgroundColor = "#12121a"
+textColor = "#eeeef2"
 font = "sans serif"
+
+# Explicit widget colors to prevent "invalid color" console warnings
+# These are used by Streamlit's internal theme system
+
+[client]
+showSidebarNavigation = false
+toolbarMode = "minimal"

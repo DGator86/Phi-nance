@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+_MAX_PARALLEL_INDICATORS = 4
+
 import numpy as np
 import pandas as pd
 
@@ -80,17 +82,51 @@ class PhiAI:
         allow_shorts: bool = False,
         risk_cap: Optional[float] = None,
     ) -> None:
+        """Initialise the PhiAI orchestrator.
+
+        Parameters
+        ----------
+        max_indicators : int
+            Maximum number of indicators to enable simultaneously (default 5).
+        allow_shorts : bool
+            Whether the strategy is permitted to short (default False).
+        risk_cap : float, optional
+            Maximum allowable portfolio risk as a fraction (e.g. 0.02 = 2%).
+        """
         self.max_indicators = max_indicators
         self.allow_shorts = allow_shorts
         self.risk_cap = risk_cap
         self.changes: List[Dict[str, str]] = []
 
     def explain(self) -> str:
-        """Return short explanation of what PhiAI changed."""
+        """Return a detailed explanation of all PhiAI adjustments.
+
+        Returns
+        -------
+        str
+            Human-readable summary of every change recorded in ``self.changes``,
+            including *what* was changed, *why*, and configuration constraints
+            (``max_indicators``, ``allow_shorts``, ``risk_cap``).
+
+        Examples
+        --------
+        >>> ai = PhiAI(max_indicators=3)
+        >>> ai.changes = [{"what": "RSI params", "reason": "Optimized → acc 62.0%"}]
+        >>> print(ai.explain())
+        """
+        lines = [
+            f"PhiAI configuration: max_indicators={self.max_indicators}, "
+            f"allow_shorts={self.allow_shorts}, risk_cap={self.risk_cap}",
+        ]
         if not self.changes:
-            return "PhiAI made no changes."
-        lines = [f"- {c.get('what', '')}: {c.get('reason', '')}" for c in self.changes]
-        return "PhiAI adjustments:\n" + "\n".join(lines)
+            lines.append("No adjustments were made.")
+        else:
+            lines.append(f"{len(self.changes)} adjustment(s):")
+            for c in self.changes:
+                what = c.get("what", "unknown")
+                reason = c.get("reason", "")
+                lines.append(f"  • {what}: {reason}")
+        return "\n".join(lines)
 
 
 def run_phiai_optimization(
@@ -98,10 +134,35 @@ def run_phiai_optimization(
     indicators: Dict[str, Dict[str, Any]],
     max_iter_per_indicator: int = 20,
 ) -> Tuple[Dict[str, Dict[str, Any]], str]:
-    """
-    PhiAI auto-tune: optimize params for each indicator using direction-accuracy proxy.
+    """Auto-tune parameters for every indicator using a direction-accuracy proxy.
 
-    Returns (optimized_indicators, explanation).
+    Each indicator's parameter grid is searched in parallel using
+    ``concurrent.futures.ThreadPoolExecutor``, then the best-scoring
+    parameter set is selected and stored.
+
+    Parameters
+    ----------
+    ohlcv : pd.DataFrame
+        OHLCV data used as the optimisation dataset.  Must contain a
+        ``close`` column.
+    indicators : dict[str, dict]
+        Mapping of indicator name → config dict
+        (``{"enabled": bool, "auto_tune": bool, "params": {...}}``).
+    max_iter_per_indicator : int
+        Maximum number of random-search evaluations per indicator.
+
+    Returns
+    -------
+    tuple[dict[str, dict], str]
+        ``(optimized_indicators, explanation)`` where ``optimized_indicators``
+        mirrors *indicators* with updated params, and ``explanation`` is a
+        human-readable summary of all changes made.
+
+    Examples
+    --------
+    >>> ohlcv = pd.DataFrame({"close": [100, 101, 99, 102]})
+    >>> cfg = {"RSI": {"enabled": True, "auto_tune": True, "params": {}}}
+    >>> opt, msg = run_phiai_optimization(ohlcv, cfg, max_iter_per_indicator=5)
     """
     from phi.indicators.simple import compute_indicator, INDICATOR_COMPUTERS
 
@@ -143,11 +204,12 @@ def run_phiai_optimization(
                 return 0.0
         return _obj
 
-    for name, cfg in indicators.items():
-        if name not in param_grids or name not in INDICATOR_COMPUTERS:
-            optimized[name] = cfg
-            continue
+    import concurrent.futures
 
+    def _tune_one(item):
+        name, cfg = item
+        if name not in param_grids or name not in INDICATOR_COMPUTERS:
+            return name, cfg, None
         grid = param_grids[name]
         best_params, best_score = auto_tune_params(
             ohlcv, name, grid,
@@ -155,11 +217,21 @@ def run_phiai_optimization(
             max_iter=max_iter_per_indicator,
             method="random",
         )
-        if best_params:
-            optimized[name] = {"enabled": True, "auto_tune": False, "params": best_params}
-            changes.append({"what": f"{name} params", "reason": f"Optimized → acc {best_score:.1%}"})
-        else:
+        return name, cfg, (best_params, best_score)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(indicators), _MAX_PARALLEL_INDICATORS) or 1) as executor:
+        futures = list(executor.map(_tune_one, indicators.items()))
+
+    for name, cfg, result in futures:
+        if result is None:
             optimized[name] = cfg
+        else:
+            best_params, best_score = result
+            if best_params:
+                optimized[name] = {"enabled": True, "auto_tune": False, "params": best_params}
+                changes.append({"what": f"{name} params", "reason": f"Optimized → acc {best_score:.1%}"})
+            else:
+                optimized[name] = cfg
 
     explanation = "PhiAI adjustments:\n" + "\n".join(f"- {c['what']}: {c['reason']}" for c in changes) if changes else "PhiAI made no changes."
     return optimized, explanation
