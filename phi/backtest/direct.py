@@ -19,6 +19,7 @@ def run_direct_backtest(
     blend_method: str = "weighted_sum",
     signal_threshold: float = 0.15,
     initial_capital: float = 100_000,
+    position_size_pct: float = 0.95,
 ) -> tuple[Dict[str, Any], Any]:
     """
     Run backtest directly on OHLCV. Returns (results_dict, strat_like_object).
@@ -84,7 +85,7 @@ def run_direct_backtest(
         if sig > signal_threshold:
             direction = "UP"
             if position == 0:
-                qty = int(cap * 0.95 // price)
+                qty = int(cap * position_size_pct // price)
                 if qty > 0:
                     position = qty
                     entry_price = price

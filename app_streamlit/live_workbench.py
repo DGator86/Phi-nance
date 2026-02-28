@@ -772,6 +772,236 @@ def render_backtest_controls(config):
 
 
 # ---------------------------------------------------------------------------
+# Phibot Review helpers
+# ---------------------------------------------------------------------------
+_VERDICT_COLORS = {
+    "strong":   "#22c55e",
+    "moderate": "#f59e0b",
+    "weak":     "#f97316",
+    "neutral":  "#6b7280",
+}
+_CONFIDENCE_COLORS = {
+    "high":   "#22c55e",
+    "medium": "#f59e0b",
+    "low":    "#6b7280",
+}
+_CATEGORY_LABELS = {
+    "blend_weight":      "Blend Weight",
+    "signal_threshold":  "Signal Threshold",
+    "blend_method":      "Blend Method",
+    "add_indicator":     "Add Indicator",
+    "position_sizing":   "Position Sizing",
+}
+
+
+def _apply_phibot_tweaks(tweaks) -> int:
+    """
+    Apply adopted tweaks to session state so sliders / selectors update
+    when Streamlit reruns. Returns count of tweaks applied.
+    """
+    applied = 0
+    for tweak in tweaks:
+        if not st.session_state.get(f"phibot_adopt_{tweak.id}", False):
+            continue
+        cat = tweak.category
+        if cat == "blend_weight":
+            st.session_state[tweak.param_key] = tweak.suggested_value
+        elif cat == "blend_method":
+            st.session_state["blend_method"] = tweak.suggested_value
+        elif cat == "signal_threshold":
+            st.session_state["phibot_signal_threshold"] = tweak.suggested_value
+        elif cat == "add_indicator":
+            ind_dict = dict(st.session_state.get("workbench_indicators", {}))
+            if tweak.suggested_value and tweak.suggested_value not in ind_dict:
+                ind_dict[tweak.suggested_value] = {"params": {}}
+                st.session_state["workbench_indicators"] = ind_dict
+        elif cat == "position_sizing":
+            st.session_state["phibot_position_size"] = tweak.suggested_value
+        # Reset the checkbox
+        st.session_state[f"phibot_adopt_{tweak.id}"] = False
+        applied += 1
+    return applied
+
+
+def _render_phibot_review(config, results, strat, indicators, blend_method, blend_weights):
+    """Render the Phibot post-backtest review tab."""
+    try:
+        from phi.phibot.reviewer import review_backtest
+    except Exception as exc:
+        st.error(f"Phibot reviewer unavailable: {exc}")
+        return
+
+    # OHLCV from session state
+    ohlcv = None
+    try:
+        sym  = (config.get("symbols") or ["SPY"])[0]
+        dfs  = st.session_state.get("workbench_dataset", {})
+        ohlcv = dfs.get(sym)
+    except Exception:
+        pass
+
+    prediction_log = []
+    if strat and hasattr(strat, "prediction_log"):
+        prediction_log = strat.prediction_log or []
+
+    try:
+        review = review_backtest(
+            ohlcv=ohlcv,
+            results=results if isinstance(results, dict) else {},
+            prediction_log=prediction_log,
+            indicators=indicators or {},
+            blend_weights=blend_weights or {},
+            blend_method=blend_method or "weighted_sum",
+            config=config or {},
+        )
+    except Exception as exc:
+        st.error(f"Phibot analysis failed: {exc}")
+        return
+
+    # Persist tweaks in session state so _apply_phibot_tweaks can read them
+    st.session_state["phibot_current_tweaks"] = review.tweaks
+
+    # ── Header card ──────────────────────────────────────────────────────────
+    verdict_color = _VERDICT_COLORS.get(review.verdict, "#6b7280")
+    st.markdown(
+        f"""
+        <div style="display:flex;align-items:center;gap:0.9rem;padding:1.1rem 1.4rem;
+                    background:rgba(168,85,247,0.07);border-radius:12px;
+                    border:1px solid rgba(168,85,247,0.2);margin-bottom:1.4rem;">
+            <div style="font-size:1.8rem;line-height:1;">&#129302;</div>
+            <div style="flex:1;">
+                <div style="color:#c084fc;font-size:0.62rem;text-transform:uppercase;
+                            letter-spacing:0.14em;font-weight:700;">Phibot Analysis</div>
+                <div style="color:#e4e4e7;font-size:0.92rem;font-weight:500;
+                            margin-top:0.25rem;line-height:1.45;">{review.summary}</div>
+            </div>
+            <div style="flex-shrink:0;">
+                <span style="background:{verdict_color};color:#fff;font-size:0.62rem;
+                             font-weight:700;text-transform:uppercase;letter-spacing:0.1em;
+                             padding:0.35rem 0.85rem;border-radius:20px;">
+                    {review.verdict}
+                </span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Regime performance table ──────────────────────────────────────────────
+    qualified = {r: s for r, s in review.regime_stats.items() if s.get("count", 0) >= 1}
+    if qualified:
+        st.markdown(
+            "<div style='color:#7a7a90;font-size:0.68rem;text-transform:uppercase;"
+            "letter-spacing:0.1em;font-weight:600;margin-bottom:0.6rem;'>"
+            "Regime Performance</div>",
+            unsafe_allow_html=True,
+        )
+        regime_rows = []
+        for reg, s in sorted(qualified.items(), key=lambda x: -x[1]["count"]):
+            from phi.phibot.reviewer import _REGIME_DESCRIPTIONS
+            regime_rows.append(
+                {
+                    "Regime":     reg,
+                    "Description": _REGIME_DESCRIPTIONS.get(reg, ""),
+                    "Trades":     s["count"],
+                    "Win Rate":   f"{s['win_rate']:.0%}",
+                    "Avg P&L":    f"{s['avg_pl']:+.1%}",
+                }
+            )
+        st.dataframe(
+            pd.DataFrame(regime_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    # ── Observations ─────────────────────────────────────────────────────────
+    if review.observations:
+        st.markdown(
+            "<div style='color:#7a7a90;font-size:0.68rem;text-transform:uppercase;"
+            "letter-spacing:0.1em;font-weight:600;margin:1.2rem 0 0.5rem;'>"
+            "Key Observations</div>",
+            unsafe_allow_html=True,
+        )
+        for obs in review.observations:
+            st.markdown(f"- {obs}")
+
+    # ── Tweaks ───────────────────────────────────────────────────────────────
+    if not review.tweaks:
+        st.markdown(
+            "<div style='color:#a1a1aa;font-size:0.85rem;margin-top:1rem;'>"
+            "No specific tweaks recommended — the strategy is well-configured for "
+            "current market conditions.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    st.markdown(
+        "<div style='color:#7a7a90;font-size:0.68rem;text-transform:uppercase;"
+        "letter-spacing:0.1em;font-weight:600;margin:1.4rem 0 0.8rem;'>"
+        "Suggested Tweaks</div>",
+        unsafe_allow_html=True,
+    )
+
+    adopted_any = False
+    for tweak in review.tweaks:
+        conf_color = _CONFIDENCE_COLORS.get(tweak.confidence, "#6b7280")
+        cat_label  = _CATEGORY_LABELS.get(tweak.category, tweak.category.replace("_", " ").title())
+
+        # Format the change arrow
+        if tweak.current_value is not None:
+            change_txt = f"{tweak.current_value} &rarr; {tweak.suggested_value}"
+        else:
+            change_txt = f"Add: {tweak.suggested_value}"
+
+        st.markdown(
+            f"""
+            <div style="background:rgba(249,115,22,0.05);border:1px solid rgba(249,115,22,0.18);
+                        border-radius:10px;padding:0.9rem 1.1rem;margin-bottom:0.6rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;
+                            margin-bottom:0.35rem;">
+                    <span style="color:#fb923c;font-size:0.62rem;text-transform:uppercase;
+                                 letter-spacing:0.1em;font-weight:700;">{cat_label}</span>
+                    <span style="background:{conf_color}22;color:{conf_color};font-size:0.6rem;
+                                 font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
+                                 padding:0.2rem 0.55rem;border-radius:10px;">
+                        {tweak.confidence} confidence
+                    </span>
+                </div>
+                <div style="color:#e4e4e7;font-size:0.9rem;font-weight:600;
+                            margin-bottom:0.3rem;">{tweak.title}</div>
+                <div style="color:#a1a1aa;font-size:0.8rem;line-height:1.5;
+                            margin-bottom:0.4rem;">{tweak.rationale}</div>
+                <div style="color:#6b7280;font-size:0.75rem;
+                            font-family:'JetBrains Mono',monospace;">{change_txt}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        is_adopted = st.checkbox(
+            "Adopt this tweak",
+            key=f"phibot_adopt_{tweak.id}",
+            value=st.session_state.get(f"phibot_adopt_{tweak.id}", False),
+        )
+        if is_adopted:
+            adopted_any = True
+
+    # ── Apply button ─────────────────────────────────────────────────────────
+    st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
+    if adopted_any:
+        if st.button(
+            "Apply Adopted Tweaks & Re-run",
+            key="phibot_apply_tweaks",
+            type="primary",
+            use_container_width=True,
+        ):
+            n = _apply_phibot_tweaks(review.tweaks)
+            st.session_state["phibot_tweaks_applied"] = n
+            st.rerun()
+    else:
+        st.caption("Check one or more tweaks above to enable the Apply button.")
+
+
+# ---------------------------------------------------------------------------
 # Results Display
 # ---------------------------------------------------------------------------
 def _display_results(config, results, strat, indicators, blend_method, blend_weights, sc=None):
@@ -816,7 +1046,9 @@ def _display_results(config, results, strat, indicators, blend_method, blend_wei
     ]
     st.markdown(_render_kpi_row(kpis), unsafe_allow_html=True)
 
-    tab_curve, tab_summary, tab_trades, tab_metrics = st.tabs(["Equity Curve", "Summary", "Trades", "Metrics"])
+    tab_curve, tab_summary, tab_trades, tab_metrics, tab_review = st.tabs(
+        ["Equity Curve", "Summary", "Trades", "Metrics", "🤖 Phibot Review"]
+    )
 
     with tab_curve:
         if pv and len(pv) > 1:
@@ -856,6 +1088,9 @@ def _display_results(config, results, strat, indicators, blend_method, blend_wei
         if isinstance(results, dict) and results.get("options_snapshot"):
             payload["options_snapshot"] = results.get("options_snapshot")
         st.json(payload)
+
+    with tab_review:
+        _render_phibot_review(config, results, strat, indicators, blend_method, blend_weights)
 
     from phi.run_config import RunConfig, RunHistory
     run_cfg = RunConfig(
@@ -901,8 +1136,20 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
     phiai_full = st.session_state.get("phiai_full", False)
     trading_mode = config.get("trading_mode", "equities")
 
+    # Show Phibot tweaks-applied confirmation banner (cleared after one render)
+    n_applied = st.session_state.pop("phibot_tweaks_applied", None)
+    if n_applied:
+        st.success(
+            f"Phibot applied {n_applied} tweak(s) to your configuration. "
+            "Click **Run Backtest** to see the updated results."
+        )
+
     if not run_clicked:
         return
+
+    # Honour any overrides adopted from Phibot review
+    _signal_threshold  = float(st.session_state.get("phibot_signal_threshold", 0.15))
+    _position_size_pct = float(st.session_state.get("phibot_position_size", 0.95))
 
     indicators_to_use = dict(indicators)
     phiai_explanation = ""
@@ -1043,8 +1290,9 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
                         indicators=indicators_to_use,
                         blend_weights=blend_weights,
                         blend_method=blend_method,
-                        signal_threshold=0.15,
+                        signal_threshold=_signal_threshold,
                         initial_capital=config["initial_capital"],
+                        position_size_pct=_position_size_pct,
                     )
                 except Exception as e:  # pylint: disable=broad-except
                     exc_holder[0] = e
@@ -1118,7 +1366,7 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
             strat_cls = _load_strategy("strategies.blended_workbench_strategy.BlendedWorkbenchStrategy")
             params = {"symbol": config["symbols"][0], "indicators": indicators_to_use,
                       "blend_method": blend_method, "blend_weights": blend_weights,
-                      "signal_threshold": 0.15, "lookback_bars": 200}
+                      "signal_threshold": _signal_threshold, "lookback_bars": 200}
         else:
             first_name = list(indicators_to_use.keys())[0]
             info = INDICATOR_CATALOG[first_name]
