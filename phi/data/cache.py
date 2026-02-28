@@ -117,6 +117,95 @@ def _fetch_from_yfinance(symbol: str, start_s: str, end_s: str) -> pd.DataFrame:
     raise last_exc
 
 
+# yfinance intraday interval map + lookback caps (in calendar days)
+_YF_INTRADAY_MAP = {
+    "1m": ("1m", 7),
+    "5m": ("5m", 60),
+    "15m": ("15m", 60),
+    "30m": ("30m", 60),
+    "1H": ("1h", 730),
+}
+
+
+def _fetch_from_yfinance_intraday(symbol: str, timeframe: str, start_s: str, end_s: str) -> pd.DataFrame:
+    """Fetch intraday OHLCV from yfinance (no API key, no rate limit).
+
+    yfinance supports intraday via the ``interval`` parameter. Maximum
+    historical depth depends on the interval:
+
+    - ``1m``  → last 7 calendar days
+    - ``5m``  → last 60 calendar days
+    - ``15m`` → last 60 calendar days
+    - ``30m`` → last 60 calendar days
+    - ``1H``  → last 730 calendar days
+
+    Parameters
+    ----------
+    symbol : str
+        Ticker symbol (e.g. ``"SPY"``, ``"AAPL"``).
+    timeframe : str
+        One of ``"1m"``, ``"5m"``, ``"15m"``, ``"30m"``, ``"1H"``.
+    start_s : str
+        Start date ``YYYY-MM-DD``.
+    end_s : str
+        End date ``YYYY-MM-DD``.
+
+    Returns
+    -------
+    pd.DataFrame
+        Normalised OHLCV DataFrame.
+
+    Raises
+    ------
+    ValueError
+        When the timeframe is unsupported or no data is returned.
+    """
+    import yfinance as yf
+
+    if timeframe not in _YF_INTRADAY_MAP:
+        raise ValueError(
+            f"yfinance intraday supports: {list(_YF_INTRADAY_MAP)}. Got: {timeframe}"
+        )
+    interval, max_days = _YF_INTRADAY_MAP[timeframe]
+
+    # Warn if requested range exceeds yfinance lookback cap.
+    start_dt = pd.Timestamp(start_s)
+    end_dt = pd.Timestamp(end_s)
+    cap_start = pd.Timestamp.now().normalize() - pd.Timedelta(days=max_days)
+    if start_dt < cap_start:
+        logger.warning(
+            "yfinance %s only keeps %d days of history. "
+            "Clamping start from %s to %s.",
+            interval, max_days, start_s, cap_start.date(),
+        )
+        start_s = str(cap_start.date())
+
+    last_exc: Exception = ValueError(f"No intraday data for {symbol}")
+    for attempt in range(3):
+        try:
+            tkr = yf.Ticker(symbol)
+            df = tkr.history(start=start_s, end=end_s, interval=interval, auto_adjust=True)
+            if df.empty:
+                raise ValueError(f"No intraday data for {symbol} {interval}")
+            # tz-strip so index is tz-naive (consistent with other providers)
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+            result = _normalize_ohlcv(df)
+            _ohlcv_sanity_check(result, symbol)
+            logger.info("yfinance intraday: fetched %d rows for %s %s", len(result), symbol, interval)
+            return result
+        except Exception as exc:
+            last_exc = exc
+            wait = 2 ** attempt
+            logger.warning(
+                "yfinance intraday attempt %d/%d failed for %s %s: %s. Retrying in %ds.",
+                attempt + 1, 3, symbol, interval, exc, wait,
+            )
+            if attempt < 2:
+                time.sleep(wait)
+    raise last_exc
+
+
 def _fetch_from_alpha_vantage(symbol: str, timeframe: str, start_s: str, end_s: str, api_key: Optional[str]) -> pd.DataFrame:
     """Fetch OHLCV from Alpha Vantage with exponential-backoff retry.
 
@@ -415,9 +504,11 @@ def fetch_and_cache(
     if vendor_key in ("alphavantage", "alpha_vantage"):
         df = _fetch_from_alpha_vantage(symbol, timeframe, start_s, end_s, api_key)
     elif vendor_key in ("yfinance", "yf"):
-        if timeframe != "1D":
-            raise ValueError("yfinance provider supports only 1D timeframe")
-        df = _fetch_from_yfinance(symbol, start_s, end_s)
+        if timeframe == "1D":
+            df = _fetch_from_yfinance(symbol, start_s, end_s)
+        else:
+            # No API key needed, no rate limiting — yfinance intraday via interval param.
+            df = _fetch_from_yfinance_intraday(symbol, timeframe, start_s, end_s)
     elif vendor_key in ("binance", "binance_public"):
         df = _fetch_from_binance(symbol, timeframe, start_s, end_s)
     else:
