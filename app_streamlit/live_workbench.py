@@ -198,6 +198,12 @@ INDICATOR_CATALOG = {
         "strategy": "strategies.buy_and_hold.BuyAndHold",
         "icon": "&#x1F4B5;",
     },
+    "VWAP": {
+        "description": "Session VWAP deviation — intraday mean-reversion. Best on 1m–1H bars.",
+        "params": {"band_pct": (0.1, 2.0, 0.5)},
+        "strategy": None,  # direct backtest only; no Lumibot strategy wrapper
+        "icon": "&#x23F1;",
+    },
 }
 
 BLEND_METHODS = ["Weighted Sum", "Regime-Weighted", "Voting", "PhiAI Chooses"]

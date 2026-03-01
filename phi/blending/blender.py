@@ -35,6 +35,9 @@ REGIME_INDICATOR_BOOST = {
     "Mean Reversion": {"RANGE": 1.6, "LOWVOL": 1.2, "TREND_UP": 0.5, "TREND_DN": 0.5},
     "Breakout": {"BREAKOUT_UP": 1.5, "BREAKOUT_DN": 1.5, "TREND_UP": 1.2, "TREND_DN": 1.2, "RANGE": 0.6},
     "Buy & Hold": {},  # No regime preference
+    # VWAP is a mean-reversion signal — strongest in ranging/low-vol regimes,
+    # weaker in trends where price can sustain deviation for extended periods.
+    "VWAP": {"RANGE": 1.5, "LOWVOL": 1.3, "EXHAUST_REV": 1.2, "TREND_UP": 0.7, "TREND_DN": 0.7, "BREAKOUT_UP": 0.5, "BREAKOUT_DN": 0.5},
 }
 
 

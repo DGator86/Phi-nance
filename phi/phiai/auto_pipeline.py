@@ -23,6 +23,21 @@ _DEFAULT_PARAMS = {
     "Mean Reversion": {"sma_period": 20},
     "Breakout": {"channel_period": 20},
     "Buy & Hold": {},
+    "VWAP": {"band_pct": 0.5},
+}
+
+# Intraday-tuned defaults — shorter periods for 10-min to 10-hour signal horizon
+_INTRADAY_TF = {"1m", "5m", "15m", "30m", "1H"}
+_INTRADAY_DEFAULT_INDICATORS = ["RSI", "MACD", "VWAP", "Bollinger"]
+_INTRADAY_DEFAULT_PARAMS = {
+    "RSI": {"rsi_period": 7, "oversold": 30, "overbought": 70},
+    "MACD": {"fast_period": 5, "slow_period": 13, "signal_period": 5},
+    "Bollinger": {"bb_period": 14, "num_std": 2},
+    "Dual SMA": {"fast_period": 5, "slow_period": 20},
+    "Mean Reversion": {"sma_period": 10},
+    "Breakout": {"channel_period": 10},
+    "VWAP": {"band_pct": 0.3},
+    "Buy & Hold": {},
 }
 
 
@@ -43,7 +58,7 @@ def _ollama_suggest_indicators(
             return None
 
         agent = OllamaAgent(model=model, host=host)
-        prompt = f"""For backtesting {symbol} from {start} to {end}, choose 2-4 indicators from: RSI, MACD, Bollinger, Dual SMA, Mean Reversion, Breakout, Buy & Hold.
+        prompt = f"""For backtesting {symbol} from {start} to {end}, choose 2-4 indicators from: RSI, MACD, Bollinger, Dual SMA, Mean Reversion, Breakout, VWAP, Buy & Hold.
 Pick blend: weighted_sum, regime_weighted, or voting.
 Reply ONLY with valid JSON, no other text: {{"indicators": ["RSI","MACD"], "blend": "weighted_sum"}}"""
 
@@ -64,7 +79,7 @@ Reply ONLY with valid JSON, no other text: {{"indicators": ["RSI","MACD"], "blen
                 data = json.loads(reply[start : end + 1])
                 inds = data.get("indicators", _DEFAULT_INDICATORS[:2])
                 blend = data.get("blend", "weighted_sum")
-                valid = {"RSI", "MACD", "Bollinger", "Dual SMA", "Mean Reversion", "Breakout", "Buy & Hold"}
+                valid = {"RSI", "MACD", "Bollinger", "Dual SMA", "Mean Reversion", "Breakout", "VWAP", "Buy & Hold"}
                 inds = [i for i in inds if i in valid][:4]
                 if not inds:
                     inds = ["RSI", "MACD"]
@@ -97,13 +112,16 @@ def run_fully_automated(
     from phi.phiai import run_phiai_optimization
 
     explanation_parts = []
+    is_intraday = timeframe in _INTRADAY_TF
 
-    # 1. Fetch data
-    ohlcv = fetch_and_cache("alphavantage", symbol, timeframe, start_date, end_date)
-    if ohlcv is None or len(ohlcv) < 50:
-        raise ValueError(f"Could not load data for {symbol}")
+    # 1. Fetch data — use yfinance for intraday (no rate limiting), alphavantage for daily
+    vendor = "yfinance" if is_intraday else "alphavantage"
+    ohlcv = fetch_and_cache(vendor, symbol, timeframe, start_date, end_date)
+    if ohlcv is None or len(ohlcv) < 20:
+        raise ValueError(f"Could not load data for {symbol} ({timeframe})")
+    explanation_parts.append(f"Data: {vendor} {symbol} {timeframe} ({len(ohlcv)} bars)")
 
-    # 2. Select indicators (Ollama or default)
+    # 2. Select indicators (Ollama or timeframe-aware defaults)
     indicators_to_use = []
     blend_method = "weighted_sum"
 
@@ -114,17 +132,21 @@ def run_fully_automated(
             explanation_parts.append(f"Ollama selected: {', '.join(indicators_to_use)}, blend={blend_method}")
 
     if not indicators_to_use:
-        indicators_to_use = _DEFAULT_INDICATORS[:3]
-        explanation_parts.append(f"Default indicators: {', '.join(indicators_to_use)}")
+        if is_intraday:
+            indicators_to_use = _INTRADAY_DEFAULT_INDICATORS[:3]
+        else:
+            indicators_to_use = _DEFAULT_INDICATORS[:3]
+        explanation_parts.append(f"{'Intraday' if is_intraday else 'Daily'} defaults: {', '.join(indicators_to_use)}")
 
-    # 3. Build initial indicator configs
+    # 3. Build initial indicator configs with timeframe-appropriate params
+    default_params = _INTRADAY_DEFAULT_PARAMS if is_intraday else _DEFAULT_PARAMS
     indicators = {}
     for name in indicators_to_use:
-        params = _DEFAULT_PARAMS.get(name, {})
+        params = default_params.get(name, {})
         indicators[name] = {"enabled": True, "auto_tune": True, "params": params.copy()}
 
-    # 4. PhiAI optimize params
-    optimized, opt_expl = run_phiai_optimization(ohlcv, indicators, max_iter_per_indicator=12)
+    # 4. PhiAI optimize params using timeframe-aware grids
+    optimized, opt_expl = run_phiai_optimization(ohlcv, indicators, max_iter_per_indicator=12, timeframe=timeframe)
     indicators = optimized
     explanation_parts.append(opt_expl)
 
@@ -142,7 +164,7 @@ def run_fully_automated(
         "start": datetime.fromisoformat(sd + "T00:00:00"),
         "end": datetime.fromisoformat(ed + "T23:59:59"),
         "timeframe": timeframe,
-        "vendor": "alphavantage",
+        "vendor": vendor,
         "initial_capital": initial_capital,
         "benchmark": symbol,
         "trading_mode": "equities",

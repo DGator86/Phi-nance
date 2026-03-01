@@ -133,6 +133,7 @@ def run_phiai_optimization(
     ohlcv: pd.DataFrame,
     indicators: Dict[str, Dict[str, Any]],
     max_iter_per_indicator: int = 20,
+    timeframe: str = "1D",
 ) -> Tuple[Dict[str, Dict[str, Any]], str]:
     """Auto-tune parameters for every indicator using a direction-accuracy proxy.
 
@@ -169,14 +170,28 @@ def run_phiai_optimization(
     optimized = {}
     changes = []
 
-    param_grids = {
-        "RSI": {"rsi_period": [7, 14, 21], "oversold": [25, 30, 35], "overbought": [65, 70, 75]},
-        "MACD": {"fast_period": [8, 12, 16], "slow_period": [21, 26, 31], "signal_period": [7, 9, 11]},
-        "Bollinger": {"bb_period": [15, 20, 25], "num_std": [1.5, 2.0, 2.5]},
-        "Dual SMA": {"fast_period": [5, 10, 20], "slow_period": [30, 50, 100]},
-        "Mean Reversion": {"sma_period": [10, 20, 40]},
-        "Breakout": {"channel_period": [10, 20, 40]},
-    }
+    # Intraday timeframes need shorter periods to generate signals within 10m–10h.
+    _INTRADAY_TF = {"1m", "5m", "15m", "30m", "1H"}
+    if timeframe in _INTRADAY_TF:
+        param_grids = {
+            "RSI": {"rsi_period": [3, 5, 7, 9, 14], "oversold": [25, 30, 35], "overbought": [65, 70, 75]},
+            "MACD": {"fast_period": [3, 5, 8], "slow_period": [12, 17, 21], "signal_period": [3, 5, 7]},
+            "Bollinger": {"bb_period": [10, 14, 20], "num_std": [1.5, 2.0, 2.5]},
+            "Dual SMA": {"fast_period": [3, 5, 9], "slow_period": [12, 20, 30]},
+            "Mean Reversion": {"sma_period": [5, 10, 15]},
+            "Breakout": {"channel_period": [5, 10, 15]},
+            "VWAP": {"band_pct": [0.2, 0.3, 0.5, 0.8, 1.0]},
+        }
+    else:
+        param_grids = {
+            "RSI": {"rsi_period": [7, 14, 21], "oversold": [25, 30, 35], "overbought": [65, 70, 75]},
+            "MACD": {"fast_period": [8, 12, 16], "slow_period": [21, 26, 31], "signal_period": [7, 9, 11]},
+            "Bollinger": {"bb_period": [15, 20, 25], "num_std": [1.5, 2.0, 2.5]},
+            "Dual SMA": {"fast_period": [5, 10, 20], "slow_period": [30, 50, 100]},
+            "Mean Reversion": {"sma_period": [10, 20, 40]},
+            "Breakout": {"channel_period": [10, 20, 40]},
+            "VWAP": {"band_pct": [0.2, 0.5, 1.0]},
+        }
 
     close = ohlcv["close"].values
     direction = np.zeros(len(close) - 1)
