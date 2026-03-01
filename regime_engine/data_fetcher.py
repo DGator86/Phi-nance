@@ -749,6 +749,57 @@ class YFinanceIntradayFetcher:
         logger.info("YFinanceIntradayFetcher: %s %s → %d bars", symbol, yf_interval, len(df))
         return df
 
+    def intraday_month(
+        self,
+        symbol:    str,
+        month:     str,          # format: 'YYYY-MM'
+        interval:  str = "5min",
+        adjusted:  bool = True,
+        extended:  bool = False,
+        cache_ttl: int  = 0,
+    ) -> pd.DataFrame:
+        """
+        Fetch a specific calendar month of intraday data via yfinance.
+
+        yfinance lookback limits apply: 1m→7 days, 5m/15m/30m→60 days,
+        60m→730 days.  Months outside these windows will return partial or
+        empty data.
+
+        Parameters
+        ----------
+        month : 'YYYY-MM'  (e.g. '2025-02')
+        """
+        import yfinance as yf
+
+        year, mon = int(month[:4]), int(month[5:7])
+        start_s = f"{year:04d}-{mon:02d}-01"
+        end_s   = f"{year + 1:04d}-01-01" if mon == 12 else f"{year:04d}-{mon + 1:02d}-01"
+
+        yf_interval = self._INTERVAL_MAP.get(interval, "5m")
+        tkr = yf.Ticker(symbol)
+        df  = tkr.history(
+            start=start_s, end=end_s,
+            interval=yf_interval, auto_adjust=True,
+        )
+        if df.empty:
+            raise ValueError(
+                f"YFinanceIntradayFetcher.intraday_month: no data for "
+                f"{symbol} {yf_interval} {month} (may exceed lookback limit)"
+            )
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        df.columns = [c.lower() for c in df.columns]
+        df = df[["open", "high", "low", "close", "volume"]].copy()
+        for col in ["open", "high", "low", "close"]:
+            df[col] = df[col].astype(float)
+        df["volume"] = df["volume"].astype(int)
+        df.sort_index(inplace=True)
+        logger.info(
+            "YFinanceIntradayFetcher.intraday_month: %s %s %s → %d bars",
+            symbol, yf_interval, month, len(df),
+        )
+        return df
+
     def intraday_mtf(
         self,
         symbol:    str,
