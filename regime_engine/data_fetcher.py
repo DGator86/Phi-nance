@@ -726,15 +726,29 @@ class YFinanceIntradayFetcher:
             start_dt = end_dt - pd.Timedelta(days=max_days)
 
         tkr = yf.Ticker(symbol)
-        df  = tkr.history(
-            start=str(start_dt.date()),
-            end=str(end_dt.date()),
-            interval=yf_interval,
-            auto_adjust=True,
-        )
+        last_exc: Exception = ValueError(f"YFinanceIntradayFetcher: no data for {symbol} {yf_interval}")
+        df = pd.DataFrame()
+        for attempt in range(3):
+            try:
+                df = tkr.history(
+                    start=str(start_dt.date()),
+                    end=str(end_dt.date()),
+                    interval=yf_interval,
+                    auto_adjust=True,
+                )
+                if not df.empty:
+                    break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "YFinanceIntradayFetcher.intraday attempt %d/3 for %s %s: %s",
+                    attempt + 1, symbol, yf_interval, exc,
+                )
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
 
         if df.empty:
-            raise ValueError(f"YFinanceIntradayFetcher: no data for {symbol} {yf_interval}")
+            raise last_exc
 
         # Normalise: tz-strip, lowercase columns, keep OHLCV only
         if df.index.tz is not None:
@@ -777,15 +791,27 @@ class YFinanceIntradayFetcher:
 
         yf_interval = self._INTERVAL_MAP.get(interval, "5m")
         tkr = yf.Ticker(symbol)
-        df  = tkr.history(
-            start=start_s, end=end_s,
-            interval=yf_interval, auto_adjust=True,
+        last_exc: Exception = ValueError(
+            f"YFinanceIntradayFetcher.intraday_month: no data for "
+            f"{symbol} {yf_interval} {month} (may exceed lookback limit)"
         )
+        df = pd.DataFrame()
+        for attempt in range(3):
+            try:
+                df = tkr.history(start=start_s, end=end_s, interval=yf_interval, auto_adjust=True)
+                if not df.empty:
+                    break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "YFinanceIntradayFetcher.intraday_month attempt %d/3 for %s %s %s: %s",
+                    attempt + 1, symbol, yf_interval, month, exc,
+                )
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
+
         if df.empty:
-            raise ValueError(
-                f"YFinanceIntradayFetcher.intraday_month: no data for "
-                f"{symbol} {yf_interval} {month} (may exceed lookback limit)"
-            )
+            raise last_exc
         if df.index.tz is not None:
             df.index = df.index.tz_localize(None)
         df.columns = [c.lower() for c in df.columns]

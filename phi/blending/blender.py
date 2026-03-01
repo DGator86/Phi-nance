@@ -14,10 +14,13 @@ into a single composite signal using one of four methods:
 
 from __future__ import annotations
 
+import logging
 from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 BLEND_METHODS = ["weighted_sum", "regime_weighted", "voting", "phiai_chooses"]
@@ -88,6 +91,14 @@ def blend_signals(
         majority = votes.sum(axis=1) / len(cols)
         return majority.clip(-1, 1)
 
+    if method == "regime_weighted" and regime_probs is None:
+        logger.warning(
+            "blend_signals: method='regime_weighted' requested but regime_probs=None; "
+            "falling back to weighted_sum. Pass regime probabilities from RegimeEngine "
+            "to enable regime-aware blending."
+        )
+        return blend_signals(signals, weights, "weighted_sum", None)
+
     if method == "regime_weighted" and regime_probs is not None:
         # Vectorized: align regime_probs to signals index, compute per-indicator
         # adjusted weights using numpy, then compute weighted sum in one pass.
@@ -115,4 +126,6 @@ def blend_signals(
         # Placeholder: same as weighted sum; PhiAI would optimize weights
         return blend_signals(signals, weights, "weighted_sum", None)
 
+    # Unknown method — fall back to weighted_sum
+    logger.warning("blend_signals: unknown method %r; falling back to weighted_sum", method)
     return blend_signals(signals, weights, "weighted_sum", None)
