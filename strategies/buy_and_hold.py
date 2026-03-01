@@ -38,11 +38,6 @@ class BuyAndHold(PredictionMixin, Strategy):
         symbol = self.parameters["symbol"]
         price = self.get_last_price(symbol)
         
-        print(f"DEBUG: [Strategy] Symbol: {symbol}, Price: {price}")
-        if hasattr(self, "broker") and hasattr(self.broker, "data_source"):
-             print(f"DEBUG: [Strategy] Datasource class: {self.broker.data_source.__class__}")
-        print(f"DEBUG: [Strategy] Current time: {self.get_datetime()}")
-
         # Prediction: always bullish
         self.record_prediction(symbol, "UP", price)
 
