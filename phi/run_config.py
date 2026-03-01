@@ -9,7 +9,6 @@ Stored under: /runs/{run_id}/config.json, results.json, trades.csv
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from datetime import datetime
 from pathlib import Path

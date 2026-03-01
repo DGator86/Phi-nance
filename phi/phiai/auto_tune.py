@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-_MAX_PARALLEL_INDICATORS = 4
-
 import numpy as np
 import pandas as pd
+
+_MAX_PARALLEL_INDICATORS = 4
 
 
 def auto_tune_params(

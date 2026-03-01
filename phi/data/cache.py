@@ -19,10 +19,10 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-_SECONDS_PER_DAY = 86400
-
 import pandas as pd
 import requests
+
+_SECONDS_PER_DAY = 86400
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +170,6 @@ def _fetch_from_yfinance_intraday(symbol: str, timeframe: str, start_s: str, end
 
     # Warn if requested range exceeds yfinance lookback cap.
     start_dt = pd.Timestamp(start_s)
-    end_dt = pd.Timestamp(end_s)
     cap_start = pd.Timestamp.now().normalize() - pd.Timedelta(days=max_days)
     if start_dt < cap_start:
         logger.warning(
@@ -303,7 +302,6 @@ def _fetch_from_binance(symbol: str, timeframe: str, start_s: str, end_s: str) -
     for m in months:
         ym = f"{m.year:04d}-{m.month:02d}"
         url = f"{_BINANCE_BASE}/spot/monthly/klines/{symbol.upper()}/{interval}/{symbol.upper()}-{interval}-{ym}.zip"
-        last_exc: Exception = ValueError("Binance fetch failed")
         for attempt in range(3):
             try:
                 resp = requests.get(url, timeout=30)
@@ -318,7 +316,6 @@ def _fetch_from_binance(symbol: str, timeframe: str, start_s: str, end_s: str) -
                 logger.info("binance: fetched %s %s %s", symbol, interval, ym)
                 break
             except Exception as exc:
-                last_exc = exc
                 wait = 2 ** attempt
                 logger.warning("binance attempt %d/%d failed for %s %s: %s. Retrying in %ds.", attempt + 1, 3, symbol, ym, exc, wait)
                 if attempt < 2:

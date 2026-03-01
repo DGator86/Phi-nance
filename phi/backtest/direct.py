@@ -5,7 +5,7 @@ Uses OHLCV DataFrame directly. Guaranteed to work with pipeline data.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -94,7 +94,6 @@ def run_direct_backtest(
     # Simulate bar-by-bar
     cap = float(initial_capital)
     position = 0  # shares
-    entry_price = 0.0
     portfolio_values: List[float] = [cap]
     prediction_log: List[Dict] = []
     closes = df["close"].values
@@ -112,7 +111,6 @@ def run_direct_backtest(
                 qty = int(cap * position_size_pct // price)
                 if qty > 0:
                     position = qty
-                    entry_price = price
                     cap -= qty * price
         elif sig < -signal_threshold:
             direction = "DOWN"

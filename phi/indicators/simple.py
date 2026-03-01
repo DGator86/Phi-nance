@@ -5,7 +5,7 @@ Returns normalized signal series (-1 to 1 scale) for blending.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict
 
 import numpy as np
 import pandas as pd

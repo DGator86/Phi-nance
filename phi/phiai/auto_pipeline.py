@@ -8,7 +8,6 @@ No manual tuning. Uses Ollama when available for indicator/blend suggestions.
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -76,7 +75,7 @@ Reply ONLY with valid JSON, no other text: {{"indicators": ["RSI","MACD"], "blen
                         end = i
                         break
             try:
-                data = json.loads(reply[start : end + 1])
+                data = json.loads(reply[start:end + 1])
                 inds = data.get("indicators", _DEFAULT_INDICATORS[:2])
                 blend = data.get("blend", "weighted_sum")
                 valid = {"RSI", "MACD", "Bollinger", "Dual SMA", "Mean Reversion", "Breakout", "VWAP", "Buy & Hold"}
@@ -150,9 +149,7 @@ def run_fully_automated(
     indicators = optimized
     explanation_parts.append(opt_expl)
 
-    # 5. Blend weights (equal)
-    blend_weights = {k: 1.0 / len(indicators) for k in indicators}
-
+    # 5. Blend method (equal weights, handled by caller)
     from datetime import datetime
 
     # Ensure date strings have full format

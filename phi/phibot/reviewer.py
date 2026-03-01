@@ -12,7 +12,7 @@ Philosophy — situational awareness, NOT overfitting:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -50,14 +50,14 @@ class BacktestReview:
 # ─── Regime Detection ─────────────────────────────────────────────────────────
 
 _REGIME_DESCRIPTIONS: Dict[str, str] = {
-    "TREND_UP":    "uptrending markets",
-    "TREND_DN":    "downtrending markets",
-    "RANGE":       "range-bound markets",
-    "HIGHVOL":     "high-volatility markets",
-    "LOWVOL":      "low-volatility markets",
+    "TREND_UP": "uptrending markets",
+    "TREND_DN": "downtrending markets",
+    "RANGE": "range-bound markets",
+    "HIGHVOL": "high-volatility markets",
+    "LOWVOL": "low-volatility markets",
     "BREAKOUT_UP": "upside breakout conditions",
     "BREAKOUT_DN": "downside breakout conditions",
-    "UNKNOWN":     "mixed conditions",
+    "UNKNOWN": "mixed conditions",
 }
 
 
@@ -75,8 +75,8 @@ def detect_market_regime(ohlcv: pd.DataFrame, lookback: int = 20) -> pd.Series:
         return pd.Series("RANGE", index=idx)
 
     close = ohlcv["close"]
-    high  = ohlcv["high"]
-    low   = ohlcv["low"]
+    high = ohlcv["high"]
+    low = ohlcv["low"]
 
     # True Range → ATR
     prev_close = close.shift(1)
@@ -99,9 +99,9 @@ def detect_market_regime(ohlcv: pd.DataFrame, lookback: int = 20) -> pd.Series:
     dm_pos = (high - high.shift(1)).clip(lower=0).fillna(0)
     dm_neg = (low.shift(1) - low).clip(lower=0).fillna(0)
     atr_sum = tr.rolling(lookback).sum().replace(0, 1)
-    di_pos  = dm_pos.rolling(lookback).sum() / atr_sum
-    di_neg  = dm_neg.rolling(lookback).sum() / atr_sum
-    di_sum  = (di_pos + di_neg).replace(0, 1)
+    di_pos = dm_pos.rolling(lookback).sum() / atr_sum
+    di_neg = dm_neg.rolling(lookback).sum() / atr_sum
+    di_sum = (di_pos + di_neg).replace(0, 1)
     adx_proxy = ((di_pos - di_neg).abs() / di_sum).rolling(lookback).mean().fillna(0)
 
     # Channel breakout reference
@@ -117,7 +117,7 @@ def detect_market_regime(ohlcv: pd.DataFrame, lookback: int = 20) -> pd.Series:
 
     # Layer 2 — Trend override
     trend_strong = adx_proxy >= 0.22
-    regime[trend_strong & (roc >= 0.02)]  = "TREND_UP"
+    regime[trend_strong & (roc >= 0.02)] = "TREND_UP"
     regime[trend_strong & (roc <= -0.02)] = "TREND_DN"
 
     # Layer 3 — Breakout override (most specific signal)
@@ -149,18 +149,18 @@ def _reconstruct_trades(
     entry_bar = 0
 
     for bar_idx, bar in enumerate(prediction_log):
-        sig   = bar.get("signal", "NEUTRAL")
+        sig = bar.get("signal", "NEUTRAL")
         price = bar.get("price", 0.0)
-        date  = bar.get("date")
+        date = bar.get("date")
 
         if sig == "UP" and not in_trade and price > 0:
-            in_trade    = True
+            in_trade = True
             entry_price = price
-            entry_date  = date
-            entry_bar   = bar_idx
+            entry_date = date
+            entry_bar = bar_idx
 
         elif sig == "DOWN" and in_trade and price > 0:
-            pnl_pct   = (price - entry_price) / entry_price if entry_price else 0.0
+            pnl_pct = (price - entry_price) / entry_price if entry_price else 0.0
             hold_bars = bar_idx - entry_bar
 
             # Regime at entry
@@ -203,14 +203,14 @@ def _compute_regime_stats(trades: List[Dict]) -> Dict[str, Dict]:
         r = t.get("regime", "UNKNOWN")
         if r not in stats:
             stats[r] = {"count": 0, "wins": 0, "total_pl": 0.0}
-        stats[r]["count"]    += 1
-        stats[r]["wins"]     += int(t["win"])
+        stats[r]["count"] += 1
+        stats[r]["wins"] += int(t["win"])
         stats[r]["total_pl"] += t["pnl_pct"]
 
     for r, s in stats.items():
-        cnt         = s["count"]
+        cnt = s["count"]
         s["win_rate"] = s["wins"] / cnt if cnt else 0.0
-        s["avg_pl"]   = s["total_pl"] / cnt if cnt else 0.0
+        s["avg_pl"] = s["total_pl"] / cnt if cnt else 0.0
 
     return stats
 
@@ -218,17 +218,17 @@ def _compute_regime_stats(trades: List[Dict]) -> Dict[str, Dict]:
 # ─── Indicator-Regime Affinities (mirrors blender.py) ────────────────────────
 
 _REGIME_INDICATOR_BOOST: Dict[str, Dict[str, float]] = {
-    "RSI":           {"TREND_UP": 1.2, "TREND_DN": 1.2, "RANGE": 1.3,
-                      "BREAKOUT_UP": 1.1, "BREAKOUT_DN": 1.1},
-    "MACD":          {"TREND_UP": 1.5, "TREND_DN": 1.5,
-                      "BREAKOUT_UP": 1.3, "BREAKOUT_DN": 1.3, "RANGE": 0.6},
-    "Bollinger":     {"RANGE": 1.4, "TREND_UP": 1.0, "TREND_DN": 1.0, "LOWVOL": 1.2},
-    "Dual SMA":      {"TREND_UP": 1.5, "TREND_DN": 1.5,
-                      "BREAKOUT_UP": 1.3, "BREAKOUT_DN": 1.3, "RANGE": 0.5},
-    "Mean Reversion":{"RANGE": 1.6, "LOWVOL": 1.2, "TREND_UP": 0.5, "TREND_DN": 0.5},
-    "Breakout":      {"BREAKOUT_UP": 1.5, "BREAKOUT_DN": 1.5,
-                      "TREND_UP": 1.2, "TREND_DN": 1.2, "RANGE": 0.6},
-    "Buy & Hold":    {},
+    "RSI": {"TREND_UP": 1.2, "TREND_DN": 1.2, "RANGE": 1.3,
+            "BREAKOUT_UP": 1.1, "BREAKOUT_DN": 1.1},
+    "MACD": {"TREND_UP": 1.5, "TREND_DN": 1.5,
+             "BREAKOUT_UP": 1.3, "BREAKOUT_DN": 1.3, "RANGE": 0.6},
+    "Bollinger": {"RANGE": 1.4, "TREND_UP": 1.0, "TREND_DN": 1.0, "LOWVOL": 1.2},
+    "Dual SMA": {"TREND_UP": 1.5, "TREND_DN": 1.5,
+                 "BREAKOUT_UP": 1.3, "BREAKOUT_DN": 1.3, "RANGE": 0.5},
+    "Mean Reversion": {"RANGE": 1.6, "LOWVOL": 1.2, "TREND_UP": 0.5, "TREND_DN": 0.5},
+    "Breakout": {"BREAKOUT_UP": 1.5, "BREAKOUT_DN": 1.5,
+                 "TREND_UP": 1.2, "TREND_DN": 1.2, "RANGE": 0.6},
+    "Buy & Hold": {},
 }
 
 
@@ -248,8 +248,6 @@ def _generate_tweaks(
         return tweaks
 
     overall_win_rate = sum(t["win"] for t in trades) / total_trades
-    total_gains  = sum(t["pnl_pct"] for t in trades if t["win"])
-    total_losses = abs(sum(t["pnl_pct"] for t in trades if not t["win"]))
     dd = float(results.get("max_drawdown") or 0)
 
     # — Tweak 1: Signal threshold —
@@ -288,19 +286,19 @@ def _generate_tweaks(
     qualified = {r: s for r, s in regime_stats.items() if s.get("count", 0) >= 2}
     if qualified:
         worst_regime = min(qualified, key=lambda r: qualified[r]["win_rate"])
-        worst_stats  = qualified[worst_regime]
+        worst_stats = qualified[worst_regime]
 
         if worst_stats["win_rate"] < 0.42:
             regime_desc = _REGIME_DESCRIPTIONS.get(worst_regime, worst_regime)
 
             # Best indicator for this regime that is already in use
-            best_ind   = None
+            best_ind = None
             best_boost = 0.0
             for ind_name in indicators:
                 boost = _REGIME_INDICATOR_BOOST.get(ind_name, {}).get(worst_regime, 1.0)
                 if boost > best_boost:
                     best_boost = boost
-                    best_ind   = ind_name
+                    best_ind = ind_name
 
             if best_ind and best_boost >= 1.1:
                 cur_w = blend_weights.get(best_ind, 0.5)
@@ -347,9 +345,9 @@ def _generate_tweaks(
     if qualified:
         worst_for_missing = min(qualified, key=lambda r: qualified[r]["win_rate"])
         if qualified[worst_for_missing]["win_rate"] < 0.40:
-            regime_desc   = _REGIME_DESCRIPTIONS.get(worst_for_missing, worst_for_missing)
-            best_missing  = None
-            best_boost_m  = 0.0
+            regime_desc = _REGIME_DESCRIPTIONS.get(worst_for_missing, worst_for_missing)
+            best_missing = None
+            best_boost_m = 0.0
 
             for ind_name, boost_map in _REGIME_INDICATOR_BOOST.items():
                 if ind_name in indicators or ind_name == "Buy & Hold":
@@ -410,8 +408,8 @@ def _build_observations(
         obs.append("No completed trades found in this backtest period.")
         return obs
 
-    wins     = sum(t["win"] for t in trades)
-    losses   = total_trades - wins
+    wins = sum(t["win"] for t in trades)
+    losses = total_trades - wins
     win_rate = wins / total_trades
     avg_hold = float(np.mean([t["hold_bars"] for t in trades]))
 
@@ -420,7 +418,7 @@ def _build_observations(
         f"(**{win_rate:.0%}** win rate)."
     )
 
-    total_gains  = sum(t["pnl_pct"] for t in trades if t["win"])
+    total_gains = sum(t["pnl_pct"] for t in trades if t["win"])
     total_losses_amt = abs(sum(t["pnl_pct"] for t in trades if not t["win"]))
     if total_losses_amt > 0:
         pf = total_gains / total_losses_amt
@@ -431,7 +429,7 @@ def _build_observations(
     # Regime insights (only for regimes with ≥ 2 trades)
     qualified = {r: s for r, s in regime_stats.items() if s["count"] >= 2}
     if qualified:
-        best_r  = max(qualified, key=lambda r: qualified[r]["win_rate"])
+        best_r = max(qualified, key=lambda r: qualified[r]["win_rate"])
         worst_r = min(qualified, key=lambda r: qualified[r]["win_rate"])
         b = qualified[best_r]
         w = qualified[worst_r]
@@ -469,7 +467,7 @@ def _build_summary_and_verdict(
     results: Dict,
     win_rate: float,
 ) -> Tuple[str, str]:
-    sharpe       = float(results.get("sharpe") or 0)
+    sharpe = float(results.get("sharpe") or 0)
     total_return = float(results.get("total_return") or 0)
 
     if sharpe >= 1.5 and total_return > 0.10 and win_rate >= 0.50:
@@ -540,16 +538,16 @@ def review_backtest(
             regime_series = None
 
     # Trade reconstruction & regime stats
-    trades       = _reconstruct_trades(prediction_log, regime_series)
+    trades = _reconstruct_trades(prediction_log, regime_series)
     regime_stats = _compute_regime_stats(trades)
 
     # Aggregate metrics
     total_trades = len(trades)
-    win_rate     = (sum(t["win"] for t in trades) / total_trades) if total_trades > 0 else 0.0
-    avg_hold     = float(np.mean([t["hold_bars"] for t in trades])) if trades else 0.0
+    win_rate = (sum(t["win"] for t in trades) / total_trades) if total_trades > 0 else 0.0
+    avg_hold = float(np.mean([t["hold_bars"] for t in trades])) if trades else 0.0
 
     observations = _build_observations(trades, regime_stats, results)
-    tweaks       = _generate_tweaks(trades, regime_stats, indicators, blend_weights, blend_method, results)
+    tweaks = _generate_tweaks(trades, regime_stats, indicators, blend_weights, blend_method, results)
     summary, verdict = _build_summary_and_verdict(results, win_rate)
 
     return BacktestReview(
