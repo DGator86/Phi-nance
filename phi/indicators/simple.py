@@ -104,6 +104,51 @@ def compute_buy_hold(df: pd.DataFrame) -> pd.Series:
     return pd.Series(0.5, index=df.index)
 
 
+def compute_vwap(df: pd.DataFrame, band_pct: float = 0.5) -> pd.Series:
+    """VWAP deviation signal — optimised for intraday timeframes (1m – 1H).
+
+    VWAP is computed as the session cumulative (typical_price * volume) /
+    cumulative volume.  The signal measures how far price has stretched from
+    VWAP and fades back toward it:
+
+    * Price well **below** VWAP → signal approaches **+1** (mean-revert long)
+    * Price well **above** VWAP → signal approaches **-1** (mean-revert short)
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        OHLCV DataFrame with a datetime index.
+    band_pct : float
+        Half-band width as a percentage of VWAP (default 0.5 %).  A deviation
+        of ``band_pct`` maps to ±1.  Tighten for scalping (0.2), widen for
+        swing (1.0).
+
+    Returns
+    -------
+    pd.Series
+        Normalised signal in [-1, 1].
+
+    Notes
+    -----
+    On daily data VWAP resets once per day, collapsing to the typical price of
+    each bar — the indicator still works but is less meaningful.  Prefer
+    intraday timeframes (1m, 5m, 15m, 1H) for best results.
+    """
+    tp = (df["high"] + df["low"] + df["close"]) / 3
+    vol = df["volume"].replace(0, np.nan)
+
+    # Group by calendar date so VWAP resets each session.
+    dates = df.index.normalize() if hasattr(df.index, "normalize") else pd.to_datetime(df.index).normalize()
+    cum_tp_vol = (tp * vol).groupby(dates).cumsum()
+    cum_vol = vol.groupby(dates).cumsum()
+    vwap = cum_tp_vol / cum_vol
+
+    dev_pct = (df["close"] - vwap) / vwap.replace(0, np.nan) * 100
+    # Clamp: band_pct above → -1, band_pct below → +1
+    signal = -(dev_pct / band_pct).clip(-1, 1)
+    return signal.fillna(0.0)
+
+
 INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "RSI": compute_rsi,
     "MACD": compute_macd,
@@ -112,6 +157,7 @@ INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "Mean Reversion": compute_mean_reversion,
     "Breakout": compute_breakout,
     "Buy & Hold": compute_buy_hold,
+    "VWAP": compute_vwap,
 }
 
 
@@ -122,6 +168,7 @@ _PARAM_MAP = {
     "Dual SMA": {"fast_period": "fast", "slow_period": "slow"},
     "Mean Reversion": {"sma_period": "period"},
     "Breakout": {"channel_period": "period"},
+    "VWAP": {"band_pct": "band_pct"},
 }
 
 

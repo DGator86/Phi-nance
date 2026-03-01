@@ -307,14 +307,29 @@ class VWAPDeviation(BaseIndicator):
         low     = ohlcv["low"].astype(float)
         close   = ohlcv["close"].astype(float)
         volume  = ohlcv["volume"].astype(float).clip(lower=1.0)
-        session = self.params.get("session_minutes", 390)
 
-        typical   = (high + low + close) / 3.0
-        cum_tpv   = (typical * volume).rolling(session, min_periods=1).sum()
-        cum_vol   = volume.rolling(session, min_periods=1).sum().clip(lower=1.0)
-        vwap      = cum_tpv / cum_vol
+        # session_bars: number of bars per trading session.
+        # "session_minutes" is the legacy param name — it was always a bar
+        # count, not a duration in minutes (390 = 1-min bars in a 6.5h day).
+        # For non-1m timeframes, auto-detect from the DatetimeIndex so VWAP
+        # resets correctly: 5m→78 bars/day, 15m→26, 30m→13, 1h→7.
+        session = self.params.get("session_bars", self.params.get("session_minutes"))
+        if session is None:
+            if isinstance(ohlcv.index, pd.DatetimeIndex) and len(ohlcv) >= 2:
+                deltas = pd.Series(ohlcv.index.astype("int64")).diff().dropna()
+                median_min = float(deltas.median()) / 60e9
+                session = max(1, int(round(390.0 / median_min))) if median_min > 0 else 390
+            else:
+                session = 390
+
+        typical = (high + low + close) / 3.0
+        # Group by calendar date so VWAP resets each session.
+        dates   = ohlcv.index.normalize() if hasattr(ohlcv.index, "normalize") else pd.to_datetime(ohlcv.index).normalize()
+        cum_tpv = (typical * volume).groupby(dates).cumsum()
+        cum_vol = volume.groupby(dates).cumsum().clip(lower=1.0)
+        vwap    = cum_tpv / cum_vol
         deviation = (close - vwap) / (vwap + 1e-10)
-        return _zscore(deviation, window=60)
+        return _zscore(deviation, window=session)
 
 
 class VolumeProfileDeviation(BaseIndicator):

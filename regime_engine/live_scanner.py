@@ -32,12 +32,12 @@ from __future__ import annotations
 
 import logging
 import pathlib
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import numpy as np
 
-from .data_fetcher import AlphaVantageFetcher
+from .data_fetcher import AlphaVantageFetcher, YFinanceIntradayFetcher
 from .scanner import RegimeEngine, UniverseScanner, load_config, TickerResult
 from .species import REGIME_BINS
 
@@ -65,20 +65,32 @@ class LiveScanner:
 
     def __init__(
         self,
-        api_key:     Optional[str] = None,
-        config_path: Optional[str | pathlib.Path] = None,
-        cache_dir:   str = ".av_cache",
-        rate_limit:  float = 12.0,
-        min_bars:    int = 300,
+        api_key:      Optional[str] = None,
+        config_path:  Optional[str | pathlib.Path] = None,
+        cache_dir:    str   = ".av_cache",
+        rate_limit:   float = 12.0,
+        min_bars:     int   = 300,
+        fetcher_type: str   = "alphavantage",
     ) -> None:
-        self.fetcher = AlphaVantageFetcher(
-            api_key=api_key,
-            cache_dir=cache_dir,
-            rate_limit=rate_limit,
-        )
-        self.cfg     = load_config(config_path)
-        self.engine  = RegimeEngine(self.cfg)
-        self.scanner = UniverseScanner(config=self.cfg)
+        """
+        Parameters
+        ----------
+        fetcher_type : 'alphavantage' (default) | 'yfinance'
+            Use 'yfinance' for no-API-key, no-rate-limit intraday scanning
+            (10-min to 10-hour signal horizon).  Use 'alphavantage' for full
+            historical depth (30 days of 1-min bars) when an API key is set.
+        """
+        if fetcher_type == "yfinance":
+            self.fetcher: Any = YFinanceIntradayFetcher()
+        else:
+            self.fetcher = AlphaVantageFetcher(
+                api_key=api_key,
+                cache_dir=cache_dir,
+                rate_limit=rate_limit,
+            )
+        self.cfg      = load_config(config_path)
+        self.engine   = RegimeEngine(self.cfg)
+        self.scanner  = UniverseScanner(config=self.cfg)
         self.min_bars = min_bars
 
     # ------------------------------------------------------------------

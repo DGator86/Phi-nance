@@ -11,6 +11,30 @@ import numpy as np
 import pandas as pd
 
 
+_TRADING_MINUTES_PER_YEAR = 252 * 390  # US equity market
+
+
+def _bars_per_year(df: pd.DataFrame) -> float:
+    """Infer annualised bar count from the DataFrame index.
+
+    For daily bars returns 252.  For intraday bars, uses the median bar
+    duration so CAGR and Sharpe are correctly annualised regardless of
+    the timeframe (1m, 5m, 15m, 1H, etc.).
+    """
+    if len(df) < 2 or not isinstance(df.index, pd.DatetimeIndex):
+        return 252.0
+    deltas = pd.Series(df.index.astype("int64")).diff().dropna()
+    if deltas.empty:
+        return 252.0
+    median_ns = float(deltas.median())
+    if median_ns <= 0:
+        return 252.0
+    median_minutes = median_ns / 60e9
+    if median_minutes >= 300:       # ≥ 5 hours → treat as daily
+        return 252.0
+    return _TRADING_MINUTES_PER_YEAR / median_minutes
+
+
 def run_direct_backtest(
     ohlcv: pd.DataFrame,
     symbol: str,
@@ -115,7 +139,9 @@ def run_direct_backtest(
     pv_series = np.array(portfolio_values)
     returns = np.diff(pv_series) / (pv_series[:-1] + 1e-12)
     total_return = (pv_series[-1] - initial_capital) / initial_capital if initial_capital else 0
-    years = len(df) / 252.0 if len(df) > 0 else 1.0
+
+    bpy = _bars_per_year(df)
+    years = len(df) / bpy if len(df) > 0 else 1.0
     cagr = (1 + total_return) ** (1 / years) - 1 if years > 0 else 0
 
     # Max drawdown
@@ -123,9 +149,9 @@ def run_direct_backtest(
     dd = (peak - pv_series) / (peak + 1e-12)
     max_drawdown = float(np.nanmax(dd)) if len(dd) > 0 else 0.0
 
-    # Sharpe (annualized)
+    # Sharpe (annualized using actual bar frequency, not hardcoded 252)
     if len(returns) > 1 and np.std(returns) > 0:
-        sharpe = float(np.mean(returns) / np.std(returns) * np.sqrt(252))
+        sharpe = float(np.mean(returns) / np.std(returns) * np.sqrt(bpy))
     else:
         sharpe = 0.0
 
