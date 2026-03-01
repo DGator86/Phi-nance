@@ -2612,3 +2612,235 @@ body[data-phi-touch="true"] .stTabs [data-baseweb="tab"] {
     border: 1px solid rgba(168, 85, 247, 0.15);
     border-radius: 8px;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   RESULTS — PREMIUM COMPONENTS
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Results banner (top of _display_results) ── */
+.phi-results-banner {
+    position: relative;
+    background: linear-gradient(135deg,
+        rgba(14, 14, 20, 0.98) 0%,
+        rgba(22, 18, 34, 0.96) 50%,
+        rgba(14, 14, 20, 0.98) 100%
+    );
+    border: 1px solid rgba(168, 85, 247, 0.3);
+    border-radius: 18px;
+    padding: 1.6rem 2rem 1.4rem;
+    margin-bottom: 1.8rem;
+    backdrop-filter: blur(24px);
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(168, 85, 247, 0.12);
+}
+
+/* Rainbow top border accent */
+.phi-results-banner::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg,
+        #a855f7 0%, #7c3aed 20%, #06b6d4 40%,
+        #22c55e 60%, #f97316 80%, #a855f7 100%
+    );
+    opacity: 0.9;
+}
+
+/* Subtle corner glow */
+.phi-results-banner::after {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 180px; height: 180px;
+    background: radial-gradient(circle, rgba(168,85,247,0.08) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+.phi-results-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1.3rem;
+    flex-wrap: wrap;
+}
+
+.phi-results-symbol {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #a855f7;
+    letter-spacing: 0.08em;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+}
+
+.phi-results-period,
+.phi-results-tf {
+    font-size: 0.78rem;
+    color: #8a8aa8;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+}
+
+.phi-meta-sep {
+    color: rgba(168, 85, 247, 0.3);
+    font-size: 0.45rem;
+    line-height: 1;
+    align-self: center;
+}
+
+.phi-results-metrics-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.6rem;
+    flex-wrap: wrap;
+}
+
+.phi-rm-hero { min-width: 190px; }
+
+.phi-rm-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.phi-rm-value {
+    font-size: 1.55rem;
+    font-weight: 800;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    color: #eeeef2;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+}
+
+.phi-rm-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: #6b6b88;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+.phi-rm-divider {
+    width: 1px;
+    height: 52px;
+    background: linear-gradient(180deg, transparent, rgba(168,85,247,0.3), transparent);
+    margin: 0 0.4rem;
+    align-self: center;
+}
+
+/* ── Chart section labels ── */
+.phi-chart-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #5a5a78;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 0.2rem;
+    padding-left: 3px;
+}
+
+/* ── Stat stack (right overview column) ── */
+.phi-stat-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    margin-bottom: 1.2rem;
+}
+
+.phi-stat-card {
+    background: rgba(14, 14, 20, 0.7);
+    border: 1px solid rgba(168, 85, 247, 0.1);
+    border-radius: 10px;
+    padding: 0.65rem 0.9rem;
+    transition: border-color 0.2s ease;
+}
+
+.phi-stat-card:hover {
+    border-color: rgba(168, 85, 247, 0.22);
+}
+
+.phi-stat-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #6b6b88;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+.phi-stat-value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #eeeef2;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    letter-spacing: -0.02em;
+    margin-top: 0.15rem;
+}
+
+/* ── Trade statistics grid ── */
+.phi-trade-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+    gap: 0.7rem;
+    margin-bottom: 1.6rem;
+}
+
+.phi-ts-card {
+    background: linear-gradient(135deg,
+        rgba(18, 18, 26, 0.9) 0%,
+        rgba(24, 22, 36, 0.7) 100%
+    );
+    border: 1px solid rgba(168, 85, 247, 0.1);
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+    transition: border-color 0.2s ease, transform 0.15s ease;
+}
+
+.phi-ts-card:hover {
+    border-color: rgba(168, 85, 247, 0.25);
+    transform: translateY(-1px);
+}
+
+.phi-ts-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #6b6b88;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 0.4rem;
+}
+
+.phi-ts-value {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #eeeef2;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+}
+
+/* ── Download button style override ── */
+[data-testid="stDownloadButton"] > button {
+    background: transparent !important;
+    border: 1px solid rgba(168, 85, 247, 0.35) !important;
+    color: #c084fc !important;
+    font-size: 0.82rem !important;
+    padding: 0.45rem 1rem !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+    margin-bottom: 0.75rem;
+}
+
+[data-testid="stDownloadButton"] > button:hover {
+    background: rgba(168, 85, 247, 0.12) !important;
+    border-color: rgba(168, 85, 247, 0.6) !important;
+    color: #d8b4fe !important;
+}
+
+/* ── Responsive: collapse banner on small screens ── */
+@media (max-width: 640px) {
+    .phi-results-banner { padding: 1.1rem 1.1rem; }
+    .phi-rm-hero         { min-width: 140px; }
+    .phi-rm-value        { font-size: 1.2rem; }
+    .phi-results-metrics-row { gap: 1rem; }
+    .phi-trade-stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
