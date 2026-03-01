@@ -84,7 +84,7 @@ _DEFAULT_REGIME_BANKS: Dict[str, Dict[str, Any]] = {
         'confidence_floor':   0.45,
         'position_size_mult': 0.75,
         'score_scale':        0.90,
-        'indicator_weights':  {'rsi': 1.3, 'stoch': 1.2, 'macd': 0.7},
+        'indicator_weights':  {'rsi': 1.3, 'stoch': 1.2, 'macd': 0.7, 'vwap_dev': 1.5},
     },
     'BREAKOUT_UP': {
         'signal_threshold':   0.10,    # lower bar — capitalize on momentum
@@ -105,14 +105,14 @@ _DEFAULT_REGIME_BANKS: Dict[str, Dict[str, Any]] = {
         'confidence_floor':   0.50,    # high bar — exhaustion is tricky
         'position_size_mult': 0.60,
         'score_scale':        0.80,
-        'indicator_weights':  {'rsi': 1.5, 'stoch': 1.3, 'macd': 0.5},
+        'indicator_weights':  {'rsi': 1.5, 'stoch': 1.3, 'macd': 0.5, 'vwap_dev': 1.2},
     },
     'LOWVOL': {
         'signal_threshold':   0.30,    # hard to trade in low vol
         'confidence_floor':   0.50,
         'position_size_mult': 0.50,
         'score_scale':        0.70,
-        'indicator_weights':  {},
+        'indicator_weights':  {'vwap_dev': 1.3},
     },
     'HIGHVOL': {
         'signal_threshold':   0.20,

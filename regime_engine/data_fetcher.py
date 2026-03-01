@@ -636,3 +636,185 @@ class YFinanceOptionsFetcher:
             if num_col in result.columns:
                 result[num_col] = pd.to_numeric(result[num_col], errors="coerce").fillna(0.0)
         return result
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# yfinance Intraday Fetcher — no API key, no rate limiting
+# ──────────────────────────────────────────────────────────────────────────────
+
+class YFinanceIntradayFetcher:
+    """
+    Free intraday fetcher via yfinance — no API key, no rate limiting.
+
+    Drop-in replacement for AlphaVantageFetcher in contexts where rate
+    limits are unacceptable (e.g. scanning a large universe for 10-min
+    to 10-hour signals).
+
+    Interval mapping (AV → yfinance):
+      '1min'  → '1m'   (max lookback: 7 calendar days)
+      '5min'  → '5m'   (max lookback: 60 calendar days)
+      '15min' → '15m'  (max lookback: 60 calendar days)
+      '30min' → '30m'  (max lookback: 60 calendar days)
+      '60min' → '1h'   (max lookback: 730 calendar days)
+
+    Usage
+    -----
+    >>> fetcher = YFinanceIntradayFetcher()
+    >>> df = fetcher.intraday('AAPL', interval='5min')
+    >>> mtf = fetcher.intraday_mtf('SPY')   # {'1min': df, '5min': df, '15min': df}
+    >>> universe = fetcher.fetch_universe(['AAPL', 'MSFT'], interval='5min')
+    """
+
+    # Alpha Vantage interval names → yfinance interval strings
+    _INTERVAL_MAP: Dict[str, str] = {
+        "1min":  "1m",
+        "5min":  "5m",
+        "15min": "15m",
+        "30min": "30m",
+        "60min": "1h",
+    }
+    # Maximum lookback in calendar days per yfinance interval
+    _LOOKBACK_DAYS: Dict[str, int] = {
+        "1m": 7,
+        "5m": 60,
+        "15m": 60,
+        "30m": 60,
+        "1h": 730,
+    }
+
+    def __init__(self, max_exps: int = 4) -> None:
+        self.max_exps = max_exps  # kept for API symmetry with AV fetcher
+
+    # ------------------------------------------------------------------
+    # Public API (mirrors AlphaVantageFetcher signatures)
+    # ------------------------------------------------------------------
+
+    def intraday(
+        self,
+        symbol:     str,
+        interval:   str = "5min",
+        outputsize: str = "full",
+        adjusted:   bool = True,
+        extended:   bool = False,
+        cache_ttl:  int  = 0,   # unused — yfinance has its own internal cache
+    ) -> pd.DataFrame:
+        """
+        Fetch intraday OHLCV for *symbol*.
+
+        Parameters
+        ----------
+        symbol     : ticker (e.g. 'AAPL', 'SPY')
+        interval   : '1min', '5min', '15min', '30min', '60min' (AV-style names)
+        outputsize : 'compact' → last 2 days; 'full' → max lookback
+        adjusted   : ignored (yfinance auto_adjust=True always)
+        extended   : ignored (yfinance does not expose pre/post filter here)
+
+        Returns
+        -------
+        pd.DataFrame with columns: open, high, low, close, volume
+                      DatetimeIndex (tz-naive UTC-local), sorted ascending
+        """
+        import yfinance as yf
+
+        yf_interval = self._INTERVAL_MAP.get(interval, "5m")
+        max_days = self._LOOKBACK_DAYS.get(yf_interval, 60)
+
+        end_dt = pd.Timestamp.now()
+        if outputsize == "compact":
+            start_dt = end_dt - pd.Timedelta(days=2)
+        else:
+            start_dt = end_dt - pd.Timedelta(days=max_days)
+
+        tkr = yf.Ticker(symbol)
+        df  = tkr.history(
+            start=str(start_dt.date()),
+            end=str(end_dt.date()),
+            interval=yf_interval,
+            auto_adjust=True,
+        )
+
+        if df.empty:
+            raise ValueError(f"YFinanceIntradayFetcher: no data for {symbol} {yf_interval}")
+
+        # Normalise: tz-strip, lowercase columns, keep OHLCV only
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        df.columns = [c.lower() for c in df.columns]
+        df = df[["open", "high", "low", "close", "volume"]].copy()
+        for col in ["open", "high", "low", "close"]:
+            df[col] = df[col].astype(float)
+        df["volume"] = df["volume"].astype(int)
+        df.sort_index(inplace=True)
+
+        logger.info("YFinanceIntradayFetcher: %s %s → %d bars", symbol, yf_interval, len(df))
+        return df
+
+    def intraday_mtf(
+        self,
+        symbol:    str,
+        cache_ttl: int = 0,
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Fetch 1m, 5m, 15m bars for multi-timeframe feature alignment.
+
+        Returns
+        -------
+        {'1min': df, '5min': df, '15min': df}  — missing intervals omitted.
+        """
+        result: Dict[str, pd.DataFrame] = {}
+        for av_iv in ["1min", "5min", "15min"]:
+            try:
+                result[av_iv] = self.intraday(symbol, interval=av_iv)
+            except Exception as exc:
+                logger.warning("YFinanceIntradayFetcher MTF %s %s: %s", symbol, av_iv, exc)
+        return result
+
+    def fetch_universe(
+        self,
+        symbols:    List[str],
+        interval:   str = "5min",
+        outputsize: str = "full",
+        adjusted:   bool = True,
+        extended:   bool = False,
+        cache_ttl:  int  = 0,
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Fetch a universe of tickers with no rate limiting between calls.
+
+        Returns
+        -------
+        Dict[ticker, DataFrame] — tickers that fail are silently omitted.
+        """
+        universe: Dict[str, pd.DataFrame] = {}
+        for sym in symbols:
+            try:
+                df = self.intraday(sym, interval=interval, outputsize=outputsize)
+                if len(df) >= 1:
+                    universe[sym] = df
+            except Exception as exc:
+                logger.warning("YFinanceIntradayFetcher.fetch_universe: %s skipped: %s", sym, exc)
+        return universe
+
+    def latest_quote(self, symbol: str) -> Dict[str, Any]:
+        """Fetch latest price snapshot for a symbol via yfinance."""
+        import yfinance as yf
+        tkr = yf.Ticker(symbol)
+        info = tkr.fast_info
+        try:
+            price  = float(getattr(info, "last_price",  0) or 0)
+            open_  = float(getattr(info, "open",        0) or 0)
+            high   = float(getattr(info, "day_high",    0) or 0)
+            low    = float(getattr(info, "day_low",     0) or 0)
+            volume = int(  getattr(info, "last_volume", 0) or 0)
+        except Exception:
+            price = open_ = high = low = 0.0
+            volume = 0
+        return {
+            "symbol":     symbol.upper(),
+            "price":      price,
+            "open":       open_,
+            "high":       high,
+            "low":        low,
+            "volume":     volume,
+            "change_pct": 0.0,
+        }
