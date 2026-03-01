@@ -454,39 +454,6 @@ def render_dataset_builder():
         trading_mode = st.selectbox("Trading Mode", ["Equities", "Options"], key="ds_mode")
         symbols_raw = st.text_input("Symbol(s)", value="SPY", key="ds_symbols",
                                     help="Comma-separated: SPY, QQQ, AAPL")
-    with col_range:
-        start_d = st.date_input(
-            "Start", value=date(2020, 1, 1), key="ds_start"
-        )
-        end_d = st.date_input(
-            "End", value=date(2024, 12, 31), key="ds_end"
-        )
-
-    if start_d >= end_d:
-        st.error("Start date must be before end date.")
-        return None
-
-    col_tf, col_vendor, col_cap = st.columns(3)
-    with col_tf:
-        timeframe = st.selectbox(
-            "Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf"
-        )
-    with col_vendor:
-        vendor = st.selectbox(
-            "Data Vendor",
-            ["Alpha Vantage", "yfinance", "Binance Public"],
-            key="ds_vendor"
-        )
-    with col_cap:
-        initial_capital = st.number_input(
-            "Initial Capital ($)",
-            value=100_000,
-            min_value=1_000,
-            step=10_000,
-            key="ds_cap",
-            help="Starting capital for backtest",
-        )
-                                     help="Comma-separated: SPY, QQQ, AAPL")
         start_d = st.date_input("Start", value=date(2020, 1, 1), key="ds_start")
         end_d = st.date_input("End", value=date(2024, 12, 31), key="ds_end")
         timeframe = st.selectbox("Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf")
@@ -512,6 +479,10 @@ def render_dataset_builder():
         with col_cap:
             initial_capital = st.number_input("Initial Capital ($)", value=100_000, min_value=1_000,
                                                step=10_000, key="ds_cap")
+
+    if start_d >= end_d:
+        st.error("Start date must be before end date.")
+        return None
 
     if initial_capital <= 0:
         st.error("Initial capital must be > 0")
@@ -1170,98 +1141,11 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
 
         def run_phiai():
             try:
-                opt_progress = st.progress(
-                    0, text="Running options backtest... 0%"
-                )
-                opt_result = [None]
-                opt_exc = [None]
-
-                def run_opt():
-                    try:
-                        dfs = st.session_state.get("workbench_dataset", {})
-                        sym = config["symbols"][0]
-                        ohlcv = dfs.get(sym)
-                        if ohlcv is None or ohlcv.empty:
-                            msg = "No data for options backtest. Fetch first."
-                            raise ValueError(msg)
-
-                        bt_opts = st.session_state.get(
-                            "bt_options_controls", {}
-                        )
-                        # pylint: disable=import-outside-toplevel
-                        from phi.options import run_options_backtest
-                        opt_result[0] = run_options_backtest(
-                            ohlcv,
-                            symbol=sym,
-                            strategy_type=bt_opts.get(
-                                "strategy_type", "long_call"
-                            ),
-                            initial_capital=config.get(
-                                "initial_capital", 100_000
-                            ),
-                            position_pct=0.1,
-                            exit_profit_pct=bt_opts.get(
-                                "exit_profit_pct", 0.5
-                            ),
-                            exit_stop_pct=bt_opts.get(
-                                "exit_stop_pct", -0.3
-                            ),
-                        )
-                    except Exception as e:  # pylint: disable=broad-except
-                        opt_exc[0] = e
-
-                th_opt = threading.Thread(target=run_opt)
-                th_opt.start()
-                pct = 0
-                start_t = time.time()
-                while th_opt.is_alive():
-                    time.sleep(0.2)
-                    elapsed = time.time() - start_t
-                    pct = min(95, int(elapsed * 25))  # ramps quickly
-                    opt_progress.progress(
-                        pct / 100,
-                        text=f"Running options backtest... {pct}%"
-                    )
-                if (oe := opt_exc[0]) is not None:
-                    opt_progress.empty()
-                    # pylint: disable=raising-bad-type
-                    raise oe
-                results = opt_result[0]
-                opt_progress.progress(1.0, text="Complete — 100%")
-                time.sleep(0.3)
-                opt_progress.empty()
-                if results:
-                    _display_results(
-                        config, results, None, indicators_to_use,
-                        blend_method, blend_weights
-                    )
-                else:
-                    st.error("Options backtest returned no results.")
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                st.error(str(e))
-                st.exception(e)
-            return
-
-        # Equities: direct vectorized backtest (no Lumibot dependency)
-        progress = st.progress(0, text="Preparing backtest... 0%")
-
-        try:
-            sym = config["symbols"][0]
-            dfs = st.session_state.get("workbench_dataset", {})
-            ohlcv = dfs.get(sym)
-            if ohlcv is None or (hasattr(ohlcv, "empty") and ohlcv.empty):
-                progress.empty()
-                st.error(
-                    "No dataset loaded. Complete Step 1 (Fetch & Cache Data) first."
-                )
-                return
-
-            # Run direct backtest in thread with live progress %
-            result_holder = [None]
-            exc_holder = [None]
                 if _ohlcv is not None and len(_ohlcv) > 100:
                     from phi.phiai import run_phiai_optimization
-                    phiai_result[0] = run_phiai_optimization(_ohlcv, indicators_to_use, max_iter_per_indicator=15)
+                    phiai_result[0] = run_phiai_optimization(
+                        _ohlcv, indicators_to_use, max_iter_per_indicator=15
+                    )
             except Exception as ex:
                 phiai_exc[0] = ex
 
@@ -1288,26 +1172,13 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
 
             def run_opt():
                 try:
-                    # pylint: disable=import-outside-toplevel
-                    from phi.backtest import run_direct_backtest
-                    result_holder[0] = run_direct_backtest(
-                        ohlcv=ohlcv,
-                        symbol=sym,
-                        indicators=indicators_to_use,
-                        blend_weights=blend_weights,
-                        blend_method=blend_method,
-                        signal_threshold=_signal_threshold,
-                        initial_capital=config["initial_capital"],
-                        position_size_pct=_position_size_pct,
-                    )
-                except Exception as e:  # pylint: disable=broad-except
-                    exc_holder[0] = e
                     dfs = st.session_state.get("workbench_dataset", {})
                     sym = config["symbols"][0]
                     ohlcv = dfs.get(sym)
                     if ohlcv is None or ohlcv.empty:
-                        raise ValueError("No data")
+                        raise ValueError("No data for options backtest. Fetch first.")
                     bt_opts = st.session_state.get("bt_options_controls", {})
+                    # pylint: disable=import-outside-toplevel
                     from phi.options import run_options_backtest
                     opt_result[0] = run_options_backtest(
                         ohlcv, symbol=sym,
@@ -1317,40 +1188,20 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
                         exit_profit_pct=bt_opts.get("exit_profit_pct", 0.5),
                         exit_stop_pct=bt_opts.get("exit_stop_pct", -0.3),
                     )
-                except Exception as e:
+                except Exception as e:  # pylint: disable=broad-except
                     opt_exc[0] = e
 
-            th = threading.Thread(target=run_opt)
-            th.start()
+            th_opt = threading.Thread(target=run_opt)
+            th_opt.start()
             start_t = time.time()
-            while th.is_alive():
-                time.sleep(0.3)
-                elapsed = time.time() - start_t
-                pct = min(95, 5 + int(elapsed * 8))
-                progress.progress(
-                    pct / 100, text=f"Running backtest... {pct}%"
-                )
-
-            if (eh := exc_holder[0]) is not None:
-                # pylint: disable=raising-bad-type
-                raise eh
-
-            if (res_h := result_holder[0]) is not None:
-                results, strat = res_h
-                progress.progress(1.0, text="Complete — 100%")
-                time.sleep(0.3)
-                progress.empty()
-
-                has_log = hasattr(strat, "prediction_log")
-                sc = _compute_accuracy(strat) if has_log else {}
-                _display_results(
-                    config, results, strat, indicators_to_use,
-                    blend_method, blend_weights, sc
-                )
+            while th_opt.is_alive():
                 time.sleep(0.2)
-                pct = min(95, int((time.time() - start_t) * 25))
-                opt_progress.progress(pct / 100, text=f"Options backtest... {pct}%")
-            if opt_exc[0]: raise opt_exc[0]
+                elapsed = time.time() - start_t
+                pct = min(95, int(elapsed * 25))
+                opt_progress.progress(pct / 100, text=f"Running options backtest... {pct}%")
+            if opt_exc[0]:
+                opt_progress.empty()
+                raise opt_exc[0]  # pylint: disable=raising-bad-type
             results = opt_result[0]
             opt_progress.progress(1.0, text="Complete!")
             time.sleep(0.3)
@@ -1359,104 +1210,50 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
                 _display_results(config, results, None, indicators_to_use, blend_method, blend_weights)
             else:
                 st.error("No results returned.")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             st.error(str(e))
         return
 
-    # Equities backtest
-    use_blended = len(indicators_to_use) >= 2
-    progress = st.progress(0, text="Preparing backtest...")
+    # Equities backtest — direct vectorized path (no Lumibot)
+    progress = st.progress(0, text="Running backtest...")
 
     try:
-        if use_blended:
-            strat_cls = _load_strategy("strategies.blended_workbench_strategy.BlendedWorkbenchStrategy")
-            params = {"symbol": config["symbols"][0], "indicators": indicators_to_use,
-                      "blend_method": blend_method, "blend_weights": blend_weights,
-                      "signal_threshold": _signal_threshold, "lookback_bars": 200}
-        else:
-            first_name = list(indicators_to_use.keys())[0]
-            info = INDICATOR_CATALOG[first_name]
-            strat_cls = _load_strategy(str(info["strategy"]))
-            p_defaults = {k: default for k, (_, _, default) in info["params"].items()}
-            p_user = {k: int(v) if isinstance(v, float) and v == int(v) else v
-                      for k, v in indicators_to_use[first_name].get("params", {}).items()}
-            params = {**p_defaults, **p_user, "symbol": config["symbols"][0]}
+        sym = config["symbols"][0]
+        dfs_bt = st.session_state.get("workbench_dataset", {})
+        ohlcv_bt = dfs_bt.get(sym)
+        if ohlcv_bt is None or (hasattr(ohlcv_bt, "empty") and ohlcv_bt.empty):
+            progress.empty()
+            st.error("No dataset loaded. Complete Step 1 (Fetch & Cache Data) first.")
+            return
 
-    st.markdown(
-        """
-        <div style="font-size:1.15rem; font-weight:700; color:#e4e4e7;
-                    letter-spacing:-0.01em; margin:1.5rem 0 0.8rem;">
-            Results
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    r1, r2, r3, r4, r5 = st.columns(5)
-    r1.metric("Start Capital", f"${cap:,.0f}")
-    r2.metric("End Capital", f"${end_cap:,.0f}")
-    r3.metric("Net P/L", f"${net_pl:+,.0f}", f"{net_pct:+.1f}%")
-    r4.metric(
-        "CAGR", f"{cagr:+.1%}" if isinstance(cagr, (int, float)) else "—"
-    )
-    r5.metric(
-        "Sharpe", f"{sharpe:.2f}" if isinstance(sharpe, (int, float)) else "—"
-    )
-
-    tab_sum, tab_curve, tab_trades, tab_metrics = st.tabs(
-        ["Summary", "Equity Curve", "Trades", "Metrics"]
-    )
-    with tab_sum:
-        st.metric(
-            "Max Drawdown",
-            f"{dd:.1%}" if isinstance(dd, (int, float)) else "—"
-        )
-        acc = sc.get('accuracy', 0)
-        acc_text = (
-            f"{acc:.1%}" if sc and isinstance(acc, (int, float)) else "—"
-        )
-        st.metric("Direction Accuracy", acc_text)
-    with tab_curve:
-        if pv and len(pv) > 1:
-            fig = go.Figure()
-            fig.add_trace(
-                go.Scatter(
-                    y=pv, mode="lines",
-                    line=dict(color=CHART_COLORS[0], width=2),
-                    fill="tozeroy",
-                    fillcolor="rgba(168,85,247,0.07)",
-                )
-            )
-            fig.update_layout(
-                template="plotly_dark",
-                paper_bgcolor="#0f0f12",
-                plot_bgcolor="#1a1a1f",
-                font_color="#e4e4e7",
-                margin=dict(l=40, r=40, t=40, b=40),
-                xaxis=dict(gridcolor="rgba(168,85,247,0.08)", showgrid=True),
-                yaxis=dict(gridcolor="rgba(168,85,247,0.08)", showgrid=True),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    with tab_trades:
-        if strat and hasattr(strat, "prediction_log") and strat.prediction_log:
-            st.dataframe(pd.DataFrame(strat.prediction_log), width="stretch")
         result_holder, exc_holder = [None], [None]
 
         def run_bt():
             try:
-                result_holder[0] = _run_backtest(strat_cls, params, config)
-            except Exception as e:
+                from phi.backtest import run_direct_backtest  # pylint: disable=import-outside-toplevel
+                result_holder[0] = run_direct_backtest(
+                    ohlcv=ohlcv_bt,
+                    symbol=sym,
+                    indicators=indicators_to_use,
+                    blend_weights=blend_weights,
+                    blend_method=blend_method,
+                    signal_threshold=_signal_threshold,
+                    initial_capital=config["initial_capital"],
+                    position_size_pct=_position_size_pct,
+                )
+            except Exception as e:  # pylint: disable=broad-except
                 exc_holder[0] = e
 
         th = threading.Thread(target=run_bt)
         th.start()
         start_t = time.time()
         while th.is_alive():
-            time.sleep(0.4)
-            pct = min(95, 5 + int((time.time() - start_t) * 1.5))
+            time.sleep(0.3)
+            pct = min(95, 5 + int((time.time() - start_t) * 8))
             progress.progress(pct / 100, text=f"Running backtest... {pct}%")
 
-        if exc_holder[0]: raise exc_holder[0]
+        if exc_holder[0]:
+            raise exc_holder[0]  # pylint: disable=raising-bad-type
         if result_holder[0] and isinstance(result_holder[0], (list, tuple)) and len(result_holder[0]) == 2:
             results, strat = result_holder[0]
             progress.progress(1.0, text="Complete!")
@@ -1477,7 +1274,7 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
                 </div>
                 """, unsafe_allow_html=True)
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         progress.empty()
         st.error(str(e))
         st.exception(e)
@@ -1636,11 +1433,19 @@ def main():
         )
         fa_col1, fa_col2, fa_col3 = st.columns(3)
         with fa_col1:
-        page_title="Phi-nance | Live Workbench",
-        page_icon="📈",
-        layout="wide",
-        initial_sidebar_state="collapsed",
-    )
+            fa_sym_q = st.text_input("Symbol", value="SPY", key="fa_sym_q")
+            fa_start_q = st.date_input("Start", value=date(2020, 1, 1), key="fa_start_q")
+        with fa_col2:
+            fa_end_q = st.date_input("End", value=date(2024, 12, 31), key="fa_end_q")
+            fa_cap_q = st.number_input("Capital ($)", value=100_000, min_value=1000, key="fa_cap_q")
+        with fa_col3:
+            fa_ollama_q = st.checkbox("Use Ollama", value=True, key="fa_ollama_q")
+            fa_host_q = st.text_input("Host", value="http://localhost:11434", key="fa_host_q")
+        if st.button("⚡ Run", type="primary", key="fa_run_q", use_container_width=True):
+            _run_fully_automated(
+                fa_sym_q or "SPY", str(fa_start_q), str(fa_end_q),
+                fa_cap_q, fa_ollama_q, fa_host_q
+            )
     _inject_css()
 
     # Device detection (JS already injected by _inject_css)
