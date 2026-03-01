@@ -76,20 +76,14 @@ def blend_signals(
         w.setdefault(c, 1.0 / len(cols))
 
     if method == "weighted_sum":
-        out = pd.Series(0.0, index=signals.index)
-        for c in cols:
-            s = signals[c].fillna(0)
-            out = out + s * (w.get(c, 0) / wsum)
-        return out
+        col_weights = pd.Series({c: w.get(c, 0) / wsum for c in cols})
+        return signals[cols].fillna(0).mul(col_weights).sum(axis=1)
 
     if method == "voting":
-        # Each indicator votes -1, 0, or 1; majority wins
-        votes = pd.DataFrame(index=signals.index)
-        for c in cols:
-            s = signals[c].fillna(0)
-            votes[c] = np.where(s > 0.1, 1, np.where(s < -0.1, -1, 0))
-        majority = votes.sum(axis=1) / len(cols)
-        return majority.clip(-1, 1)
+        # Each indicator votes -1, 0, or 1; majority wins — fully vectorized.
+        filled = signals[cols].fillna(0)
+        votes = (filled > 0.1).astype(int) - (filled < -0.1).astype(int)
+        return (votes.sum(axis=1) / len(cols)).clip(-1, 1)
 
     if method == "regime_weighted" and regime_probs is None:
         logger.warning(

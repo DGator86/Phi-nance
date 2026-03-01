@@ -982,6 +982,9 @@ def _render_phibot_review(config, results, strat, indicators, blend_method, blen
 # Results Display
 # ---------------------------------------------------------------------------
 def _display_results(config, results, strat, indicators, blend_method, blend_weights, sc=None):
+    if results is None:
+        st.error("Backtest produced no results.")
+        return
     sc = sc or {}
     tr = _extract_scalar(getattr(results, "total_return", None) or results.get("total_return"))
     cagr = _extract_scalar(getattr(results, "cagr", None) or results.get("cagr"))
