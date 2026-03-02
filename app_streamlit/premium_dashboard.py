@@ -484,6 +484,182 @@ def build_composite_gauge(score: float, label: str = "Composite Signal") -> go.F
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# BLACK-SCHOLES HELPERS (scipy-based, used by Options Lab)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _bs_price(S: float, K: float, T: float, r: float, sigma: float, opt: str) -> float:
+    """Black-Scholes price for a vanilla call or put."""
+    try:
+        from scipy.stats import norm
+        if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+            return max(0.0, S - K) if opt == "call" else max(0.0, K - S)
+        d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        if opt == "call":
+            return float(S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2))
+        return float(K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1))
+    except Exception:
+        return 0.0
+
+
+def _bs_greeks(S: float, K: float, T: float, r: float, sigma: float, opt: str) -> dict:
+    """Black-Scholes first-order Greeks."""
+    try:
+        from scipy.stats import norm
+        if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+            return {"delta": 1.0 if opt == "call" else -1.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0}
+        d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        delta = float(norm.cdf(d1) if opt == "call" else -norm.cdf(-d1))
+        gamma = float(norm.pdf(d1) / (S * sigma * np.sqrt(T)))
+        # Theta: daily $ decay
+        theta_raw = -(S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T))
+        if opt == "call":
+            theta_raw -= r * K * np.exp(-r * T) * norm.cdf(d2)
+        else:
+            theta_raw += r * K * np.exp(-r * T) * norm.cdf(-d2)
+        theta = float(theta_raw / 365)
+        vega = float(S * norm.pdf(d1) * np.sqrt(T) / 100)  # per 1% IV
+        return {"delta": delta, "gamma": gamma, "theta": theta, "vega": vega}
+    except Exception:
+        return {"delta": 0.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0}
+
+
+def _strategy_legs(strategy_type: str, spot: float, T: float, r: float, sigma: float):
+    """
+    Return list of (option_type, action, strike, qty) and net_debit for a strategy.
+    action: +1 = long, -1 = short.  qty = number of options relative to 1-lot.
+    """
+    K = spot
+    wing2 = spot * 0.02   # 2% wing
+    wing5 = spot * 0.05   # 5% wing
+    wing10 = spot * 0.10  # 10% wing
+
+    if strategy_type == "long_call":
+        legs = [("call", +1, K, 1)]
+    elif strategy_type == "long_put":
+        legs = [("put", +1, K, 1)]
+    elif strategy_type == "bull_call_spread":
+        legs = [("call", +1, K - wing2, 1), ("call", -1, K + wing2, 1)]
+    elif strategy_type == "bear_put_spread":
+        legs = [("put", +1, K + wing2, 1), ("put", -1, K - wing2, 1)]
+    elif strategy_type == "iron_condor":
+        legs = [
+            ("call", -1, K + wing5,  1),
+            ("call", +1, K + wing10, 1),
+            ("put",  -1, K - wing5,  1),
+            ("put",  +1, K - wing10, 1),
+        ]
+    elif strategy_type == "straddle":
+        legs = [("call", +1, K, 1), ("put", +1, K, 1)]
+    elif strategy_type == "covered_call":
+        # Model as short OTM call (stock leg excluded from option P&L)
+        legs = [("call", -1, K + wing5, 1)]
+    elif strategy_type == "cash_secured_put":
+        legs = [("put", -1, K - wing5, 1)]
+    else:
+        legs = [("call", +1, K, 1)]
+
+    # Net debit (positive = cost, negative = credit received)
+    net = sum(action * _bs_price(spot, strike, T, r, sigma, ot)
+              for ot, action, strike, _ in legs)
+    return legs, net
+
+
+def _strategy_payoff_at_expiry(strategy_type: str, S_range: np.ndarray, spot: float,
+                                T: float, r: float, sigma: float) -> tuple:
+    """Return (pnl_array, label) for payoff-at-expiry diagram."""
+    legs, net_debit = _strategy_legs(strategy_type, spot, T, r, sigma)
+
+    pnl = np.zeros_like(S_range, dtype=float)
+    for opt_type, action, strike, qty in legs:
+        if opt_type == "call":
+            intrinsic = np.maximum(S_range - strike, 0.0)
+        else:
+            intrinsic = np.maximum(strike - S_range, 0.0)
+        pnl += action * qty * intrinsic
+
+    pnl -= net_debit  # subtract what we paid (add back credit received)
+
+    # For covered_call: add underlying P&L (bought 1 share at spot)
+    if strategy_type == "covered_call":
+        pnl += (S_range - spot)
+
+    label = f"Net {'debit' if net_debit > 0 else 'credit'}: ${abs(net_debit):.2f}/share"
+    return pnl, label
+
+
+def build_payoff_diagram(strategy_type: str, spot: float, sigma: float,
+                         dte: int, r: float = 0.05) -> go.Figure:
+    """Interactive payoff-at-expiry diagram for any supported strategy."""
+    T = max(dte, 1) / 365.0
+    S_range = np.linspace(spot * 0.70, spot * 1.30, 300)
+    pnl, leg_label = _strategy_payoff_at_expiry(strategy_type, S_range, spot, T, r, sigma)
+
+    # Current P&L (T = T, marked-to-market)
+    current_pnl = np.zeros_like(S_range, dtype=float)
+    legs, net_debit = _strategy_legs(strategy_type, spot, T, r, sigma)
+    for opt_type, action, strike, qty in legs:
+        for i, s in enumerate(S_range):
+            T_now = T * 0.5  # halfway through
+            current_pnl[i] += action * qty * _bs_price(s, strike, T_now, r, sigma, opt_type)
+    current_pnl -= net_debit
+    if strategy_type == "covered_call":
+        current_pnl += S_range - spot
+
+    fig = make_plotly_fig(height=400)
+
+    # Shaded profit / loss zones at expiry
+    profit_mask = pnl >= 0
+    fig.add_trace(go.Scatter(
+        x=np.concatenate([S_range[profit_mask], S_range[profit_mask][::-1]]),
+        y=np.concatenate([pnl[profit_mask], np.zeros(profit_mask.sum())]),
+        fill="toself", fillcolor="rgba(34,197,94,0.07)",
+        line=dict(width=0), showlegend=False, hoverinfo="skip",
+    ))
+    loss_mask = pnl < 0
+    if loss_mask.any():
+        fig.add_trace(go.Scatter(
+            x=np.concatenate([S_range[loss_mask], S_range[loss_mask][::-1]]),
+            y=np.concatenate([pnl[loss_mask], np.zeros(loss_mask.sum())]),
+            fill="toself", fillcolor="rgba(239,68,68,0.07)",
+            line=dict(width=0), showlegend=False, hoverinfo="skip",
+        ))
+
+    # P&L at current time (mark-to-market)
+    fig.add_trace(go.Scatter(
+        x=S_range, y=current_pnl, mode="lines", name="Current P&L (50% DTE)",
+        line=dict(color=COLORS["cyan"], width=1.5, dash="dot"),
+        hovertemplate="Spot: $%{x:.2f}<br>P&L: $%{y:.2f}<extra>50% DTE</extra>",
+    ))
+
+    # P&L at expiry
+    fig.add_trace(go.Scatter(
+        x=S_range, y=pnl, mode="lines", name="P&L at Expiry",
+        line=dict(color=COLORS["orange"], width=2.5),
+        hovertemplate="Spot: $%{x:.2f}<br>P&L: $%{y:.2f}<extra>Expiry</extra>",
+    ))
+
+    fig.add_hline(y=0, line_color="rgba(148,163,184,0.35)", line_dash="dot")
+    fig.add_vline(x=spot, line_color=COLORS["purple"], line_dash="dash",
+                  annotation_text=f"Spot: ${spot:.2f}",
+                  annotation_font_color=COLORS["purple_light"],
+                  annotation_position="top right")
+
+    strat_label = strategy_type.replace("_", " ").title()
+    fig.update_layout(
+        title=dict(
+            text=f"Payoff Diagram — {strat_label} &nbsp;|&nbsp; {leg_label}",
+            font=dict(size=13, color=COLORS["purple_light"]),
+        ),
+        xaxis_title="Underlying Price at Expiry ($)",
+        yaxis_title="P&L per Share ($)",
+        legend=dict(orientation="h", y=1.08),
+    )
+    return fig
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # MFT ENGINE INTEGRATION
 # ═══════════════════════════════════════════════════════════════════════════
 def _load_base_config():
@@ -562,7 +738,7 @@ def page_command_center():
 
     # ── Quick Actions ────────────────────────────────────────────────────
     section_header("⚡", "Quick Actions", "COMMAND CENTER")
-    cols = st.columns(4)
+    cols = st.columns(5)
     with cols[0]:
         if st.button("🔍 Scan Market", use_container_width=True, key="cmd_scan"):
             st.session_state["active_page"] = "Scanner"
@@ -572,10 +748,14 @@ def page_command_center():
             st.session_state["active_page"] = "Workbench"
             st.rerun()
     with cols[2]:
+        if st.button("📊 Options Lab", use_container_width=True, key="cmd_opts"):
+            st.session_state["active_page"] = "Options Lab"
+            st.rerun()
+    with cols[3]:
         if st.button("🔬 MFT Analysis", use_container_width=True, key="cmd_mft"):
             st.session_state["active_page"] = "MFT Blender"
             st.rerun()
-    with cols[3]:
+    with cols[4]:
         if st.button("🤖 AI Advisor", use_container_width=True, key="cmd_ai"):
             st.session_state["active_page"] = "AI Advisor"
             st.rerun()
@@ -1478,6 +1658,1171 @@ def page_system():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# PAGE: OPTIONS LAB
+# ═══════════════════════════════════════════════════════════════════════════
+
+_OPTIONS_STRATEGIES = {
+    "long_call":        ("Long Call",          "🟢", "Buy a call → profit from upside moves beyond strike"),
+    "long_put":         ("Long Put",           "🔴", "Buy a put → profit from downside moves below strike"),
+    "bull_call_spread": ("Bull Call Spread",   "📈", "Buy lower call / sell higher call — defined-risk bull"),
+    "bear_put_spread":  ("Bear Put Spread",    "📉", "Buy higher put / sell lower put — defined-risk bear"),
+    "iron_condor":      ("Iron Condor",        "🦅", "Sell OTM strangle, buy outer wings — range-bound income"),
+    "straddle":         ("Long Straddle",      "⚡", "Buy ATM call + put — profit from large moves either way"),
+    "covered_call":     ("Covered Call",       "🏦", "Long shares + sell OTM call — income on existing position"),
+    "cash_secured_put": ("Cash-Secured Put",   "💰", "Sell OTM put secured by cash — acquire stock at a discount"),
+}
+
+
+def _run_options_sim(
+    ohlcv: pd.DataFrame,
+    strategy_type: str,
+    initial_capital: float,
+    position_pct: float,
+    iv_assumption: float,
+    dte_days: int,
+    exit_profit_pct: float,
+    exit_stop_pct: float,
+    r: float = 0.05,
+) -> dict:
+    """
+    Black-Scholes mark-to-market simulation for any multi-leg strategy.
+
+    Entry: open of bar, notional = capital × position_pct.
+    Exit : when cum_return >= profit target OR <= -stop loss OR DTE elapsed.
+    P&L  : sum of BS mid-price changes across all legs × notional.
+    """
+    close = ohlcv["close"].values
+    n = len(close)
+    if n < 10:
+        return {
+            "portfolio_value": [initial_capital], "total_return": 0,
+            "cagr": 0, "max_drawdown": 0, "sharpe": 0, "trades": [],
+        }
+
+    capital = float(initial_capital)
+    pv_series = [capital]
+    trades = []
+    in_pos = False
+    entry_day = 0
+    entry_spot = 0.0
+    entry_premium = 0.0  # net $ cost of position per-share
+    notional = 0.0
+
+    def _position_value(spot: float, days_remaining: int) -> float:
+        """Current value per-share of the full multi-leg structure."""
+        T_now = max(days_remaining, 0) / 365.0
+        legs, _ = _strategy_legs(strategy_type, entry_spot, max(dte_days, 1) / 365.0, r, iv_assumption)
+        val = 0.0
+        for opt_type, action, strike, qty in legs:
+            val += action * qty * _bs_price(spot, strike, T_now, r, iv_assumption, opt_type)
+        if strategy_type == "covered_call":
+            val += spot - entry_spot   # underlying P&L
+        return val
+
+    for i in range(1, n):
+        spot = float(close[i])
+
+        if not in_pos:
+            # Enter at start of bar
+            T_entry = max(dte_days, 1) / 365.0
+            _, net_debit = _strategy_legs(strategy_type, spot, T_entry, r, iv_assumption)
+            entry_premium = net_debit
+            entry_spot = spot
+            entry_day = i
+            notional = capital * position_pct
+            in_pos = True
+            pv_series.append(capital)
+            continue
+
+        days_remaining = max(dte_days - (i - entry_day), 0)
+        current_val = _position_value(spot, days_remaining)
+        position_pnl = current_val - entry_premium
+
+        # Dollar P&L scaled to notional
+        scale = notional / max(abs(entry_premium), 1e-6) if entry_premium != 0 else 0.0
+        dollar_pnl = position_pnl * scale
+        cur_capital = capital + dollar_pnl
+        pv_series.append(cur_capital)
+
+        # Exit conditions
+        cum_ret = position_pnl / max(abs(entry_premium), 1e-6) if entry_premium != 0 else 0.0
+        expired = days_remaining <= 0
+        take_profit = cum_ret >= exit_profit_pct
+        stop_loss = cum_ret <= -exit_stop_pct
+
+        if take_profit or stop_loss or expired:
+            trades.append({
+                "entry_bar": entry_day, "exit_bar": i,
+                "entry_spot": round(entry_spot, 2), "exit_spot": round(spot, 2),
+                "pnl_$": round(dollar_pnl, 2),
+                "cum_ret_%": round(cum_ret * 100, 2),
+                "exit_reason": "profit" if take_profit else ("stop" if stop_loss else "expiry"),
+                "days_held": i - entry_day,
+            })
+            capital = cur_capital
+            in_pos = False
+
+    pv_arr = np.array(pv_series)
+    total_return = float(pv_arr[-1] / initial_capital - 1) if initial_capital else 0
+    n_years = max(len(ohlcv) / 252, 1)
+    cagr = float((1 + total_return) ** (1 / n_years) - 1) if n_years > 0 else total_return
+    peak = np.maximum.accumulate(pv_arr)
+    dd = (pv_arr - peak) / np.where(peak > 0, peak, 1e-8)
+    max_dd = float(np.min(dd))
+    pv_ret = np.diff(pv_arr) / np.maximum(pv_arr[:-1], 1e-8)
+    sharpe = float(np.mean(pv_ret) / np.std(pv_ret) * np.sqrt(252)) if np.std(pv_ret) > 1e-10 else 0.0
+
+    return {
+        "portfolio_value": list(pv_arr),
+        "total_return": total_return,
+        "cagr": cagr,
+        "max_drawdown": max_dd,
+        "sharpe": sharpe,
+        "trades": trades,
+    }
+
+
+def _execute_options_backtest_page(
+    symbol, start, end, capital, strategy_type,
+    delta, iv, dte, position_pct, exit_profit, exit_stop,
+):
+    """Fetch data, run sim, store results in session state."""
+    with st.spinner(f"Fetching {symbol} OHLCV data..."):
+        ohlcv = _load_ohlcv_yf(symbol, start, end)
+    if ohlcv is None or ohlcv.empty:
+        st.error(f"No OHLCV data available for **{symbol}**. Check the symbol or date range.")
+        return
+
+    strat_label = _OPTIONS_STRATEGIES[strategy_type][0]
+    with st.spinner(f"Running {strat_label} backtest on {symbol}…"):
+        if strategy_type in ("long_call", "long_put"):
+            # Use the validated phi engine for vanilla strategies
+            from phi.options.backtest import run_options_backtest
+            results = run_options_backtest(
+                ohlcv=ohlcv, symbol=symbol,
+                strategy_type=strategy_type,
+                initial_capital=capital, position_pct=position_pct,
+                delta_assumption=delta,
+                exit_profit_pct=exit_profit, exit_stop_pct=-exit_stop,
+            )
+        else:
+            results = _run_options_sim(
+                ohlcv=ohlcv, strategy_type=strategy_type,
+                initial_capital=capital, position_pct=position_pct,
+                iv_assumption=iv, dte_days=dte,
+                exit_profit_pct=exit_profit, exit_stop_pct=exit_stop,
+            )
+
+    st.session_state["opt_results"] = results
+    st.session_state["opt_ohlcv"] = ohlcv
+    st.session_state["opt_capital_used"] = capital
+    st.session_state["opt_strategy_used"] = strategy_type
+    st.session_state["opt_symbol_used"] = symbol
+    st.rerun()
+
+
+def _build_iv_surface_fig(spot: float, sigma_base: float, r: float = 0.05) -> go.Figure:
+    """3-D implied-volatility surface (skew × term-structure mock)."""
+    strikes = np.linspace(spot * 0.75, spot * 1.25, 20)
+    tenors = [7, 14, 30, 60, 90, 180]
+
+    # Mimic typical skew: OTM puts have higher IV, term-structure upward
+    Z = []
+    for t in tenors:
+        row = []
+        for k in strikes:
+            moneyness = np.log(k / spot)
+            skew = -0.4 * moneyness + 0.1 * moneyness ** 2   # put skew
+            term_adj = 1 + 0.002 * (t - 30)
+            iv_here = np.clip(sigma_base * (1 + skew) * term_adj, 0.05, 2.0)
+            row.append(iv_here * 100)
+        Z.append(row)
+
+    fig = go.Figure(data=[go.Surface(
+        x=strikes, y=tenors, z=Z,
+        colorscale=[
+            [0.0, "#08080c"], [0.2, "#7c3aed"],
+            [0.5, "#a855f7"], [0.8, "#f97316"],
+            [1.0, "#fbbf24"],
+        ],
+        opacity=0.90,
+        colorbar=dict(title="IV %", tickformat=".0f", len=0.6),
+        hovertemplate="Strike: $%{x:.0f}<br>DTE: %{y}d<br>IV: %{z:.1f}%<extra></extra>",
+    )])
+    fig.update_layout(
+        **PLOTLY_LAYOUT,
+        height=420,
+        scene=dict(
+            xaxis=dict(title="Strike ($)", gridcolor="rgba(168,85,247,0.1)"),
+            yaxis=dict(title="DTE (days)", gridcolor="rgba(168,85,247,0.1)"),
+            zaxis=dict(title="IV (%)", gridcolor="rgba(168,85,247,0.1)"),
+            bgcolor="rgba(0,0,0,0)",
+            camera=dict(eye=dict(x=1.6, y=-1.6, z=0.8)),
+        ),
+        title=dict(text="Implied Volatility Surface (Illustrative Skew)", font=dict(size=13, color=COLORS["purple_light"])),
+        margin=dict(l=0, r=0, t=50, b=0),
+    )
+    return fig
+
+
+def _display_options_results(results: dict, ohlcv, initial_capital: float, strategy_type: str):
+    """Render rich results panel for options backtest."""
+    st.markdown("---")
+    strat_label = _OPTIONS_STRATEGIES.get(strategy_type, (strategy_type,))[0]
+    section_header("📈", f"Options Backtest Results — {strat_label}", "COMPLETE")
+
+    pv = results.get("portfolio_value", [])
+    tr = results.get("total_return", 0) or 0
+    cagr = results.get("cagr", 0) or 0
+    dd = results.get("max_drawdown", 0) or 0
+    sharpe = results.get("sharpe", 0) or 0
+    trades_log = results.get("trades", [])
+
+    end_cap = pv[-1] if pv else initial_capital
+    net_pl = end_cap - initial_capital
+    net_pct = net_pl / max(initial_capital, 1) * 100
+
+    win_rate = None
+    if trades_log:
+        wins = sum(1 for t in trades_log if t.get("pnl_$", 0) > 0)
+        win_rate = wins / len(trades_log) * 100
+
+    kpi_row([
+        ("Start Capital", format_currency(initial_capital), None, "neutral"),
+        ("End Capital", format_currency(end_cap),
+         f"{net_pct:+.1f}%", "positive" if net_pl >= 0 else "negative"),
+        ("Net P/L", f"${net_pl:+,.0f}", None, "positive" if net_pl >= 0 else "negative"),
+        ("CAGR", f"{cagr * 100:+.1f}%", None, "positive" if cagr > 0 else "negative"),
+        ("Sharpe", f"{sharpe:.2f}", None, "neutral"),
+        ("Max DD", f"{dd * 100:.1f}%", None, "negative" if dd < 0 else "neutral"),
+    ])
+
+    if win_rate is not None:
+        st.markdown(
+            f'<div style="text-align:center;color:#8b8b9e;font-size:0.8rem;margin-top:4px;">'
+            f'Win rate: <strong style="color:#a855f7;">{win_rate:.1f}%</strong> '
+            f'over {len(trades_log)} trades</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("")
+
+    if not pv or len(pv) < 3:
+        st.warning("Insufficient data to render charts. Try a longer date range.")
+        return
+
+    tab_eq, tab_dd, tab_dist, tab_vs, tab_log, tab_snap = st.tabs([
+        "Equity Curve", "Drawdown", "Returns Dist",
+        "vs Buy & Hold", "Trade Log", "Options Snapshot",
+    ])
+
+    with tab_eq:
+        fig = build_equity_curve(pv, initial_capital)
+        st.plotly_chart(fig, use_container_width=True, key="opt_equity")
+
+    with tab_dd:
+        fig = build_drawdown_chart(pv)
+        st.plotly_chart(fig, use_container_width=True, key="opt_dd")
+
+    with tab_dist:
+        fig = build_returns_distribution(pv)
+        st.plotly_chart(fig, use_container_width=True, key="opt_dist")
+
+    with tab_vs:
+        if ohlcv is not None and not ohlcv.empty:
+            bh = initial_capital * (ohlcv["close"].values / ohlcv["close"].values[0])
+            x_pv = list(range(len(pv)))
+            x_bh = list(range(len(bh)))
+            fig_vs = make_plotly_fig(height=360)
+            fig_vs.add_trace(go.Scatter(
+                x=x_pv, y=pv, mode="lines",
+                name=f"Options ({strat_label})",
+                line=dict(color=COLORS["purple"], width=2),
+                hovertemplate="Day %{x}<br>$%{y:,.0f}<extra>Options</extra>",
+            ))
+            # Trim BH to same length as PV for alignment
+            min_len = min(len(bh), len(pv))
+            fig_vs.add_trace(go.Scatter(
+                x=x_bh[:min_len], y=list(bh[:min_len]),
+                mode="lines", name="Buy & Hold",
+                line=dict(color=COLORS["orange"], width=2, dash="dot"),
+                hovertemplate="Day %{x}<br>$%{y:,.0f}<extra>B&H</extra>",
+            ))
+            fig_vs.add_hline(y=initial_capital, line_color="rgba(148,163,184,0.25)",
+                             line_dash="dot")
+            fig_vs.update_layout(
+                title=dict(text="Options Strategy vs Buy & Hold Underlying",
+                           font=dict(size=13, color=COLORS["purple_light"])),
+                yaxis_title="Portfolio Value ($)",
+                xaxis_title="Trading Days",
+            )
+            st.plotly_chart(fig_vs, use_container_width=True, key="opt_vs_bh")
+        else:
+            st.info("Underlying data not available for comparison.")
+
+    with tab_log:
+        if trades_log:
+            df_trades = pd.DataFrame(trades_log)
+            # Colour wins green, losses red
+            def _color_pnl(val):
+                color = "#22c55e" if val > 0 else "#ef4444"
+                return f"color: {color}"
+            st.dataframe(
+                df_trades.style.applymap(_color_pnl, subset=["pnl_$"]),
+                use_container_width=True, hide_index=True,
+            )
+            if trades_log:
+                avg_hold = np.mean([t["days_held"] for t in trades_log])
+                avg_pnl = np.mean([t["pnl_$"] for t in trades_log])
+                st.caption(
+                    f"Avg hold: **{avg_hold:.1f}d** | Avg P&L/trade: **${avg_pnl:+,.2f}**"
+                )
+        else:
+            st.info("No discrete trade log available for this simulation mode.")
+
+    with tab_snap:
+        snap = results.get("options_snapshot")
+        if snap:
+            st.markdown(f"""
+            <div class="phi-glass-card">
+                <div style="color:#a855f7; font-weight:700; font-size:0.95rem; margin-bottom:14px;">
+                    Live Chain Snapshot — Delta Anchor
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px;">
+                    <div><div class="phi-kpi-label">Source</div>
+                         <div style="color:#e8e8ed;">{snap.get('source','—')}</div></div>
+                    <div><div class="phi-kpi-label">Strike</div>
+                         <div style="color:#e8e8ed;">${snap.get('strike',0):.2f}</div></div>
+                    <div><div class="phi-kpi-label">Expiry</div>
+                         <div style="color:#e8e8ed;">{snap.get('expiry','—')}</div></div>
+                    <div><div class="phi-kpi-label">Mid Price</div>
+                         <div style="color:#e8e8ed;">${snap.get('mid',0):.2f}</div></div>
+                    <div><div class="phi-kpi-label">Delta</div>
+                         <div style="color:#e8e8ed;">{snap.get('delta','—')}</div></div>
+                    <div><div class="phi-kpi-label">Implied Vol</div>
+                         <div style="color:#e8e8ed;">
+                             {f"{snap.get('implied_volatility',0)*100:.1f}%"
+                              if snap.get('implied_volatility') else '—'}
+                         </div></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info(
+                "No live chain snapshot available. "
+                "Set **MARKETDATAAPP_API_TOKEN** in `.env` to anchor delta from a real options chain."
+            )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GEX SURFACE HELPERS
+# ─────────────────────────────────────────────────────────────────────────
+
+def _augment_chain_gamma(chain_df: pd.DataFrame, spot: float, r: float = 0.05) -> pd.DataFrame:
+    """Add Black-Scholes gamma to a yfinance chain (which omits greeks by default)."""
+    df = chain_df.copy()
+    today = date.today()
+    try:
+        from scipy.stats import norm as _norm
+        _have_scipy = True
+    except ImportError:
+        _have_scipy = False
+
+    gamma_out = []
+    for _, row in df.iterrows():
+        try:
+            K = float(row.get("strike", spot))
+            iv = float(row.get("impliedvolatility", 0.25) or 0.25)
+            iv = np.clip(iv, 0.01, 5.0)
+            exp_str = str(row.get("expiration", ""))
+            dte = max(1, (pd.Timestamp(exp_str).date() - today).days) if exp_str else 30
+            T = dte / 365.0
+            if _have_scipy and spot > 0 and K > 0 and T > 0:
+                d1 = (np.log(spot / K) + (r + 0.5 * iv ** 2) * T) / (iv * np.sqrt(T))
+                gamma = float(_norm.pdf(d1) / (spot * iv * np.sqrt(T)))
+            else:
+                gamma = 0.0
+        except Exception:
+            gamma = 0.0
+        gamma_out.append(gamma)
+
+    df["gamma"] = gamma_out
+    return df
+
+
+def _build_gex_strike_chart(gex_series: pd.Series, spot: float, features: dict) -> go.Figure:
+    """
+    Horizontal bar chart of dealer GEX by strike.
+    Green = dealers long gamma (pinning). Red = dealers short gamma (amplifying).
+    """
+    strikes = gex_series.index.astype(float).values
+    gex_vals = gex_series.values.astype(float)
+    max_abs = float(np.abs(gex_vals).max()) if len(gex_vals) else 1.0
+    gex_norm = gex_vals / (max_abs + 1e-10)
+
+    colors = [COLORS["green"] if v >= 0 else COLORS["red"] for v in gex_norm]
+
+    fig = make_plotly_fig(height=520)
+    fig.add_trace(go.Bar(
+        x=gex_norm, y=strikes, orientation="h",
+        marker_color=colors, opacity=0.80, name="Net Dealer GEX",
+        customdata=gex_vals,
+        hovertemplate="Strike: $%{y:.2f}<br>GEX (norm): %{x:.4f}<br>Raw GEX: %{customdata:.4e}<extra></extra>",
+    ))
+
+    # Spot
+    fig.add_hline(y=spot, line_color=COLORS["purple"], line_dash="dash", line_width=2,
+                  annotation_text=f"Spot ${spot:.2f}",
+                  annotation_font_color=COLORS["purple_light"],
+                  annotation_position="bottom right")
+
+    # Gamma walls (highest |GEX| above & below spot)
+    for mask, label, apos in [
+        (strikes >= spot, "Wall ▲", "top right"),
+        (strikes < spot,  "Wall ▼", "bottom right"),
+    ]:
+        sub_k = strikes[mask]
+        sub_g = np.abs(gex_norm[mask])
+        if len(sub_k):
+            wall_k = float(sub_k[np.argmax(sub_g)])
+            fig.add_hline(y=wall_k, line_color=COLORS["yellow"], line_dash="dot", line_width=1.5,
+                          annotation_text=f"Gamma {label}  ${wall_k:.0f}",
+                          annotation_font_color=COLORS["yellow"],
+                          annotation_position=apos)
+
+    # GEX flip zone highlight
+    if features.get("gex_flip_zone", 0) > 0:
+        half_w = abs(features.get("gamma_wall_distance", 0.03)) * spot * 0.3 or spot * 0.015
+        fig.add_hrect(y0=spot - half_w, y1=spot + half_w,
+                      fillcolor="rgba(249,115,22,0.08)", line_width=0,
+                      annotation_text="GEX Flip Zone",
+                      annotation_font_color=COLORS["orange"])
+
+    fig.update_layout(
+        title=dict(text="Dealer GEX by Strike  ·  Green=pinning, Red=amplifying",
+                   font=dict(size=13, color=COLORS["purple_light"])),
+        xaxis=dict(title="Normalised GEX", zeroline=True,
+                   zerolinecolor="rgba(148,163,184,0.3)"),
+        yaxis=dict(title="Strike ($)", tickformat="$.0f"),
+        bargap=0.08,
+    )
+    return fig
+
+
+def _build_gex_term_structure(chain_df: pd.DataFrame) -> go.Figure:
+    """Bar chart of total |GEX| concentration by expiry (term structure)."""
+    df = chain_df.copy()
+    df.columns = [c.lower() for c in df.columns]
+    today = date.today()
+
+    if "expiration" not in df.columns:
+        fig = make_plotly_fig(height=260)
+        fig.add_annotation(text="No expiration data", showarrow=False,
+                           font=dict(color="#8b8b9e", size=14))
+        return fig
+
+    df["_dte"] = df["expiration"].astype(str).map(
+        lambda s: max(0, (pd.Timestamp(s).date() - today).days)
+        if s not in ("", "nan", "None") else 999
+    )
+    df = df[df["_dte"] <= 180].copy()
+
+    oi_col = next((c for c in ("openinterest", "volume") if c in df.columns), None)
+    gamma_col = "gamma" if "gamma" in df.columns else None
+
+    if gamma_col and oi_col:
+        df["_weight"] = (
+            pd.to_numeric(df[gamma_col], errors="coerce").fillna(0).clip(lower=0)
+            * pd.to_numeric(df[oi_col], errors="coerce").fillna(0)
+        )
+    elif oi_col:
+        df["_weight"] = pd.to_numeric(df[oi_col], errors="coerce").fillna(0)
+    else:
+        df["_weight"] = 1.0
+
+    agg = df.groupby("_dte")["_weight"].sum().sort_index()
+    if agg.empty:
+        return make_plotly_fig(height=260)
+
+    dom_dte = int(agg.idxmax())
+    bar_colors = [
+        COLORS["orange"] if int(d) == dom_dte else COLORS["purple"]
+        for d in agg.index
+    ]
+
+    fig = make_plotly_fig(height=280)
+    fig.add_trace(go.Bar(
+        x=[f"{d}d" for d in agg.index], y=agg.values,
+        marker_color=bar_colors, opacity=0.85, name="GEX Weight",
+        hovertemplate="DTE: %{x}<br>Weight: %{y:.2e}<extra></extra>",
+    ))
+    fig.update_layout(
+        title=dict(text=f"GEX Term Structure  ·  Dominant expiry: <b>{dom_dte}d</b> (orange)",
+                   font=dict(size=13, color=COLORS["purple_light"])),
+        xaxis_title="Days to Expiry", yaxis_title="Total GEX Weight",
+        bargap=0.25,
+    )
+    return fig
+
+
+def _render_gex_surface_section(symbol: str, spot: float) -> None:
+    """Full GEX Surface sub-panel rendered inside the Options Lab."""
+    section_header("⚡", "GEX Surface — Dealer Gamma Exposure")
+
+    st.caption(
+        "**Positive GEX** (green) → dealers net-long gamma → _absorb_ moves → "
+        "mean-reversion / pinning.  "
+        "**Negative GEX** (red) → dealers net-short gamma → _amplify_ moves → trending / volatile.  "
+        "The **GEX flip point** (zero-crossing) is the critical regime-change level."
+    )
+
+    fetch_col, info_col = st.columns([1, 3])
+    with fetch_col:
+        fetch_btn = st.button(
+            f"⬇  Fetch Live Chain ({symbol})", key="gex_fetch", use_container_width=True
+        )
+    with info_col:
+        st.caption("Uses yfinance options chain. BS gamma is computed per-contract since yfinance "
+                   "does not supply greeks. For liquid underlyings (SPY, QQQ, AAPL, etc.) "
+                   "this gives an accurate GEX landscape.")
+
+    if fetch_btn:
+        with st.spinner(f"Fetching {symbol} options chain…"):
+            try:
+                import yfinance as yf
+                tk = yf.Ticker(symbol)
+                exps = tk.options
+                if not exps:
+                    st.error(f"No options data for {symbol}.")
+                    return
+                frames = []
+                for exp in exps[:6]:     # limit to near-term expirations
+                    try:
+                        chain = tk.option_chain(exp)
+                    except Exception:
+                        continue
+                    for leg_df, ot in [(chain.calls, "call"), (chain.puts, "put")]:
+                        tmp = leg_df.copy()
+                        tmp["optiontype"] = ot
+                        tmp["expiration"] = exp
+                        frames.append(tmp)
+
+                if not frames:
+                    st.error("No chain data returned.")
+                    return
+
+                raw = pd.concat(frames, ignore_index=True)
+                raw.columns = [c.lower() for c in raw.columns]
+                chain_aug = _augment_chain_gamma(raw, spot)
+                st.session_state["gex_chain"] = chain_aug
+                st.session_state["gex_symbol"] = symbol
+                st.session_state["gex_spot"] = spot
+                st.success(f"Loaded {len(chain_aug):,} contracts across {len(exps[:6])} expirations.")
+            except Exception as exc:
+                st.error(f"Chain fetch failed: {exc}")
+                return
+
+    chain_df = st.session_state.get("gex_chain")
+    cached_sym = st.session_state.get("gex_symbol", "")
+
+    if chain_df is None or cached_sym != symbol:
+        st.info(
+            f"Press **Fetch Live Chain ({symbol})** to load the chain and render "
+            "the GEX surface, gamma walls, and term structure."
+        )
+        return
+
+    spot_used = float(st.session_state.get("gex_spot", spot))
+
+    # ── Run GammaSurface engine ──────────────────────────────────────────
+    with st.spinner("Computing GEX profile…"):
+        try:
+            from regime_engine.gamma_surface import GammaSurface
+            gs = GammaSurface(config={
+                "kernel_width_pct": 0.005,
+                "min_oi": 10,
+                "max_dte": 180,
+                "gex_flip_threshold": 0.05,
+            })
+            features = gs.compute_features(chain_df, spot_used)
+            gex_raw = gs._compute_gex_profile(chain_df, spot_used)
+            gex_smoothed = gs._smooth_surface(gex_raw, spot_used) if not gex_raw.empty else gex_raw
+        except Exception as exc:
+            st.warning(f"GammaSurface: {exc}")
+            features = {"gamma_net": 0, "gamma_wall_distance": 0,
+                        "gamma_expiry_days": 30, "gex_flip_zone": 0}
+            gex_smoothed = pd.Series(dtype=float)
+
+    # ── KPI cards ────────────────────────────────────────────────────────
+    gn  = float(features.get("gamma_net", 0))
+    gwd = float(features.get("gamma_wall_distance", 0))
+    ged = float(features.get("gamma_expiry_days", 30))
+    gfz = float(features.get("gex_flip_zone", 0))
+
+    regime_label = ("PINNING" if gn > 0.1 else "AMPLIFYING" if gn < -0.1 else "NEUTRAL")
+    regime_color = (COLORS["green"] if gn > 0.1 else
+                    COLORS["red"]   if gn < -0.1 else COLORS["yellow"])
+
+    kpi_c = st.columns(5)
+    for col, (lbl, val, clr) in zip(kpi_c, [
+        ("Gamma Regime",    regime_label,                                regime_color),
+        ("Net GEX at Spot", f"{gn:+.4f}",                               COLORS["green"] if gn >= 0 else COLORS["red"]),
+        ("Wall Distance",   f"{gwd:+.2%}",                              COLORS["cyan"]),
+        ("Dominant Expiry", f"{ged:.0f}d",                              COLORS["orange"]),
+        ("GEX Flip Zone",   "ACTIVE ⚠" if gfz > 0 else "Clear",        COLORS["red"] if gfz > 0 else COLORS["text_muted"]),
+    ]):
+        with col:
+            st.markdown(
+                f'<div class="phi-kpi-card" style="border-top:2px solid {clr}44;">'
+                f'<div class="phi-kpi-label">{lbl}</div>'
+                f'<div style="color:{clr};font-weight:700;font-size:0.9rem;margin-top:4px;">{val}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("")
+
+    # ── Charts ───────────────────────────────────────────────────────────
+    if gex_smoothed.empty:
+        st.warning("Insufficient chain data for GEX profile. Try a more liquid symbol (SPY, QQQ, AAPL).")
+    else:
+        gex_col, ts_col = st.columns([3, 2])
+        with gex_col:
+            st.plotly_chart(
+                _build_gex_strike_chart(gex_smoothed, spot_used, features),
+                use_container_width=True, key="gex_strike_chart",
+            )
+        with ts_col:
+            st.plotly_chart(
+                _build_gex_term_structure(chain_df),
+                use_container_width=True, key="gex_term_chart",
+            )
+
+    # ── Interpretation guide ─────────────────────────────────────────────
+    with st.expander("Reading the GEX Surface", expanded=False):
+        st.markdown(f"""
+**Current regime: <span style="color:{regime_color}">{regime_label}</span>**
+
+| GEX Condition | Dealer Position | Market Behaviour | Strategy Bias |
+|---|---|---|---|
+| GEX > 0 (green) | Long gamma | Buy dips, sell rips → **pinning** | Sell premium: Iron Condor, Covered Call |
+| GEX < 0 (red) | Short gamma | Chase moves to hedge → **amplifying** | Buy directional: long calls/puts, straddle |
+| GEX flip point | Zero-crossing | Regime change level — most critical price | Watch for breakout/breakdown |
+| Gamma wall ▲/▼ | Peak \\|GEX\\| strike | Strong support/resistance magnet | Key strike for spreads / hedges |
+| Dominant expiry | Peak term GEX | OpEx driving current gamma dynamics | Roll before expiry to avoid gamma collapse |
+
+**Wall distance** {gwd:+.2%} from spot →
+{"price is **{:.0f}% above** a major gamma wall (possible pin)".format(abs(gwd)*100) if gwd > 0
+ else "price is **{:.0f}% below** a major gamma wall".format(abs(gwd)*100)}.
+        """, unsafe_allow_html=True)
+
+    # ── Raw chain table ───────────────────────────────────────────────────
+    with st.expander(f"Raw Options Chain — {symbol} ({len(chain_df):,} contracts)", expanded=False):
+        show_cols = [c for c in
+                     ["strike", "expiration", "optiontype", "bid", "ask",
+                      "impliedvolatility", "openinterest", "gamma", "volume"]
+                     if c in chain_df.columns]
+        st.dataframe(
+            chain_df[show_cols].sort_values(["expiration", "strike"]).reset_index(drop=True),
+            use_container_width=True, hide_index=True,
+        )
+
+
+def _display_engine_results(results: dict, ohlcv, initial_capital: float, symbol: str) -> None:
+    """Render results of the Full Engine Backtest."""
+    st.markdown("---")
+    section_header("⚡", "Engine Backtest Results", "FULL ENGINE")
+
+    pv   = results.get("portfolio_value", [])
+    tr   = results.get("total_return", 0) or 0
+    cagr = results.get("cagr", 0) or 0
+    dd   = results.get("max_drawdown", 0) or 0
+    sh   = results.get("sharpe", 0) or 0
+    wr   = results.get("win_rate", 0) or 0
+    nt   = results.get("n_trades", 0) or 0
+
+    end_cap = pv[-1] if pv else initial_capital
+    net_pl  = end_cap - initial_capital
+
+    # Engine component status
+    flags = {
+        "RegimeEngine": results.get("_regime_engine_ok", False),
+        "GammaSurface": results.get("_gamma_ok", False),
+        "OptionsEngine": results.get("_options_ok", False),
+    }
+    flag_html = "  ".join(
+        f'<span style="color:{"#22c55e" if ok else "#ef4444"}; font-size:0.75rem;">'
+        f'{"●" if ok else "○"} {name}</span>'
+        for name, ok in flags.items()
+    )
+    st.markdown(f'<div style="margin-bottom:10px;">{flag_html}</div>', unsafe_allow_html=True)
+
+    kpi_row([
+        ("Start Capital",  format_currency(initial_capital),    None,   "neutral"),
+        ("End Capital",    format_currency(end_cap),
+         f"{(net_pl/max(initial_capital,1))*100:+.1f}%",
+         "positive" if net_pl >= 0 else "negative"),
+        ("CAGR",           f"{cagr*100:+.1f}%",                None,   "positive" if cagr > 0 else "negative"),
+        ("Sharpe",         f"{sh:.2f}",                         None,   "neutral"),
+        ("Max DD",         f"{dd*100:.1f}%",                    None,   "negative" if dd < 0 else "neutral"),
+        ("Win Rate",       f"{wr*100:.1f}%",                    f"{nt} trades",  "positive" if wr > 0.5 else "neutral"),
+    ])
+
+    st.markdown("")
+
+    if not pv or len(pv) < 3:
+        st.warning("Not enough data points to render charts. Try a longer date range or lower the lookback.")
+        return
+
+    # Structures + regimes breakdown
+    structs = results.get("structures_used", {})
+    regimes = results.get("regimes_at_entry", {})
+
+    if structs or regimes:
+        mix_col, reg_col = st.columns(2)
+        with mix_col:
+            if structs:
+                fig_s = go.Figure(go.Bar(
+                    x=list(structs.keys()), y=list(structs.values()),
+                    marker_color=COLORS["purple"], opacity=0.85,
+                    hovertemplate="%{x}: %{y} trades<extra></extra>",
+                ))
+                fig_s.update_layout(
+                    **PLOTLY_LAYOUT, height=260,
+                    title=dict(text="Structures Selected by Engine",
+                               font=dict(size=13, color=COLORS["purple_light"])),
+                    xaxis_title="Structure", yaxis_title="# Trades",
+                )
+                st.plotly_chart(fig_s, use_container_width=True, key="eng_structs")
+        with reg_col:
+            if regimes:
+                fig_r = go.Figure(go.Bar(
+                    x=list(regimes.keys()), y=list(regimes.values()),
+                    marker_color=COLORS["orange"], opacity=0.85,
+                    hovertemplate="%{x}: %{y} trades<extra></extra>",
+                ))
+                fig_r.update_layout(
+                    **PLOTLY_LAYOUT, height=260,
+                    title=dict(text="Dominant Regime at Trade Entry",
+                               font=dict(size=13, color=COLORS["purple_light"])),
+                    xaxis_title="Regime", yaxis_title="# Trades",
+                )
+                st.plotly_chart(fig_r, use_container_width=True, key="eng_regimes")
+
+    # Main chart tabs
+    tab_eq, tab_dd, tab_dist, tab_vs, tab_log = st.tabs([
+        "Equity Curve", "Drawdown", "Returns Dist", "vs Buy & Hold", "Trade Log",
+    ])
+
+    with tab_eq:
+        st.plotly_chart(build_equity_curve(pv, initial_capital),
+                        use_container_width=True, key="eng_equity")
+
+    with tab_dd:
+        st.plotly_chart(build_drawdown_chart(pv),
+                        use_container_width=True, key="eng_dd")
+
+    with tab_dist:
+        st.plotly_chart(build_returns_distribution(pv),
+                        use_container_width=True, key="eng_dist")
+
+    with tab_vs:
+        if ohlcv is not None and not ohlcv.empty:
+            bh = initial_capital * (ohlcv["close"].values / ohlcv["close"].values[0])
+            fig_vs = make_plotly_fig(height=360)
+            fig_vs.add_trace(go.Scatter(
+                x=list(range(len(pv))), y=pv, mode="lines",
+                name="Engine Backtest",
+                line=dict(color=COLORS["purple"], width=2),
+                hovertemplate="Day %{x}<br>$%{y:,.0f}<extra>Engine</extra>",
+            ))
+            min_len = min(len(bh), len(pv))
+            fig_vs.add_trace(go.Scatter(
+                x=list(range(min_len)), y=list(bh[:min_len]),
+                mode="lines", name="Buy & Hold",
+                line=dict(color=COLORS["orange"], width=2, dash="dot"),
+                hovertemplate="Day %{x}<br>$%{y:,.0f}<extra>B&H</extra>",
+            ))
+            fig_vs.add_hline(y=initial_capital, line_color="rgba(148,163,184,0.25)",
+                             line_dash="dot")
+            fig_vs.update_layout(
+                title=dict(text=f"Engine ({symbol}) vs Buy & Hold",
+                           font=dict(size=13, color=COLORS["purple_light"])),
+                yaxis_title="Portfolio Value ($)", xaxis_title="Trading Days",
+            )
+            st.plotly_chart(fig_vs, use_container_width=True, key="eng_vs_bh")
+
+    with tab_log:
+        trades = results.get("trades", [])
+        if trades:
+            df_t = pd.DataFrame(trades)
+            display_cols = [c for c in [
+                "entry_date", "exit_date", "structure", "level",
+                "regime", "vol_regime", "gex_regime", "confidence",
+                "entry_spot", "exit_spot", "entry_iv", "days_held",
+                "exit_reason", "pnl_$", "cum_ret_%",
+            ] if c in df_t.columns]
+
+            def _color_pnl(val):
+                return f"color: {'#22c55e' if val > 0 else '#ef4444'}"
+
+            styled = df_t[display_cols].style.applymap(_color_pnl, subset=["pnl_$"])
+            st.dataframe(styled, use_container_width=True, hide_index=True)
+
+            # Exit reason breakdown
+            reason_counts = df_t["exit_reason"].value_counts()
+            st.caption(
+                "Exit reasons — "
+                + "  |  ".join(f"**{r}**: {c}" for r, c in reason_counts.items())
+            )
+        else:
+            st.info(
+                "No trades recorded. The engine may need a longer date range, "
+                "lower confidence gate, or the RegimeEngine may be unavailable."
+            )
+
+
+def page_options_backtest():
+    """Full-featured Options Lab — strategy builder, Greeks dashboard, payoff diagram, backtest."""
+    section_header("📊", "Options Lab — Strategy Backtester", "OPTIONS")
+
+    st.caption(
+        "Design multi-leg options strategies, preview payoff diagrams and live Greeks, "
+        "then run a full Black-Scholes–based backtest over historical data."
+    )
+
+    # ── Step 1: Dataset & Strategy ───────────────────────────────────────
+    with st.expander("Step 1 — Symbol, Date Range & Capital", expanded=True):
+        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+        with c1:
+            opt_sym = st.text_input("Underlying Symbol", value="SPY", key="opt_sym")
+        with c2:
+            opt_start = st.date_input("Start Date", value=date(2020, 1, 1), key="opt_start")
+        with c3:
+            opt_end = st.date_input("End Date", value=date(2024, 12, 31), key="opt_end")
+        with c4:
+            opt_capital = st.number_input(
+                "Capital ($)", value=100_000, min_value=1_000, step=10_000, key="opt_capital"
+            )
+
+    # ── Step 2: Strategy & Parameters ───────────────────────────────────
+    with st.expander("Step 2 — Strategy Selection & Parameters", expanded=True):
+        strat_col, desc_col = st.columns([1, 2])
+        with strat_col:
+            opt_strategy = st.selectbox(
+                "Strategy Type",
+                options=list(_OPTIONS_STRATEGIES.keys()),
+                format_func=lambda k: f"{_OPTIONS_STRATEGIES[k][1]}  {_OPTIONS_STRATEGIES[k][0]}",
+                key="opt_strategy",
+            )
+        with desc_col:
+            sname, sicon, sdesc = _OPTIONS_STRATEGIES[opt_strategy]
+            st.markdown(f"""
+            <div class="phi-glass-card" style="padding:14px; margin-top:4px;">
+                <div style="color:#a855f7; font-weight:700; font-size:1rem;">{sicon} {sname}</div>
+                <div style="color:#8b8b9e; font-size:0.85rem; margin-top:6px;">{sdesc}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("")
+        p1, p2, p3 = st.columns(3)
+        with p1:
+            opt_delta = st.slider(
+                "Delta Assumption", 0.10, 0.90, 0.50, 0.05, key="opt_delta",
+                help="ATM ≈ 0.50 | OTM ≈ 0.25-0.35 | Deep ITM ≈ 0.70-0.85",
+            )
+            opt_iv = st.slider(
+                "Implied Volatility (%)", 5, 120, 25, 1, key="opt_iv",
+                help="Annual IV used for Black-Scholes pricing",
+            ) / 100.0
+        with p2:
+            opt_pos_pct = st.slider(
+                "Position Size (% Capital)", 1, 50, 10, 1, key="opt_pos_pct",
+                help="Notional deployed per trade as % of portfolio",
+            ) / 100.0
+            opt_dte = st.slider(
+                "Days to Expiry (DTE)", 7, 365, 30, 1, key="opt_dte",
+                help="Option contract length; position re-entered after each cycle",
+            )
+        with p3:
+            opt_profit = st.slider(
+                "Profit Target (%)", 10, 200, 50, 5, key="opt_profit",
+                help="Exit when position gains this % of the initial premium",
+            ) / 100.0
+            opt_stop = st.slider(
+                "Stop Loss (%)", 10, 100, 30, 5, key="opt_stop",
+                help="Exit when position loses this % of the initial premium",
+            ) / 100.0
+
+    # ── Greeks Dashboard + Payoff Preview ──────────────────────────────
+    section_header("🔢", "Live Greeks & Payoff Diagram")
+    st.caption("Greeks and diagram update instantly from the parameters above.")
+
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def _get_spot_price(symbol: str) -> float:
+        end_d = date.today()
+        start_d = end_d - timedelta(days=14)
+        df = _load_ohlcv_yf(symbol, str(start_d), str(end_d))
+        if df is not None and not df.empty:
+            return float(df["close"].iloc[-1])
+        return 500.0
+
+    spot_price = _get_spot_price(opt_sym)
+    T_years = max(opt_dte, 1) / 365.0
+    R_RATE = 0.05
+
+    # Compute composite Greeks for the selected strategy
+    opt_type_primary = "call" if opt_strategy in (
+        "long_call", "bull_call_spread", "covered_call"
+    ) else "put"
+
+    raw_greeks = _bs_greeks(spot_price, spot_price, T_years, R_RATE, opt_iv, opt_type_primary)
+
+    if opt_strategy == "iron_condor":
+        gc = _bs_greeks(spot_price, spot_price * 1.05, T_years, R_RATE, opt_iv, "call")
+        gp = _bs_greeks(spot_price, spot_price * 0.95, T_years, R_RATE, opt_iv, "put")
+        raw_greeks = {
+            "delta": -(gc["delta"] + gp["delta"]),
+            "gamma": -(gc["gamma"] + gp["gamma"]),
+            "theta": -(gc["theta"] + gp["theta"]),
+            "vega":  -(gc["vega"]  + gp["vega"]),
+        }
+    elif opt_strategy == "straddle":
+        gc = _bs_greeks(spot_price, spot_price, T_years, R_RATE, opt_iv, "call")
+        gp = _bs_greeks(spot_price, spot_price, T_years, R_RATE, opt_iv, "put")
+        raw_greeks = {k: gc[k] + gp[k] for k in gc}
+
+    atm_call_px = _bs_price(spot_price, spot_price, T_years, R_RATE, opt_iv, "call")
+    atm_put_px  = _bs_price(spot_price, spot_price, T_years, R_RATE, opt_iv, "put")
+    _, net_cost = _strategy_legs(opt_strategy, spot_price, T_years, R_RATE, opt_iv)
+
+    greek_cols = st.columns(6)
+    greek_items = [
+        ("Spot Price", f"${spot_price:,.2f}", "#c084fc"),
+        ("Delta (Δ)", f"{raw_greeks['delta']:+.4f}", COLORS["green"] if raw_greeks["delta"] >= 0 else COLORS["red"]),
+        ("Gamma (Γ)", f"{raw_greeks['gamma']:.6f}", COLORS["cyan"]),
+        ("Theta (Θ)", f"{raw_greeks['theta']:+.4f}/d", COLORS["yellow"]),
+        ("Vega (ν)", f"{raw_greeks['vega']:+.4f}", COLORS["orange"]),
+        ("Net Premium", f"${abs(net_cost):.2f} {'debit' if net_cost > 0 else 'credit'}", COLORS["purple"]),
+    ]
+    for col, (label, value, color) in zip(greek_cols, greek_items):
+        with col:
+            st.markdown(f"""
+            <div class="phi-kpi-card" style="border-top:2px solid {color}33;">
+                <div class="phi-kpi-label">{label}</div>
+                <div style="color:{color}; font-weight:700; font-size:1rem; margin-top:4px;">{value}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Payoff diagram + IV surface side by side
+    diag_col, iv_col = st.columns([3, 2])
+    with diag_col:
+        payoff_fig = build_payoff_diagram(opt_strategy, spot_price, opt_iv, opt_dte, R_RATE)
+        st.plotly_chart(payoff_fig, use_container_width=True, key="opt_payoff")
+    with iv_col:
+        iv_surface_fig = _build_iv_surface_fig(spot_price, opt_iv, R_RATE)
+        st.plotly_chart(iv_surface_fig, use_container_width=True, key="opt_iv_surface")
+
+    # Black-Scholes pricing matrix
+    with st.expander("Black-Scholes Pricing Matrix", expanded=False):
+        st.caption("ATM call & put prices across a range of IVs and DTEs.")
+        iv_range = [0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.60]
+        dte_range = [7, 14, 30, 60, 90, 180]
+        matrix_data = {}
+        for iv_val in iv_range:
+            row = {}
+            for dte_val in dte_range:
+                T_m = dte_val / 365.0
+                call_p = _bs_price(spot_price, spot_price, T_m, R_RATE, iv_val, "call")
+                put_p  = _bs_price(spot_price, spot_price, T_m, R_RATE, iv_val, "put")
+                row[f"{dte_val}d"] = f"${call_p:.2f}C / ${put_p:.2f}P"
+            matrix_data[f"{iv_val*100:.0f}% IV"] = row
+        st.dataframe(
+            pd.DataFrame(matrix_data).T,
+            use_container_width=True,
+        )
+
+    # ── GEX Surface ──────────────────────────────────────────────────────
+    st.markdown("---")
+    _render_gex_surface_section(opt_sym.strip().upper(), spot_price)
+
+    # ── Run Backtest ─────────────────────────────────────────────────────
+    st.markdown("---")
+    section_header("🚀", "Backtest")
+
+    tab_simple, tab_engine = st.tabs([
+        "Strategy Backtest (BS Sim)",
+        "Full Engine Backtest (MFT + OptionsEngine)",
+    ])
+
+    # ── Tab 1: Strategy Backtest ──────────────────────────────────────────
+    with tab_simple:
+        st.caption(
+            "Black-Scholes mark-to-market simulation for the selected strategy. "
+            "Fast — does not run the MFT regime engine."
+        )
+        run_info = st.container()
+        with run_info:
+            info_c1, info_c2, info_c3, info_c4 = st.columns(4)
+            with info_c1:
+                st.markdown(f'<div class="phi-kpi-label">Symbol</div>'
+                            f'<div style="color:#e8e8ed;font-weight:600;">{opt_sym.upper()}</div>',
+                            unsafe_allow_html=True)
+            with info_c2:
+                st.markdown(f'<div class="phi-kpi-label">Period</div>'
+                            f'<div style="color:#e8e8ed;font-weight:600;">{opt_start} → {opt_end}</div>',
+                            unsafe_allow_html=True)
+            with info_c3:
+                st.markdown(f'<div class="phi-kpi-label">Strategy</div>'
+                            f'<div style="color:#a855f7;font-weight:700;">{_OPTIONS_STRATEGIES[opt_strategy][0]}</div>',
+                            unsafe_allow_html=True)
+            with info_c4:
+                st.markdown(f'<div class="phi-kpi-label">Capital</div>'
+                            f'<div style="color:#e8e8ed;font-weight:600;">{format_currency(opt_capital)}</div>',
+                            unsafe_allow_html=True)
+
+        st.markdown("")
+        if st.button("🚀 Run Strategy Backtest", type="primary", use_container_width=True, key="opt_run"):
+            _execute_options_backtest_page(
+                symbol=opt_sym.strip().upper(),
+                start=str(opt_start), end=str(opt_end),
+                capital=float(opt_capital),
+                strategy_type=opt_strategy,
+                delta=opt_delta, iv=opt_iv, dte=opt_dte,
+                position_pct=opt_pos_pct,
+                exit_profit=opt_profit, exit_stop=opt_stop,
+            )
+
+        if (
+            st.session_state.get("opt_results")
+            and st.session_state.get("opt_symbol_used", "") == opt_sym.strip().upper()
+            and st.session_state.get("opt_strategy_used", "") == opt_strategy
+        ):
+            _display_options_results(
+                results=st.session_state["opt_results"],
+                ohlcv=st.session_state.get("opt_ohlcv"),
+                initial_capital=float(st.session_state.get("opt_capital_used", opt_capital)),
+                strategy_type=st.session_state.get("opt_strategy_used", opt_strategy),
+            )
+        elif st.session_state.get("opt_results"):
+            st.info("Results above are from a previous run. Press **Run Strategy Backtest** to update.")
+
+    # ── Tab 2: Full Engine Backtest ───────────────────────────────────────
+    with tab_engine:
+        st.markdown("""
+        <div class="phi-glass-card" style="margin-bottom:16px;">
+            <div style="color:#a855f7; font-weight:700; font-size:1rem; margin-bottom:8px;">
+                ⚡ Full MFT + OptionsEngine Walk-Forward Backtest
+            </div>
+            <div style="color:#8b8b9e; font-size:0.85rem; line-height:1.6;">
+                At each bar this runs the <strong>complete pipeline</strong>:<br>
+                RegimeEngine → synthetic BS chain → GammaSurface → OptionsEngine.select_trade()<br>
+                The engine autonomously picks the optimal structure (L1/L2/L3) based on
+                regime probabilities, IV regime, and GEX. Positions are marked to market
+                daily with Black-Scholes and exited on profit target / stop / DTE expiry.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        eng_c1, eng_c2, eng_c3 = st.columns(3)
+        with eng_c1:
+            eng_lookback = st.slider(
+                "Regime lookback (bars)", 30, 200, 60, 10, key="eng_lookback",
+                help="Rolling window fed to RegimeEngine at each bar",
+            )
+            eng_min_conf = st.slider(
+                "Min confidence gate", 0.20, 0.80, 0.40, 0.05, key="eng_min_conf",
+                help="OptionsEngine only trades above this confidence level",
+            )
+        with eng_c2:
+            eng_dte = st.slider(
+                "Target DTE (main leg)", 14, 90, 30, 1, key="eng_dte",
+            )
+            eng_dte_short = st.slider(
+                "Front-month DTE", 7, 45, 14, 1, key="eng_dte_short",
+                help="Used for calendar spreads and covered-call short leg",
+            )
+        with eng_c3:
+            eng_pos_pct = st.slider(
+                "Position size (% capital)", 1, 40, 10, 1, key="eng_pos_pct",
+            ) / 100.0
+            eng_iv_prem = st.slider(
+                "IV premium multiplier", 1.00, 2.00, 1.15, 0.05, key="eng_iv_prem",
+                help="ATM IV = realised vol × this multiplier (VIX > HV effect)",
+            )
+
+        eng_profit, eng_stop = st.columns(2)
+        with eng_profit:
+            eng_exit_profit = st.slider(
+                "Profit target (%)", 10, 200, 50, 5, key="eng_exit_profit",
+            ) / 100.0
+        with eng_stop:
+            eng_exit_stop = st.slider(
+                "Stop loss (%)", 10, 100, 30, 5, key="eng_exit_stop",
+            ) / 100.0
+
+        st.markdown("")
+
+        run_eng_btn = st.button(
+            "⚡ Run Full Engine Backtest",
+            type="primary", use_container_width=True, key="eng_run",
+        )
+
+        if run_eng_btn:
+            with st.spinner("Fetching OHLCV data…"):
+                eng_ohlcv = _load_ohlcv_yf(
+                    opt_sym.strip().upper(), str(opt_start), str(opt_end)
+                )
+            if eng_ohlcv is None or eng_ohlcv.empty:
+                st.error(f"No data for {opt_sym}.")
+            else:
+                prog = st.progress(0.0, text="Starting engine backtest…")
+
+                def _update_prog(f):
+                    prog.progress(
+                        min(f, 1.0),
+                        text=f"Engine backtest: {f*100:.0f}% complete…",
+                    )
+
+                with st.spinner("Running walk-forward engine backtest…"):
+                    try:
+                        from phi.options.engine_backtest import run_engine_backtest
+                        eng_results = run_engine_backtest(
+                            ohlcv=eng_ohlcv,
+                            symbol=opt_sym.strip().upper(),
+                            initial_capital=float(opt_capital),
+                            position_pct=eng_pos_pct,
+                            lookback_bars=eng_lookback,
+                            min_confidence=eng_min_conf,
+                            dte_days=eng_dte,
+                            dte_short=eng_dte_short,
+                            exit_profit_pct=eng_exit_profit,
+                            exit_stop_pct=eng_exit_stop,
+                            iv_premium=eng_iv_prem,
+                            progress_cb=_update_prog,
+                        )
+                        prog.progress(1.0, text="Complete!")
+                        st.session_state["eng_results"] = eng_results
+                        st.session_state["eng_ohlcv"]   = eng_ohlcv
+                        st.session_state["eng_sym"]      = opt_sym.strip().upper()
+                    except Exception as exc:
+                        prog.empty()
+                        st.error(f"Engine backtest failed: {exc}")
+
+        # ── Engine results display ────────────────────────────────────────
+        eng_res = st.session_state.get("eng_results")
+        if eng_res and st.session_state.get("eng_sym", "") == opt_sym.strip().upper():
+            _display_engine_results(
+                eng_res,
+                st.session_state.get("eng_ohlcv"),
+                float(opt_capital),
+                opt_sym.strip().upper(),
+            )
+        elif eng_res:
+            st.info("Engine results above are from a previous run. Press **Run Full Engine Backtest** to update.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # SIDEBAR + NAVIGATION
 # ═══════════════════════════════════════════════════════════════════════════
 def build_sidebar():
@@ -1499,6 +2844,7 @@ def build_sidebar():
     pages = {
         "Command Center": "🏠",
         "Workbench": "🧪",
+        "Options Lab": "📊",
         "MFT Blender": "🔬",
         "Scanner": "🔍",
         "AI Advisor": "🤖",
@@ -1547,6 +2893,7 @@ def main():
     PAGE_MAP = {
         "Command Center": page_command_center,
         "Workbench": page_workbench,
+        "Options Lab": page_options_backtest,
         "MFT Blender": page_mft_blender,
         "Scanner": page_scanner,
         "AI Advisor": page_ai_advisor,
