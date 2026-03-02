@@ -2328,6 +2328,160 @@ def _render_gex_surface_section(symbol: str, spot: float) -> None:
         )
 
 
+def _display_engine_results(results: dict, ohlcv, initial_capital: float, symbol: str) -> None:
+    """Render results of the Full Engine Backtest."""
+    st.markdown("---")
+    section_header("⚡", "Engine Backtest Results", "FULL ENGINE")
+
+    pv   = results.get("portfolio_value", [])
+    tr   = results.get("total_return", 0) or 0
+    cagr = results.get("cagr", 0) or 0
+    dd   = results.get("max_drawdown", 0) or 0
+    sh   = results.get("sharpe", 0) or 0
+    wr   = results.get("win_rate", 0) or 0
+    nt   = results.get("n_trades", 0) or 0
+
+    end_cap = pv[-1] if pv else initial_capital
+    net_pl  = end_cap - initial_capital
+
+    # Engine component status
+    flags = {
+        "RegimeEngine": results.get("_regime_engine_ok", False),
+        "GammaSurface": results.get("_gamma_ok", False),
+        "OptionsEngine": results.get("_options_ok", False),
+    }
+    flag_html = "  ".join(
+        f'<span style="color:{"#22c55e" if ok else "#ef4444"}; font-size:0.75rem;">'
+        f'{"●" if ok else "○"} {name}</span>'
+        for name, ok in flags.items()
+    )
+    st.markdown(f'<div style="margin-bottom:10px;">{flag_html}</div>', unsafe_allow_html=True)
+
+    kpi_row([
+        ("Start Capital",  format_currency(initial_capital),    None,   "neutral"),
+        ("End Capital",    format_currency(end_cap),
+         f"{(net_pl/max(initial_capital,1))*100:+.1f}%",
+         "positive" if net_pl >= 0 else "negative"),
+        ("CAGR",           f"{cagr*100:+.1f}%",                None,   "positive" if cagr > 0 else "negative"),
+        ("Sharpe",         f"{sh:.2f}",                         None,   "neutral"),
+        ("Max DD",         f"{dd*100:.1f}%",                    None,   "negative" if dd < 0 else "neutral"),
+        ("Win Rate",       f"{wr*100:.1f}%",                    f"{nt} trades",  "positive" if wr > 0.5 else "neutral"),
+    ])
+
+    st.markdown("")
+
+    if not pv or len(pv) < 3:
+        st.warning("Not enough data points to render charts. Try a longer date range or lower the lookback.")
+        return
+
+    # Structures + regimes breakdown
+    structs = results.get("structures_used", {})
+    regimes = results.get("regimes_at_entry", {})
+
+    if structs or regimes:
+        mix_col, reg_col = st.columns(2)
+        with mix_col:
+            if structs:
+                fig_s = go.Figure(go.Bar(
+                    x=list(structs.keys()), y=list(structs.values()),
+                    marker_color=COLORS["purple"], opacity=0.85,
+                    hovertemplate="%{x}: %{y} trades<extra></extra>",
+                ))
+                fig_s.update_layout(
+                    **PLOTLY_LAYOUT, height=260,
+                    title=dict(text="Structures Selected by Engine",
+                               font=dict(size=13, color=COLORS["purple_light"])),
+                    xaxis_title="Structure", yaxis_title="# Trades",
+                )
+                st.plotly_chart(fig_s, use_container_width=True, key="eng_structs")
+        with reg_col:
+            if regimes:
+                fig_r = go.Figure(go.Bar(
+                    x=list(regimes.keys()), y=list(regimes.values()),
+                    marker_color=COLORS["orange"], opacity=0.85,
+                    hovertemplate="%{x}: %{y} trades<extra></extra>",
+                ))
+                fig_r.update_layout(
+                    **PLOTLY_LAYOUT, height=260,
+                    title=dict(text="Dominant Regime at Trade Entry",
+                               font=dict(size=13, color=COLORS["purple_light"])),
+                    xaxis_title="Regime", yaxis_title="# Trades",
+                )
+                st.plotly_chart(fig_r, use_container_width=True, key="eng_regimes")
+
+    # Main chart tabs
+    tab_eq, tab_dd, tab_dist, tab_vs, tab_log = st.tabs([
+        "Equity Curve", "Drawdown", "Returns Dist", "vs Buy & Hold", "Trade Log",
+    ])
+
+    with tab_eq:
+        st.plotly_chart(build_equity_curve(pv, initial_capital),
+                        use_container_width=True, key="eng_equity")
+
+    with tab_dd:
+        st.plotly_chart(build_drawdown_chart(pv),
+                        use_container_width=True, key="eng_dd")
+
+    with tab_dist:
+        st.plotly_chart(build_returns_distribution(pv),
+                        use_container_width=True, key="eng_dist")
+
+    with tab_vs:
+        if ohlcv is not None and not ohlcv.empty:
+            bh = initial_capital * (ohlcv["close"].values / ohlcv["close"].values[0])
+            fig_vs = make_plotly_fig(height=360)
+            fig_vs.add_trace(go.Scatter(
+                x=list(range(len(pv))), y=pv, mode="lines",
+                name="Engine Backtest",
+                line=dict(color=COLORS["purple"], width=2),
+                hovertemplate="Day %{x}<br>$%{y:,.0f}<extra>Engine</extra>",
+            ))
+            min_len = min(len(bh), len(pv))
+            fig_vs.add_trace(go.Scatter(
+                x=list(range(min_len)), y=list(bh[:min_len]),
+                mode="lines", name="Buy & Hold",
+                line=dict(color=COLORS["orange"], width=2, dash="dot"),
+                hovertemplate="Day %{x}<br>$%{y:,.0f}<extra>B&H</extra>",
+            ))
+            fig_vs.add_hline(y=initial_capital, line_color="rgba(148,163,184,0.25)",
+                             line_dash="dot")
+            fig_vs.update_layout(
+                title=dict(text=f"Engine ({symbol}) vs Buy & Hold",
+                           font=dict(size=13, color=COLORS["purple_light"])),
+                yaxis_title="Portfolio Value ($)", xaxis_title="Trading Days",
+            )
+            st.plotly_chart(fig_vs, use_container_width=True, key="eng_vs_bh")
+
+    with tab_log:
+        trades = results.get("trades", [])
+        if trades:
+            df_t = pd.DataFrame(trades)
+            display_cols = [c for c in [
+                "entry_date", "exit_date", "structure", "level",
+                "regime", "vol_regime", "gex_regime", "confidence",
+                "entry_spot", "exit_spot", "entry_iv", "days_held",
+                "exit_reason", "pnl_$", "cum_ret_%",
+            ] if c in df_t.columns]
+
+            def _color_pnl(val):
+                return f"color: {'#22c55e' if val > 0 else '#ef4444'}"
+
+            styled = df_t[display_cols].style.applymap(_color_pnl, subset=["pnl_$"])
+            st.dataframe(styled, use_container_width=True, hide_index=True)
+
+            # Exit reason breakdown
+            reason_counts = df_t["exit_reason"].value_counts()
+            st.caption(
+                "Exit reasons — "
+                + "  |  ".join(f"**{r}**: {c}" for r, c in reason_counts.items())
+            )
+        else:
+            st.info(
+                "No trades recorded. The engine may need a longer date range, "
+                "lower confidence gate, or the RegimeEngine may be unavailable."
+            )
+
+
 def page_options_backtest():
     """Full-featured Options Lab — strategy builder, Greeks dashboard, payoff diagram, backtest."""
     section_header("📊", "Options Lab — Strategy Backtester", "OPTIONS")
@@ -2494,54 +2648,178 @@ def page_options_backtest():
 
     # ── Run Backtest ─────────────────────────────────────────────────────
     st.markdown("---")
-    section_header("🚀", "Run Backtest")
+    section_header("🚀", "Backtest")
 
-    run_info = st.container()
-    with run_info:
-        info_c1, info_c2, info_c3, info_c4 = st.columns(4)
-        with info_c1:
-            st.markdown(f'<div class="phi-kpi-label">Symbol</div>'
-                        f'<div style="color:#e8e8ed;font-weight:600;">{opt_sym.upper()}</div>',
-                        unsafe_allow_html=True)
-        with info_c2:
-            st.markdown(f'<div class="phi-kpi-label">Period</div>'
-                        f'<div style="color:#e8e8ed;font-weight:600;">{opt_start} → {opt_end}</div>',
-                        unsafe_allow_html=True)
-        with info_c3:
-            st.markdown(f'<div class="phi-kpi-label">Strategy</div>'
-                        f'<div style="color:#a855f7;font-weight:700;">{_OPTIONS_STRATEGIES[opt_strategy][0]}</div>',
-                        unsafe_allow_html=True)
-        with info_c4:
-            st.markdown(f'<div class="phi-kpi-label">Capital</div>'
-                        f'<div style="color:#e8e8ed;font-weight:600;">{format_currency(opt_capital)}</div>',
-                        unsafe_allow_html=True)
+    tab_simple, tab_engine = st.tabs([
+        "Strategy Backtest (BS Sim)",
+        "Full Engine Backtest (MFT + OptionsEngine)",
+    ])
 
-    st.markdown("")
-    if st.button("🚀 Run Options Backtest", type="primary", use_container_width=True, key="opt_run"):
-        _execute_options_backtest_page(
-            symbol=opt_sym.strip().upper(),
-            start=str(opt_start), end=str(opt_end),
-            capital=float(opt_capital),
-            strategy_type=opt_strategy,
-            delta=opt_delta, iv=opt_iv, dte=opt_dte,
-            position_pct=opt_pos_pct,
-            exit_profit=opt_profit, exit_stop=opt_stop,
+    # ── Tab 1: Strategy Backtest ──────────────────────────────────────────
+    with tab_simple:
+        st.caption(
+            "Black-Scholes mark-to-market simulation for the selected strategy. "
+            "Fast — does not run the MFT regime engine."
+        )
+        run_info = st.container()
+        with run_info:
+            info_c1, info_c2, info_c3, info_c4 = st.columns(4)
+            with info_c1:
+                st.markdown(f'<div class="phi-kpi-label">Symbol</div>'
+                            f'<div style="color:#e8e8ed;font-weight:600;">{opt_sym.upper()}</div>',
+                            unsafe_allow_html=True)
+            with info_c2:
+                st.markdown(f'<div class="phi-kpi-label">Period</div>'
+                            f'<div style="color:#e8e8ed;font-weight:600;">{opt_start} → {opt_end}</div>',
+                            unsafe_allow_html=True)
+            with info_c3:
+                st.markdown(f'<div class="phi-kpi-label">Strategy</div>'
+                            f'<div style="color:#a855f7;font-weight:700;">{_OPTIONS_STRATEGIES[opt_strategy][0]}</div>',
+                            unsafe_allow_html=True)
+            with info_c4:
+                st.markdown(f'<div class="phi-kpi-label">Capital</div>'
+                            f'<div style="color:#e8e8ed;font-weight:600;">{format_currency(opt_capital)}</div>',
+                            unsafe_allow_html=True)
+
+        st.markdown("")
+        if st.button("🚀 Run Strategy Backtest", type="primary", use_container_width=True, key="opt_run"):
+            _execute_options_backtest_page(
+                symbol=opt_sym.strip().upper(),
+                start=str(opt_start), end=str(opt_end),
+                capital=float(opt_capital),
+                strategy_type=opt_strategy,
+                delta=opt_delta, iv=opt_iv, dte=opt_dte,
+                position_pct=opt_pos_pct,
+                exit_profit=opt_profit, exit_stop=opt_stop,
+            )
+
+        if (
+            st.session_state.get("opt_results")
+            and st.session_state.get("opt_symbol_used", "") == opt_sym.strip().upper()
+            and st.session_state.get("opt_strategy_used", "") == opt_strategy
+        ):
+            _display_options_results(
+                results=st.session_state["opt_results"],
+                ohlcv=st.session_state.get("opt_ohlcv"),
+                initial_capital=float(st.session_state.get("opt_capital_used", opt_capital)),
+                strategy_type=st.session_state.get("opt_strategy_used", opt_strategy),
+            )
+        elif st.session_state.get("opt_results"):
+            st.info("Results above are from a previous run. Press **Run Strategy Backtest** to update.")
+
+    # ── Tab 2: Full Engine Backtest ───────────────────────────────────────
+    with tab_engine:
+        st.markdown("""
+        <div class="phi-glass-card" style="margin-bottom:16px;">
+            <div style="color:#a855f7; font-weight:700; font-size:1rem; margin-bottom:8px;">
+                ⚡ Full MFT + OptionsEngine Walk-Forward Backtest
+            </div>
+            <div style="color:#8b8b9e; font-size:0.85rem; line-height:1.6;">
+                At each bar this runs the <strong>complete pipeline</strong>:<br>
+                RegimeEngine → synthetic BS chain → GammaSurface → OptionsEngine.select_trade()<br>
+                The engine autonomously picks the optimal structure (L1/L2/L3) based on
+                regime probabilities, IV regime, and GEX. Positions are marked to market
+                daily with Black-Scholes and exited on profit target / stop / DTE expiry.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        eng_c1, eng_c2, eng_c3 = st.columns(3)
+        with eng_c1:
+            eng_lookback = st.slider(
+                "Regime lookback (bars)", 30, 200, 60, 10, key="eng_lookback",
+                help="Rolling window fed to RegimeEngine at each bar",
+            )
+            eng_min_conf = st.slider(
+                "Min confidence gate", 0.20, 0.80, 0.40, 0.05, key="eng_min_conf",
+                help="OptionsEngine only trades above this confidence level",
+            )
+        with eng_c2:
+            eng_dte = st.slider(
+                "Target DTE (main leg)", 14, 90, 30, 1, key="eng_dte",
+            )
+            eng_dte_short = st.slider(
+                "Front-month DTE", 7, 45, 14, 1, key="eng_dte_short",
+                help="Used for calendar spreads and covered-call short leg",
+            )
+        with eng_c3:
+            eng_pos_pct = st.slider(
+                "Position size (% capital)", 1, 40, 10, 1, key="eng_pos_pct",
+            ) / 100.0
+            eng_iv_prem = st.slider(
+                "IV premium multiplier", 1.00, 2.00, 1.15, 0.05, key="eng_iv_prem",
+                help="ATM IV = realised vol × this multiplier (VIX > HV effect)",
+            )
+
+        eng_profit, eng_stop = st.columns(2)
+        with eng_profit:
+            eng_exit_profit = st.slider(
+                "Profit target (%)", 10, 200, 50, 5, key="eng_exit_profit",
+            ) / 100.0
+        with eng_stop:
+            eng_exit_stop = st.slider(
+                "Stop loss (%)", 10, 100, 30, 5, key="eng_exit_stop",
+            ) / 100.0
+
+        st.markdown("")
+
+        run_eng_btn = st.button(
+            "⚡ Run Full Engine Backtest",
+            type="primary", use_container_width=True, key="eng_run",
         )
 
-    # ── Results ──────────────────────────────────────────────────────────
-    if (
-        st.session_state.get("opt_results")
-        and st.session_state.get("opt_symbol_used", "") == opt_sym.strip().upper()
-        and st.session_state.get("opt_strategy_used", "") == opt_strategy
-    ):
-        _display_options_results(
-            results=st.session_state["opt_results"],
-            ohlcv=st.session_state.get("opt_ohlcv"),
-            initial_capital=float(st.session_state.get("opt_capital_used", opt_capital)),
-            strategy_type=st.session_state.get("opt_strategy_used", opt_strategy),
-        )
-    elif st.session_state.get("opt_results"):
-        st.info("Results shown above are from a previous run. Press **Run Options Backtest** to update.")
+        if run_eng_btn:
+            with st.spinner("Fetching OHLCV data…"):
+                eng_ohlcv = _load_ohlcv_yf(
+                    opt_sym.strip().upper(), str(opt_start), str(opt_end)
+                )
+            if eng_ohlcv is None or eng_ohlcv.empty:
+                st.error(f"No data for {opt_sym}.")
+            else:
+                prog = st.progress(0.0, text="Starting engine backtest…")
+
+                def _update_prog(f):
+                    prog.progress(
+                        min(f, 1.0),
+                        text=f"Engine backtest: {f*100:.0f}% complete…",
+                    )
+
+                with st.spinner("Running walk-forward engine backtest…"):
+                    try:
+                        from phi.options.engine_backtest import run_engine_backtest
+                        eng_results = run_engine_backtest(
+                            ohlcv=eng_ohlcv,
+                            symbol=opt_sym.strip().upper(),
+                            initial_capital=float(opt_capital),
+                            position_pct=eng_pos_pct,
+                            lookback_bars=eng_lookback,
+                            min_confidence=eng_min_conf,
+                            dte_days=eng_dte,
+                            dte_short=eng_dte_short,
+                            exit_profit_pct=eng_exit_profit,
+                            exit_stop_pct=eng_exit_stop,
+                            iv_premium=eng_iv_prem,
+                            progress_cb=_update_prog,
+                        )
+                        prog.progress(1.0, text="Complete!")
+                        st.session_state["eng_results"] = eng_results
+                        st.session_state["eng_ohlcv"]   = eng_ohlcv
+                        st.session_state["eng_sym"]      = opt_sym.strip().upper()
+                    except Exception as exc:
+                        prog.empty()
+                        st.error(f"Engine backtest failed: {exc}")
+
+        # ── Engine results display ────────────────────────────────────────
+        eng_res = st.session_state.get("eng_results")
+        if eng_res and st.session_state.get("eng_sym", "") == opt_sym.strip().upper():
+            _display_engine_results(
+                eng_res,
+                st.session_state.get("eng_ohlcv"),
+                float(opt_capital),
+                opt_sym.strip().upper(),
+            )
+        elif eng_res:
+            st.info("Engine results above are from a previous run. Press **Run Full Engine Backtest** to update.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
