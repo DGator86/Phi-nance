@@ -19,7 +19,16 @@ Run:
     python -m streamlit run dashboard.py
 """
 
-import copy, io, os, subprocess, sys, time, json, hashlib, warnings
+import copy
+import hashlib
+import importlib
+import io
+import json
+import os
+import subprocess
+import sys
+import time
+import warnings
 from contextlib import redirect_stdout, redirect_stderr
 
 # Suppress Lumibot pandas FutureWarning (Series.__getitem__)
@@ -77,8 +86,8 @@ def _inject_premium_css():
 # Mobile Components
 # ---------------------------------------------------------------------------
 def _render_mobile_nav():
-    """Bottom navigation bar is disabled — Streamlit tabs handle navigation."""
-    return
+    """Bottom navigation bar placeholder — navigation is handled by st.tabs."""
+    pass
 
 
 def _render_mobile_header():
@@ -147,65 +156,34 @@ def _render_hero():
     """Render the premium hero section -- mobile-adaptive."""
     dev = get_device()
     if dev.is_phone:
-        # Compact phone hero
-        st.markdown("""
-        <div class="phi-hero">
-            <div class="phi-hero-badge">QUANT PLATFORM</div>
-            <div class="phi-hero-title">Phi-nance</div>
-            <div class="phi-hero-subtitle">
-                AI-powered regime detection, backtesting &amp; signal generation.
-            </div>
-            <div class="phi-hero-stats">
-                <div class="phi-hero-stat">
-                    <div class="phi-hero-stat-value">15+</div>
-                    <div class="phi-hero-stat-label">Strategies</div>
-                </div>
-                <div class="phi-hero-stat">
-                    <div class="phi-hero-stat-value">8</div>
-                    <div class="phi-hero-stat-label">Regimes</div>
-                </div>
-                <div class="phi-hero-stat">
-                    <div class="phi-hero-stat-value">6</div>
-                    <div class="phi-hero-stat-label">ML</div>
-                </div>
-                <div class="phi-hero-stat">
-                    <div class="phi-hero-stat-value">24/7</div>
-                    <div class="phi-hero-stat-label">Live</div>
-                </div>
-            </div>
-        </div>
-        <div class="phi-gradient-bar"></div>
-        """, unsafe_allow_html=True)
+        badge = "QUANT PLATFORM"
+        subtitle = "AI-powered regime detection, backtesting &amp; signal generation."
+        stat_labels = ["Strategies", "Regimes", "ML", "Live"]
     else:
-        st.markdown("""
-        <div class="phi-hero">
-            <div class="phi-hero-badge">QUANTITATIVE RESEARCH PLATFORM</div>
-            <div class="phi-hero-title">Phi-nance</div>
-            <div class="phi-hero-subtitle">
-                AI-powered Market Field Theory engine for institutional-grade regime detection,
-                multi-strategy backtesting, and real-time signal generation.
-            </div>
-            <div class="phi-hero-stats">
-                <div class="phi-hero-stat">
-                    <div class="phi-hero-stat-value">15+</div>
-                    <div class="phi-hero-stat-label">Strategies</div>
-                </div>
-                <div class="phi-hero-stat">
-                    <div class="phi-hero-stat-value">8</div>
-                    <div class="phi-hero-stat-label">Regime States</div>
-                </div>
-                <div class="phi-hero-stat">
-                    <div class="phi-hero-stat-value">6</div>
-                    <div class="phi-hero-stat-label">ML Models</div>
-                </div>
-                <div class="phi-hero-stat">
-                    <div class="phi-hero-stat-value">24/7</div>
-                    <div class="phi-hero-stat-label">Live Scanner</div>
-                </div>
-            </div>
-        </div>
-        <div class="phi-gradient-bar"></div>
-        """, unsafe_allow_html=True)
+        badge = "QUANTITATIVE RESEARCH PLATFORM"
+        subtitle = (
+            "AI-powered Market Field Theory engine for institutional-grade regime detection, "
+            "multi-strategy backtesting, and real-time signal generation."
+        )
+        stat_labels = ["Strategies", "Regime States", "ML Models", "Live Scanner"]
+
+    stat_values = ["15+", "8", "6", "24/7"]
+    stats_html = "".join(
+        f'<div class="phi-hero-stat">'
+        f'<div class="phi-hero-stat-value">{v}</div>'
+        f'<div class="phi-hero-stat-label">{l}</div>'
+        f'</div>'
+        for v, l in zip(stat_values, stat_labels)
+    )
+    st.markdown(f"""
+    <div class="phi-hero">
+        <div class="phi-hero-badge">{badge}</div>
+        <div class="phi-hero-title">Phi-nance</div>
+        <div class="phi-hero-subtitle">{subtitle}</div>
+        <div class="phi-hero-stats">{stats_html}</div>
+    </div>
+    <div class="phi-gradient-bar"></div>
+    """, unsafe_allow_html=True)
 
 
 def _render_features():
@@ -314,7 +292,6 @@ def _strat(name: str):
     if name not in _LUMIBOT_CACHE:
         os.environ["IS_BACKTESTING"] = "True"
         module_path, cls_name = name.rsplit(".", 1)
-        import importlib
         mod = importlib.import_module(module_path)
         _LUMIBOT_CACHE[name] = getattr(mod, cls_name)
     return _LUMIBOT_CACHE[name]
@@ -645,11 +622,7 @@ def _build_config_sidebar(dev) -> dict:
     with col_n:
         n_bars = st.number_input("N Bars", value=2000, min_value=100, max_value=10_000, step=100, key="sb_nbars")
 
-    bar_min = _TF_MINUTES[tf]
-    trading_days_needed = (n_bars * bar_min) / 390
-    calendar_days = int(trading_days_needed * 1.4) + 2
-    end_dt = date.today()
-    start_dt = end_dt - timedelta(days=calendar_days)
+    start_dt, end_dt, calendar_days = _calc_date_range(tf, n_bars)
 
     st.sidebar.markdown(f"""
     <div class="phi-info-bar">
@@ -687,11 +660,7 @@ def _build_config_mobile(dev) -> dict:
             n_bars = st.number_input("N Bars", value=2000, min_value=100, max_value=10_000, step=100, key="sb_nbars")
             bm = st.text_input("Benchmark", value="SPY")
 
-        bar_min = _TF_MINUTES[tf]
-        trading_days_needed = (n_bars * bar_min) / 390
-        calendar_days = int(trading_days_needed * 1.4) + 2
-        end_dt = date.today()
-        start_dt = end_dt - timedelta(days=calendar_days)
+        start_dt, end_dt, calendar_days = _calc_date_range(tf, n_bars)
 
         st.markdown(f"""
         <div class="phi-info-bar">
@@ -706,13 +675,18 @@ def _build_config_mobile(dev) -> dict:
     return _build_config_dict(tf, n_bars, b, bm)
 
 
-def _build_config_dict(tf, n_bars, b, bm) -> dict:
-    """Build the config dictionary from the control values."""
+def _calc_date_range(tf: str, n_bars: int) -> tuple:
+    """Return (start_dt, end_dt, calendar_days) for a given timeframe + bar count."""
     bar_min = _TF_MINUTES[tf]
-    trading_days_needed = (n_bars * bar_min) / 390
-    calendar_days = int(trading_days_needed * 1.4) + 2
+    calendar_days = int((n_bars * bar_min / 390) * 1.4) + 2
     end_dt = date.today()
     start_dt = end_dt - timedelta(days=calendar_days)
+    return start_dt, end_dt, calendar_days
+
+
+def _build_config_dict(tf, n_bars, b, bm) -> dict:
+    """Build the config dictionary from the control values."""
+    start_dt, end_dt, _ = _calc_date_range(tf, n_bars)
 
     return {
         "start": datetime.combine(start_dt, datetime.min.time()),
@@ -726,7 +700,7 @@ def _build_config_dict(tf, n_bars, b, bm) -> dict:
 
 
 def _run_backtest(strategy_class, params, config):
-    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
+    av_api_key = os.getenv("AV_API_KEY", "")
     results, strat = strategy_class.run_backtest(
         datasource_class=_av_backtesting(),
         backtesting_start=config["start"], backtesting_end=config["end"],
@@ -1782,17 +1756,13 @@ def main():
         page_title="Phi-nance | Premium Quant Platform",
         page_icon="📈",
         layout="wide",
-        initial_sidebar_state="collapsed",
+        initial_sidebar_state="auto",
     )
 
     _inject_premium_css()
 
     # Device detection -- JS already injected by _inject_premium_css
     dev = detect_device(skip_js=True)
-
-    # On desktop, re-expand the sidebar now that we know the device
-    if dev.is_desktop:
-        st.set_page_config(initial_sidebar_state="expanded")
 
     # Mobile header (phones/tablets get a sticky header)
     _render_mobile_header()
