@@ -1513,11 +1513,161 @@ def page_ai_advisor():
             st.markdown(f"**Risk Note:** {dec.risk_note}")
 
     with tab_bt:
-        st.info("Configure Ollama connection and run Plutus-guided backtests. "
-                "Each bar consults the LLM — expect slower execution.")
+        st.markdown("""
+        <div class="phi-glass-card" style="padding:14px; margin-bottom:12px;">
+            <div style="color:#a855f7; font-weight:700; font-size:0.95rem;">
+                Plutus-Guided Options Backtest
+            </div>
+            <div style="color:#8b8b9e; font-size:0.82rem; margin-top:6px; line-height:1.5;">
+                At each bar the AI advisor analyses the current regime, IV, and GEX state
+                then recommends an options structure. The engine enters the trade with
+                Black-Scholes pricing and marks to market daily.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        bt_c1, bt_c2, bt_c3 = st.columns(3)
+        with bt_c1:
+            bt_sym = st.text_input("Symbol", value="SPY", key="plutus_bt_sym")
+            bt_start = st.date_input("From", value=date(2022, 1, 1), key="plutus_bt_start")
+        with bt_c2:
+            bt_end = st.date_input("To", value=date(2024, 12, 31), key="plutus_bt_end")
+            bt_capital = st.number_input("Capital ($)", value=100_000, min_value=1_000, step=10_000, key="plutus_bt_cap")
+        with bt_c3:
+            bt_conf = st.slider("Min confidence", 0.20, 0.80, 0.40, 0.05, key="plutus_bt_conf")
+            bt_pos = st.slider("Position size (%)", 1, 30, 10, 1, key="plutus_bt_pos") / 100.0
+
+        if st.button("⚡ Run Plutus-Guided Backtest", type="primary", use_container_width=True, key="plutus_bt_run"):
+            with st.spinner("Running AI-guided options backtest..."):
+                try:
+                    bt_ohlcv = _load_ohlcv_yf(bt_sym.strip().upper(), str(bt_start), str(bt_end))
+                    if bt_ohlcv is None or bt_ohlcv.empty:
+                        st.error(f"No data for {bt_sym}.")
+                    else:
+                        from phi.options.engine_backtest import run_engine_backtest
+                        prog = st.progress(0.0, text="Starting...")
+
+                        def _bt_prog(f):
+                            prog.progress(min(f, 1.0), text=f"Backtest: {f*100:.0f}%")
+
+                        bt_results = run_engine_backtest(
+                            ohlcv=bt_ohlcv,
+                            symbol=bt_sym.strip().upper(),
+                            initial_capital=float(bt_capital),
+                            position_pct=bt_pos,
+                            min_confidence=bt_conf,
+                            progress_cb=_bt_prog,
+                        )
+                        prog.progress(1.0, text="Complete!")
+                        st.session_state["plutus_bt_results"] = bt_results
+                        st.session_state["plutus_bt_ohlcv"] = bt_ohlcv
+                        st.session_state["plutus_bt_sym"] = bt_sym.strip().upper()
+                        st.session_state["plutus_bt_capital"] = float(bt_capital)
+                except Exception as e:
+                    st.error(f"Backtest failed: {e}")
+
+        # Display results
+        pbt_res = st.session_state.get("plutus_bt_results")
+        if pbt_res:
+            pbt_pv = pbt_res.get("portfolio_value", [])
+            pbt_tr = pbt_res.get("total_return", 0)
+            pbt_sh = pbt_res.get("sharpe", 0)
+            pbt_wr = pbt_res.get("win_rate", 0)
+            pbt_nt = pbt_res.get("n_trades", 0)
+            pbt_dd = pbt_res.get("max_drawdown", 0)
+            pbt_cap = st.session_state.get("plutus_bt_capital", 100000)
+
+            kpi_row([
+                ("Return", f"{pbt_tr*100:+.1f}%", None, "positive" if pbt_tr > 0 else "negative"),
+                ("Sharpe", f"{pbt_sh:.2f}", None, "neutral"),
+                ("Win Rate", f"{pbt_wr*100:.0f}%", f"{pbt_nt} trades", "positive" if pbt_wr > 0.5 else "neutral"),
+                ("Max DD", f"{pbt_dd*100:.1f}%", None, "negative" if pbt_dd < -0.10 else "neutral"),
+            ])
+
+            if pbt_pv and len(pbt_pv) > 2:
+                st.plotly_chart(build_equity_curve(pbt_pv, pbt_cap),
+                                use_container_width=True, key="plutus_bt_eq")
+
+            pbt_trades = pbt_res.get("trades", [])
+            if pbt_trades:
+                df_pbt = pd.DataFrame(pbt_trades)
+                show_cols = [c for c in [
+                    "entry_date", "exit_date", "structure", "regime",
+                    "confidence", "days_held", "exit_reason", "pnl_$", "cum_ret_%",
+                ] if c in df_pbt.columns]
+                st.dataframe(df_pbt[show_cols], hide_index=True, use_container_width=True)
+
+                # Run reviewer on these results
+                try:
+                    from phi.options.options_reviewer import review_options_backtest as _rev
+                    review = _rev(trade_log=pbt_trades, metrics=pbt_res)
+                    st.markdown("---")
+                    st.markdown(f"**Phibot Review:** {review.summary}")
+                    for ob in review.observations:
+                        st.markdown(f"- {ob}")
+                except Exception:
+                    pass
 
     with tab_journal:
-        st.info("Trade journal appears after running Ask Plutus or a backtest.")
+        st.markdown("""
+        <div class="phi-glass-card" style="padding:14px; margin-bottom:12px;">
+            <div style="color:#a855f7; font-weight:700; font-size:0.95rem;">
+                Trade Journal
+            </div>
+            <div style="color:#8b8b9e; font-size:0.82rem; margin-top:6px; line-height:1.5;">
+                Tracks AI advisor recommendations and their outcomes.
+                Entries accumulate as you use "Ask Plutus" and the guided backtest.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Display accumulated journal from the Plutus advisor decisions
+        dec = st.session_state.get("plutus_decision")
+        pbt_trades_j = []
+        pbt_res_j = st.session_state.get("plutus_bt_results")
+        if pbt_res_j:
+            pbt_trades_j = pbt_res_j.get("trades", [])
+
+        journal_entries = []
+
+        # Add Ask Plutus decisions
+        if dec:
+            journal_entries.append({
+                "Source": "Ask Plutus",
+                "Signal": dec.signal,
+                "Confidence": f"{dec.confidence:.0%}",
+                "Reasoning": dec.reasoning[:80] + "..." if len(dec.reasoning) > 80 else dec.reasoning,
+                "Risk Note": dec.risk_note[:60] + "..." if len(dec.risk_note) > 60 else dec.risk_note,
+            })
+
+        # Add backtest trades as journal entries
+        for t in pbt_trades_j[-20:]:  # Last 20 trades
+            journal_entries.append({
+                "Source": "Backtest",
+                "Signal": t.get("structure", "N/A"),
+                "Confidence": f"{t.get('confidence', 0):.0%}",
+                "Reasoning": f"{t.get('regime', '?')} / {t.get('vol_regime', '?')} / {t.get('gex_regime', '?')}",
+                "Risk Note": f"P&L: ${t.get('pnl_$', 0):+.0f} ({t.get('exit_reason', 'N/A')})",
+            })
+
+        if journal_entries:
+            st.dataframe(pd.DataFrame(journal_entries), hide_index=True, use_container_width=True)
+
+            # Summary stats
+            if pbt_trades_j:
+                j_wins = sum(1 for t in pbt_trades_j if t.get("pnl_$", 0) > 0)
+                j_total = len(pbt_trades_j)
+                j_pnl = sum(t.get("pnl_$", 0) for t in pbt_trades_j)
+                st.caption(
+                    f"Journal summary: {j_total} backtest trades | "
+                    f"{j_wins}/{j_total} wins ({j_wins/max(j_total,1):.0%}) | "
+                    f"Total P&L: ${j_pnl:+,.0f}"
+                )
+        else:
+            st.info(
+                "No journal entries yet. Use **Ask Plutus** for a recommendation "
+                "or run the **Plutus-Guided Backtest** to populate the journal."
+            )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2349,6 +2499,7 @@ def _display_engine_results(results: dict, ohlcv, initial_capital: float, symbol
         "RegimeEngine": results.get("_regime_engine_ok", False),
         "GammaSurface": results.get("_gamma_ok", False),
         "OptionsEngine": results.get("_options_ok", False),
+        "AI Advisor": results.get("_ai_advisor_ok", False),
     }
     flag_html = "  ".join(
         f'<span style="color:{"#22c55e" if ok else "#ef4444"}; font-size:0.75rem;">'
@@ -2481,6 +2632,92 @@ def _display_engine_results(results: dict, ohlcv, initial_capital: float, symbol
                 "lower confidence gate, or the RegimeEngine may be unavailable."
             )
 
+    # ── Phibot Options Review ────────────────────────────────────────────
+    trades = results.get("trades", [])
+    if trades:
+        st.markdown("---")
+        section_header("🤖", "Phibot Options Review", "AI ANALYSIS")
+        try:
+            from phi.options.options_reviewer import review_options_backtest as _opt_review
+            review = _opt_review(
+                trade_log=trades,
+                metrics=results,
+                ohlcv=ohlcv,
+            )
+
+            # Verdict badge
+            verdict_colors = {
+                "strong": "#22c55e", "moderate": "#f59e0b",
+                "weak": "#ef4444", "neutral": "#8b8b9e",
+            }
+            vc = verdict_colors.get(review.verdict, "#8b8b9e")
+            st.markdown(f"""
+            <div class="phi-glass-card" style="padding:16px; margin-bottom:16px;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <span style="background:{vc}22; color:{vc}; padding:4px 14px;
+                                 border-radius:12px; font-weight:700; font-size:0.9rem;
+                                 border:1px solid {vc}44;">
+                        {review.verdict.upper()}
+                    </span>
+                    <span style="color:#e8e8ed; font-size:0.9rem;">{review.summary}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Observations
+            for ob in review.observations:
+                st.markdown(f"- {ob}")
+
+            # Tweaks
+            if review.tweaks:
+                st.markdown("")
+                st.markdown("#### Suggested Tweaks")
+                for twk in review.tweaks:
+                    conf_color = {"high": "#22c55e", "medium": "#f59e0b", "low": "#8b8b9e"}.get(twk.confidence, "#8b8b9e")
+                    st.markdown(f"""
+                    <div class="phi-glass-card" style="padding:12px; margin-bottom:8px;">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                            <span style="color:{conf_color}; font-weight:700; font-size:0.75rem;
+                                         text-transform:uppercase;">{twk.confidence}</span>
+                            <span style="color:#a855f7; font-weight:700;">{twk.title}</span>
+                            <span style="color:#5a5a70; font-size:0.75rem; margin-left:auto;">
+                                {twk.current_value} → {twk.suggested_value}
+                            </span>
+                        </div>
+                        <div style="color:#8b8b9e; font-size:0.82rem; line-height:1.5;">{twk.rationale}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # Regime breakdown tables
+            if review.structure_stats or review.vol_regime_stats:
+                rev_c1, rev_c2 = st.columns(2)
+                with rev_c1:
+                    if review.structure_stats:
+                        st.markdown("##### Performance by Structure")
+                        s_rows = []
+                        for s, d in review.structure_stats.items():
+                            s_rows.append({
+                                "Structure": s.replace("_", " ").title(),
+                                "Trades": d["count"],
+                                "Win Rate": f"{d['win_rate']:.0%}",
+                                "Avg P&L": f"{d['avg_pnl']:+.1f}%",
+                            })
+                        st.dataframe(pd.DataFrame(s_rows), hide_index=True, use_container_width=True)
+                with rev_c2:
+                    if review.vol_regime_stats:
+                        st.markdown("##### Performance by IV Regime")
+                        v_rows = []
+                        for v, d in review.vol_regime_stats.items():
+                            v_rows.append({
+                                "IV Regime": v,
+                                "Trades": d["count"],
+                                "Win Rate": f"{d['win_rate']:.0%}",
+                                "Avg P&L": f"{d['avg_pnl']:+.1f}%",
+                            })
+                        st.dataframe(pd.DataFrame(v_rows), hide_index=True, use_container_width=True)
+        except Exception as exc:
+            st.warning(f"Options reviewer unavailable: {exc}")
+
 
 def page_options_backtest():
     """Full-featured Options Lab — strategy builder, Greeks dashboard, payoff diagram, backtest."""
@@ -2553,6 +2790,107 @@ def page_options_backtest():
                 "Stop Loss (%)", 10, 100, 30, 5, key="opt_stop",
                 help="Exit when position loses this % of the initial premium",
             ) / 100.0
+
+    # ── AI Strategy Advisor ──────────────────────────────────────────────
+    with st.expander("🤖 AI Strategy Advisor — Get a regime-aware recommendation", expanded=False):
+        st.caption(
+            "The AI advisor analyzes current regime, IV, and GEX conditions "
+            "to recommend the optimal options structure. Uses Ollama when "
+            "available; deterministic rules as fallback."
+        )
+        ai_c1, ai_c2 = st.columns([1, 1])
+        with ai_c1:
+            ai_use_ollama = st.checkbox("Use Ollama LLM (if available)", value=True, key="opt_ai_ollama")
+            ai_model = st.text_input("Ollama model", value="llama3.2", key="opt_ai_model")
+        with ai_c2:
+            ai_host = st.text_input("Ollama host", value="http://localhost:11434", key="opt_ai_host")
+
+        if st.button("🧠 Get AI Recommendation", type="primary", use_container_width=True, key="opt_ai_rec"):
+            with st.spinner("Analyzing market conditions..."):
+                try:
+                    from phi.options.ai_advisor import OptionsAIAdvisor
+
+                    # Load recent OHLCV for regime detection
+                    _ai_ohlcv = _load_ohlcv_yf(opt_sym.strip().upper(), str(opt_start), str(opt_end))
+                    if _ai_ohlcv is None or _ai_ohlcv.empty:
+                        st.error("No data available for regime analysis.")
+                    else:
+                        _ai_spot = float(_ai_ohlcv["close"].iloc[-1])
+                        _ai_close = _ai_ohlcv["close"].values.astype(float)
+
+                        # Compute hist vol
+                        if len(_ai_close) > 22:
+                            _ai_returns = np.diff(np.log(np.maximum(_ai_close[-22:], 1e-10)))
+                            _ai_hv = float(np.std(_ai_returns) * np.sqrt(252))
+                        else:
+                            _ai_hv = 0.20
+
+                        # Run regime detection
+                        try:
+                            from phi.phibot.reviewer import detect_market_regime
+                            _ai_regime_s = detect_market_regime(_ai_ohlcv)
+                            _ai_dom = str(_ai_regime_s.iloc[-1]) if not _ai_regime_s.empty else "RANGE"
+                        except Exception:
+                            _ai_dom = "RANGE"
+
+                        _ai_regime_probs = {_ai_dom: 0.6, "RANGE": 0.2, "TREND_UP": 0.1, "TREND_DN": 0.1}
+                        if _ai_dom in _ai_regime_probs:
+                            _ai_regime_probs[_ai_dom] = 0.6
+                        _ai_gamma = {"gamma_net": 0.0, "gamma_wall_distance": 0.0, "gex_flip_zone": 0.0, "gamma_expiry_days": 30.0}
+
+                        # Classify IV regime
+                        _ai_iv = opt_iv
+                        if _ai_hv > 0:
+                            _ai_iv_ratio = _ai_iv / _ai_hv
+                            if _ai_iv_ratio >= 1.30:
+                                _ai_iv_reg = "HIGH_IV"
+                            elif _ai_iv_ratio <= 0.80:
+                                _ai_iv_reg = "LOW_IV"
+                            else:
+                                _ai_iv_reg = "NORMAL"
+                        else:
+                            _ai_iv_reg = "NORMAL"
+
+                        advisor = OptionsAIAdvisor(
+                            model=ai_model, host=ai_host,
+                            use_ollama=ai_use_ollama,
+                        )
+                        rec = advisor.recommend(
+                            symbol=opt_sym.strip().upper(),
+                            spot=_ai_spot,
+                            hist_vol=_ai_hv,
+                            regime_probs=_ai_regime_probs,
+                            gamma_features=_ai_gamma,
+                            iv_regime=_ai_iv_reg,
+                        )
+                        st.session_state["opt_ai_recommendation"] = rec
+                except Exception as e:
+                    st.error(f"AI advisor error: {e}")
+
+        ai_rec = st.session_state.get("opt_ai_recommendation")
+        if ai_rec:
+            st.markdown("---")
+            rc1, rc2, rc3, rc4 = st.columns(4)
+            with rc1:
+                _color = {"ENTER": "#22c55e", "WAIT": "#f59e0b", "SKIP": "#ef4444"}.get(ai_rec.entry_signal, "#8b8b9e")
+                st.markdown(f"""
+                <div class="phi-glass-card" style="text-align:center; padding:12px;">
+                    <div class="phi-kpi-label">Signal</div>
+                    <div style="color:{_color}; font-weight:700; font-size:1.2rem; margin:8px 0;">
+                        {ai_rec.entry_signal}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            with rc2:
+                st.metric("Confidence", f"{ai_rec.confidence:.0%}")
+            with rc3:
+                st.metric("Structure", ai_rec.structure.replace("_", " ").title())
+            with rc4:
+                st.metric("Direction", ai_rec.direction)
+
+            st.markdown(f"**Reasoning:** {ai_rec.reasoning}")
+            st.markdown(f"**Risk:** {ai_rec.risk_note}")
+            st.caption(f"Source: {ai_rec.source} | Regime: {ai_rec.regime} | IV: {ai_rec.vol_regime} | GEX: {ai_rec.gex_regime} | Size: {ai_rec.position_size:.0%}")
 
     # ── Greeks Dashboard + Payoff Preview ──────────────────────────────
     section_header("🔢", "Live Greeks & Payoff Diagram")
