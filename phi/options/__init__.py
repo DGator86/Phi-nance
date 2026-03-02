@@ -3,11 +3,28 @@ Phi-nance Options Module
 ========================
 
 Options backtest mode:
-  - Long Call/Put (delta-based simulation)
-  - Exit: profit %, stop %, time-based
+  - Simple delta-based simulation (backtest.py)
+  - Full walk-forward engine backtest (engine_backtest.py)
+  - AI-powered strategy advisor (ai_advisor.py)
+  - Post-trade reviewer with regime/IV/GEX insights (options_reviewer.py)
+
+Market data:
+  - MarketDataApp real chain snapshots (market_data.py)
 """
 
 from .backtest import run_options_backtest, compute_greeks
 from .market_data import get_marketdataapp_snapshot
+from .engine_backtest import run_engine_backtest
+from .ai_advisor import OptionsAIAdvisor, OptionsRecommendation
+from .options_reviewer import review_options_backtest, OptionsBacktestReview
 
-__all__ = ["run_options_backtest", "compute_greeks", "get_marketdataapp_snapshot"]
+__all__ = [
+    "run_options_backtest",
+    "compute_greeks",
+    "get_marketdataapp_snapshot",
+    "run_engine_backtest",
+    "OptionsAIAdvisor",
+    "OptionsRecommendation",
+    "review_options_backtest",
+    "OptionsBacktestReview",
+]

@@ -352,7 +352,22 @@ def run_engine_backtest(
         _have_options = True
         logger.info("run_engine_backtest: OptionsEngine loaded")
     except Exception as exc:
-        logger.error("OptionsEngine unavailable (%s) — backtest aborted", exc)
+        logger.warning("OptionsEngine unavailable (%s) — using AI advisor fallback", exc)
+        options_engine = None
+        _have_options = False
+
+    # ── AI Advisor fallback (when OptionsEngine unavailable or as supplement)
+    try:
+        from phi.options.ai_advisor import OptionsAIAdvisor
+        ai_advisor = OptionsAIAdvisor(use_ollama=False)  # rules-only for backtest speed
+        _have_ai = True
+    except Exception as exc:
+        logger.warning("OptionsAIAdvisor unavailable: %s", exc)
+        ai_advisor = None
+        _have_ai = False
+
+    if not _have_options and not _have_ai:
+        logger.error("Neither OptionsEngine nor AI advisor available — backtest aborted")
         return _empty_result(initial_capital)
 
     # ── Walk-forward loop ────────────────────────────────────────────────
@@ -458,18 +473,48 @@ def run_engine_backtest(
         # ── 5. OptionsEngine: select trade ───────────────────────────────
         trade = None
         if len(positions) < max_open_positions:
-            try:
-                trade = options_engine.select_trade(
-                    regime_probs=regime_probs,
-                    gamma_features=gamma_features,
-                    chain_df=chain_df,
-                    spot=spot,
-                    hist_vol_ann=hv,
-                    l2_signals=None,
-                    min_confidence=min_confidence,
-                )
-            except Exception as exc:
-                logger.debug("OptionsEngine bar %d: %s", i, exc)
+            # Try OptionsEngine first
+            if _have_options and options_engine is not None:
+                try:
+                    trade = options_engine.select_trade(
+                        regime_probs=regime_probs,
+                        gamma_features=gamma_features,
+                        chain_df=chain_df,
+                        spot=spot,
+                        hist_vol_ann=hv,
+                        l2_signals=None,
+                        min_confidence=min_confidence,
+                    )
+                except Exception as exc:
+                    logger.debug("OptionsEngine bar %d: %s", i, exc)
+
+            # AI Advisor fallback when OptionsEngine returns None or unavailable
+            if trade is None and _have_ai and ai_advisor is not None:
+                try:
+                    # Classify IV regime
+                    atm_iv = cur_iv
+                    if hv > 0:
+                        iv_ratio = atm_iv / hv
+                        if iv_ratio >= 1.30:
+                            _iv_reg = "HIGH_IV"
+                        elif iv_ratio <= 0.80:
+                            _iv_reg = "LOW_IV"
+                        else:
+                            _iv_reg = "NORMAL"
+                    else:
+                        _iv_reg = "NORMAL"
+
+                    rec = ai_advisor.recommend(
+                        symbol=symbol, spot=spot, hist_vol=hv,
+                        regime_probs=regime_probs,
+                        gamma_features=gamma_features,
+                        iv_regime=_iv_reg,
+                    )
+                    if rec.is_actionable(min_confidence):
+                        # Convert AI recommendation into a synthetic OptionsTrade
+                        trade = _ai_rec_to_trade(rec, chain_df, spot, cur_iv, dte_days, r)
+                except Exception as exc:
+                    logger.debug("AI advisor bar %d: %s", i, exc)
 
         # ── 6. Enter position ────────────────────────────────────────────
         if trade is not None:
@@ -575,6 +620,7 @@ def run_engine_backtest(
         "_regime_engine_ok": _have_regime,
         "_gamma_ok":         _have_gamma,
         "_options_ok":       _have_options,
+        "_ai_advisor_ok":    _have_ai,
     }
 
 
@@ -589,6 +635,50 @@ def _neutral_gamma() -> Dict[str, float]:
         "gamma_expiry_days":   30.0,
         "gex_flip_zone":       0.0,
     }
+
+
+def _ai_rec_to_trade(rec, chain_df, spot, cur_iv, dte_days, r):
+    """Convert an OptionsAIAdvisor recommendation into a synthetic OptionsTrade.
+
+    Uses the existing OptionsEngine leg-building machinery when available,
+    otherwise constructs simple synthetic legs from the BS chain.
+    """
+    try:
+        from regime_engine.options_engine import OptionsEngine, OptionsLeg, OptionsTrade
+    except ImportError:
+        return None
+
+    # Build a minimal OptionsEngine to construct legs
+    try:
+        engine = OptionsEngine(config={})
+        chain_norm = engine._normalize_chain(chain_df, spot)
+        if chain_norm.empty:
+            return None
+
+        legs = engine._build_legs(rec.structure, chain_norm, spot)
+        if not legs:
+            return None
+
+        # Build the trade object
+        return OptionsTrade(
+            structure=rec.structure,
+            legs=legs,
+            level=rec.level,
+            regime=rec.regime,
+            vol_regime=rec.vol_regime,
+            gex_regime=rec.gex_regime,
+            confidence=rec.confidence,
+            rationale=f"[AI] {rec.reasoning}",
+            max_profit=0.0,
+            max_loss=0.0,
+            breakeven=[],
+            net_credit=sum(
+                (leg.mid_price if leg.action == "sell" else -leg.mid_price) * 100
+                for leg in legs
+            ),
+        )
+    except Exception:
+        return None
 
 
 def _empty_result(initial_capital: float) -> dict:
@@ -606,4 +696,5 @@ def _empty_result(initial_capital: float) -> dict:
         "_regime_engine_ok": False,
         "_gamma_ok":         False,
         "_options_ok":       False,
+        "_ai_advisor_ok":    False,
     }
