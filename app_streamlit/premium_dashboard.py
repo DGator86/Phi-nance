@@ -2014,6 +2014,320 @@ def _display_options_results(results: dict, ohlcv, initial_capital: float, strat
             )
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# GEX SURFACE HELPERS
+# ─────────────────────────────────────────────────────────────────────────
+
+def _augment_chain_gamma(chain_df: pd.DataFrame, spot: float, r: float = 0.05) -> pd.DataFrame:
+    """Add Black-Scholes gamma to a yfinance chain (which omits greeks by default)."""
+    df = chain_df.copy()
+    today = date.today()
+    try:
+        from scipy.stats import norm as _norm
+        _have_scipy = True
+    except ImportError:
+        _have_scipy = False
+
+    gamma_out = []
+    for _, row in df.iterrows():
+        try:
+            K = float(row.get("strike", spot))
+            iv = float(row.get("impliedvolatility", 0.25) or 0.25)
+            iv = np.clip(iv, 0.01, 5.0)
+            exp_str = str(row.get("expiration", ""))
+            dte = max(1, (pd.Timestamp(exp_str).date() - today).days) if exp_str else 30
+            T = dte / 365.0
+            if _have_scipy and spot > 0 and K > 0 and T > 0:
+                d1 = (np.log(spot / K) + (r + 0.5 * iv ** 2) * T) / (iv * np.sqrt(T))
+                gamma = float(_norm.pdf(d1) / (spot * iv * np.sqrt(T)))
+            else:
+                gamma = 0.0
+        except Exception:
+            gamma = 0.0
+        gamma_out.append(gamma)
+
+    df["gamma"] = gamma_out
+    return df
+
+
+def _build_gex_strike_chart(gex_series: pd.Series, spot: float, features: dict) -> go.Figure:
+    """
+    Horizontal bar chart of dealer GEX by strike.
+    Green = dealers long gamma (pinning). Red = dealers short gamma (amplifying).
+    """
+    strikes = gex_series.index.astype(float).values
+    gex_vals = gex_series.values.astype(float)
+    max_abs = float(np.abs(gex_vals).max()) if len(gex_vals) else 1.0
+    gex_norm = gex_vals / (max_abs + 1e-10)
+
+    colors = [COLORS["green"] if v >= 0 else COLORS["red"] for v in gex_norm]
+
+    fig = make_plotly_fig(height=520)
+    fig.add_trace(go.Bar(
+        x=gex_norm, y=strikes, orientation="h",
+        marker_color=colors, opacity=0.80, name="Net Dealer GEX",
+        customdata=gex_vals,
+        hovertemplate="Strike: $%{y:.2f}<br>GEX (norm): %{x:.4f}<br>Raw GEX: %{customdata:.4e}<extra></extra>",
+    ))
+
+    # Spot
+    fig.add_hline(y=spot, line_color=COLORS["purple"], line_dash="dash", line_width=2,
+                  annotation_text=f"Spot ${spot:.2f}",
+                  annotation_font_color=COLORS["purple_light"],
+                  annotation_position="bottom right")
+
+    # Gamma walls (highest |GEX| above & below spot)
+    for mask, label, apos in [
+        (strikes >= spot, "Wall ▲", "top right"),
+        (strikes < spot,  "Wall ▼", "bottom right"),
+    ]:
+        sub_k = strikes[mask]
+        sub_g = np.abs(gex_norm[mask])
+        if len(sub_k):
+            wall_k = float(sub_k[np.argmax(sub_g)])
+            fig.add_hline(y=wall_k, line_color=COLORS["yellow"], line_dash="dot", line_width=1.5,
+                          annotation_text=f"Gamma {label}  ${wall_k:.0f}",
+                          annotation_font_color=COLORS["yellow"],
+                          annotation_position=apos)
+
+    # GEX flip zone highlight
+    if features.get("gex_flip_zone", 0) > 0:
+        half_w = abs(features.get("gamma_wall_distance", 0.03)) * spot * 0.3 or spot * 0.015
+        fig.add_hrect(y0=spot - half_w, y1=spot + half_w,
+                      fillcolor="rgba(249,115,22,0.08)", line_width=0,
+                      annotation_text="GEX Flip Zone",
+                      annotation_font_color=COLORS["orange"])
+
+    fig.update_layout(
+        title=dict(text="Dealer GEX by Strike  ·  Green=pinning, Red=amplifying",
+                   font=dict(size=13, color=COLORS["purple_light"])),
+        xaxis=dict(title="Normalised GEX", zeroline=True,
+                   zerolinecolor="rgba(148,163,184,0.3)"),
+        yaxis=dict(title="Strike ($)", tickformat="$.0f"),
+        bargap=0.08,
+    )
+    return fig
+
+
+def _build_gex_term_structure(chain_df: pd.DataFrame) -> go.Figure:
+    """Bar chart of total |GEX| concentration by expiry (term structure)."""
+    df = chain_df.copy()
+    df.columns = [c.lower() for c in df.columns]
+    today = date.today()
+
+    if "expiration" not in df.columns:
+        fig = make_plotly_fig(height=260)
+        fig.add_annotation(text="No expiration data", showarrow=False,
+                           font=dict(color="#8b8b9e", size=14))
+        return fig
+
+    df["_dte"] = df["expiration"].astype(str).map(
+        lambda s: max(0, (pd.Timestamp(s).date() - today).days)
+        if s not in ("", "nan", "None") else 999
+    )
+    df = df[df["_dte"] <= 180].copy()
+
+    oi_col = next((c for c in ("openinterest", "volume") if c in df.columns), None)
+    gamma_col = "gamma" if "gamma" in df.columns else None
+
+    if gamma_col and oi_col:
+        df["_weight"] = (
+            pd.to_numeric(df[gamma_col], errors="coerce").fillna(0).clip(lower=0)
+            * pd.to_numeric(df[oi_col], errors="coerce").fillna(0)
+        )
+    elif oi_col:
+        df["_weight"] = pd.to_numeric(df[oi_col], errors="coerce").fillna(0)
+    else:
+        df["_weight"] = 1.0
+
+    agg = df.groupby("_dte")["_weight"].sum().sort_index()
+    if agg.empty:
+        return make_plotly_fig(height=260)
+
+    dom_dte = int(agg.idxmax())
+    bar_colors = [
+        COLORS["orange"] if int(d) == dom_dte else COLORS["purple"]
+        for d in agg.index
+    ]
+
+    fig = make_plotly_fig(height=280)
+    fig.add_trace(go.Bar(
+        x=[f"{d}d" for d in agg.index], y=agg.values,
+        marker_color=bar_colors, opacity=0.85, name="GEX Weight",
+        hovertemplate="DTE: %{x}<br>Weight: %{y:.2e}<extra></extra>",
+    ))
+    fig.update_layout(
+        title=dict(text=f"GEX Term Structure  ·  Dominant expiry: <b>{dom_dte}d</b> (orange)",
+                   font=dict(size=13, color=COLORS["purple_light"])),
+        xaxis_title="Days to Expiry", yaxis_title="Total GEX Weight",
+        bargap=0.25,
+    )
+    return fig
+
+
+def _render_gex_surface_section(symbol: str, spot: float) -> None:
+    """Full GEX Surface sub-panel rendered inside the Options Lab."""
+    section_header("⚡", "GEX Surface — Dealer Gamma Exposure")
+
+    st.caption(
+        "**Positive GEX** (green) → dealers net-long gamma → _absorb_ moves → "
+        "mean-reversion / pinning.  "
+        "**Negative GEX** (red) → dealers net-short gamma → _amplify_ moves → trending / volatile.  "
+        "The **GEX flip point** (zero-crossing) is the critical regime-change level."
+    )
+
+    fetch_col, info_col = st.columns([1, 3])
+    with fetch_col:
+        fetch_btn = st.button(
+            f"⬇  Fetch Live Chain ({symbol})", key="gex_fetch", use_container_width=True
+        )
+    with info_col:
+        st.caption("Uses yfinance options chain. BS gamma is computed per-contract since yfinance "
+                   "does not supply greeks. For liquid underlyings (SPY, QQQ, AAPL, etc.) "
+                   "this gives an accurate GEX landscape.")
+
+    if fetch_btn:
+        with st.spinner(f"Fetching {symbol} options chain…"):
+            try:
+                import yfinance as yf
+                tk = yf.Ticker(symbol)
+                exps = tk.options
+                if not exps:
+                    st.error(f"No options data for {symbol}.")
+                    return
+                frames = []
+                for exp in exps[:6]:     # limit to near-term expirations
+                    try:
+                        chain = tk.option_chain(exp)
+                    except Exception:
+                        continue
+                    for leg_df, ot in [(chain.calls, "call"), (chain.puts, "put")]:
+                        tmp = leg_df.copy()
+                        tmp["optiontype"] = ot
+                        tmp["expiration"] = exp
+                        frames.append(tmp)
+
+                if not frames:
+                    st.error("No chain data returned.")
+                    return
+
+                raw = pd.concat(frames, ignore_index=True)
+                raw.columns = [c.lower() for c in raw.columns]
+                chain_aug = _augment_chain_gamma(raw, spot)
+                st.session_state["gex_chain"] = chain_aug
+                st.session_state["gex_symbol"] = symbol
+                st.session_state["gex_spot"] = spot
+                st.success(f"Loaded {len(chain_aug):,} contracts across {len(exps[:6])} expirations.")
+            except Exception as exc:
+                st.error(f"Chain fetch failed: {exc}")
+                return
+
+    chain_df = st.session_state.get("gex_chain")
+    cached_sym = st.session_state.get("gex_symbol", "")
+
+    if chain_df is None or cached_sym != symbol:
+        st.info(
+            f"Press **Fetch Live Chain ({symbol})** to load the chain and render "
+            "the GEX surface, gamma walls, and term structure."
+        )
+        return
+
+    spot_used = float(st.session_state.get("gex_spot", spot))
+
+    # ── Run GammaSurface engine ──────────────────────────────────────────
+    with st.spinner("Computing GEX profile…"):
+        try:
+            from regime_engine.gamma_surface import GammaSurface
+            gs = GammaSurface(config={
+                "kernel_width_pct": 0.005,
+                "min_oi": 10,
+                "max_dte": 180,
+                "gex_flip_threshold": 0.05,
+            })
+            features = gs.compute_features(chain_df, spot_used)
+            gex_raw = gs._compute_gex_profile(chain_df, spot_used)
+            gex_smoothed = gs._smooth_surface(gex_raw, spot_used) if not gex_raw.empty else gex_raw
+        except Exception as exc:
+            st.warning(f"GammaSurface: {exc}")
+            features = {"gamma_net": 0, "gamma_wall_distance": 0,
+                        "gamma_expiry_days": 30, "gex_flip_zone": 0}
+            gex_smoothed = pd.Series(dtype=float)
+
+    # ── KPI cards ────────────────────────────────────────────────────────
+    gn  = float(features.get("gamma_net", 0))
+    gwd = float(features.get("gamma_wall_distance", 0))
+    ged = float(features.get("gamma_expiry_days", 30))
+    gfz = float(features.get("gex_flip_zone", 0))
+
+    regime_label = ("PINNING" if gn > 0.1 else "AMPLIFYING" if gn < -0.1 else "NEUTRAL")
+    regime_color = (COLORS["green"] if gn > 0.1 else
+                    COLORS["red"]   if gn < -0.1 else COLORS["yellow"])
+
+    kpi_c = st.columns(5)
+    for col, (lbl, val, clr) in zip(kpi_c, [
+        ("Gamma Regime",    regime_label,                                regime_color),
+        ("Net GEX at Spot", f"{gn:+.4f}",                               COLORS["green"] if gn >= 0 else COLORS["red"]),
+        ("Wall Distance",   f"{gwd:+.2%}",                              COLORS["cyan"]),
+        ("Dominant Expiry", f"{ged:.0f}d",                              COLORS["orange"]),
+        ("GEX Flip Zone",   "ACTIVE ⚠" if gfz > 0 else "Clear",        COLORS["red"] if gfz > 0 else COLORS["text_muted"]),
+    ]):
+        with col:
+            st.markdown(
+                f'<div class="phi-kpi-card" style="border-top:2px solid {clr}44;">'
+                f'<div class="phi-kpi-label">{lbl}</div>'
+                f'<div style="color:{clr};font-weight:700;font-size:0.9rem;margin-top:4px;">{val}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("")
+
+    # ── Charts ───────────────────────────────────────────────────────────
+    if gex_smoothed.empty:
+        st.warning("Insufficient chain data for GEX profile. Try a more liquid symbol (SPY, QQQ, AAPL).")
+    else:
+        gex_col, ts_col = st.columns([3, 2])
+        with gex_col:
+            st.plotly_chart(
+                _build_gex_strike_chart(gex_smoothed, spot_used, features),
+                use_container_width=True, key="gex_strike_chart",
+            )
+        with ts_col:
+            st.plotly_chart(
+                _build_gex_term_structure(chain_df),
+                use_container_width=True, key="gex_term_chart",
+            )
+
+    # ── Interpretation guide ─────────────────────────────────────────────
+    with st.expander("Reading the GEX Surface", expanded=False):
+        st.markdown(f"""
+**Current regime: <span style="color:{regime_color}">{regime_label}</span>**
+
+| GEX Condition | Dealer Position | Market Behaviour | Strategy Bias |
+|---|---|---|---|
+| GEX > 0 (green) | Long gamma | Buy dips, sell rips → **pinning** | Sell premium: Iron Condor, Covered Call |
+| GEX < 0 (red) | Short gamma | Chase moves to hedge → **amplifying** | Buy directional: long calls/puts, straddle |
+| GEX flip point | Zero-crossing | Regime change level — most critical price | Watch for breakout/breakdown |
+| Gamma wall ▲/▼ | Peak \\|GEX\\| strike | Strong support/resistance magnet | Key strike for spreads / hedges |
+| Dominant expiry | Peak term GEX | OpEx driving current gamma dynamics | Roll before expiry to avoid gamma collapse |
+
+**Wall distance** {gwd:+.2%} from spot →
+{"price is **{:.0f}% above** a major gamma wall (possible pin)".format(abs(gwd)*100) if gwd > 0
+ else "price is **{:.0f}% below** a major gamma wall".format(abs(gwd)*100)}.
+        """, unsafe_allow_html=True)
+
+    # ── Raw chain table ───────────────────────────────────────────────────
+    with st.expander(f"Raw Options Chain — {symbol} ({len(chain_df):,} contracts)", expanded=False):
+        show_cols = [c for c in
+                     ["strike", "expiration", "optiontype", "bid", "ask",
+                      "impliedvolatility", "openinterest", "gamma", "volume"]
+                     if c in chain_df.columns]
+        st.dataframe(
+            chain_df[show_cols].sort_values(["expiration", "strike"]).reset_index(drop=True),
+            use_container_width=True, hide_index=True,
+        )
+
+
 def page_options_backtest():
     """Full-featured Options Lab — strategy builder, Greeks dashboard, payoff diagram, backtest."""
     section_header("📊", "Options Lab — Strategy Backtester", "OPTIONS")
@@ -2173,6 +2487,10 @@ def page_options_backtest():
             pd.DataFrame(matrix_data).T,
             use_container_width=True,
         )
+
+    # ── GEX Surface ──────────────────────────────────────────────────────
+    st.markdown("---")
+    _render_gex_surface_section(opt_sym.strip().upper(), spot_price)
 
     # ── Run Backtest ─────────────────────────────────────────────────────
     st.markdown("---")
