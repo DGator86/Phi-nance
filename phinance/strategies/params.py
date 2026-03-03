@@ -208,6 +208,13 @@ DAILY_GRIDS: Dict[str, Dict[str, list]] = {
     "DPO": {
         "period": [10, 14, 20, 30, 40],
     },
+
+    "LGBM Classifier": {
+        "n_estimators":  [50, 100, 200, 300],
+        "num_leaves":    [15, 31, 63, 127],
+        "learning_rate": [0.01, 0.05, 0.1, 0.2],
+        "lookback":      [10, 20, 30, 50],
+    },
 }
 
 # ── Intraday parameter grids  ─────────────────────────────────────────────────
@@ -372,6 +379,13 @@ INTRADAY_GRIDS: Dict[str, Dict[str, list]] = {
 
     "DPO": {
         "period": [7, 10, 14, 20, 30],
+    },
+
+    "LGBM Classifier": {
+        "n_estimators":  [50, 100, 200],
+        "num_leaves":    [15, 31, 63],
+        "learning_rate": [0.05, 0.1, 0.2],
+        "lookback":      [5, 10, 20],
     },
 }
 

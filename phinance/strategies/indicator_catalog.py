@@ -50,6 +50,7 @@ Registered indicators
   Keltner       — Keltner Channel breakout/volatility
   Elder Ray     — Elder Ray bull/bear power
   DPO           — Detrended Price Oscillator cycle
+  LGBM Classifier — LightGBM trained binary classifier (ML)
 """
 
 from __future__ import annotations
@@ -90,6 +91,13 @@ from phinance.strategies.keltner       import KeltnerIndicator
 from phinance.strategies.elder_ray     import ElderRayIndicator
 from phinance.strategies.dpo           import DPOIndicator
 
+# ML indicator (graceful no-op if lightgbm not installed)
+try:
+    from phinance.strategies.ml_classifier import LGBMClassifierIndicator
+    _LGBM_INDICATOR: Any = LGBMClassifierIndicator()
+except ImportError:  # pragma: no cover
+    _LGBM_INDICATOR = None
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 INDICATOR_CATALOG: Dict[str, Any] = {
@@ -125,6 +133,10 @@ INDICATOR_CATALOG: Dict[str, Any] = {
     "Elder Ray":      ElderRayIndicator(),
     "DPO":            DPOIndicator(),
 }
+
+# Add LGBM only if lightgbm is installed
+if _LGBM_INDICATOR is not None:
+    INDICATOR_CATALOG["LGBM Classifier"] = _LGBM_INDICATOR
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -670,8 +670,8 @@ class TestCatalogIntegration:
 
     def test_total_count(self):
         from phinance.strategies.indicator_catalog import list_indicators
-        assert len(list_indicators()) == 31, (
-            f"Expected 31 indicators, got {len(list_indicators())}"
+        assert len(list_indicators()) == 32, (
+            f"Expected 32 indicators, got {len(list_indicators())}"
         )
 
     def test_all_compute_valid(self):

@@ -1,0 +1,59 @@
+# ── Phi-nance .dockerignore ───────────────────────────────────────────────────
+# Excludes files from the Docker build context to keep images lean and fast.
+
+# Version control
+.git
+.gitignore
+.github
+
+# Python cache
+__pycache__
+*.py[cod]
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+dist
+build
+
+# Virtual environments
+.venv
+venv
+env
+
+# Dev tools
+.cursor
+.idea
+.vscode
+
+# Test artifacts
+htmlcov
+.coverage
+coverage.xml
+*.log
+
+# Large data / model files (mount as volumes instead)
+data_cache
+historical_regime_features.csv
+backtest_output*.txt
+*.parquet
+*.csv
+
+# Local config overrides
+.env
+.env.local
+.env.*.local
+
+# Docs that don't need to be in the image
+*.md
+docs/
+
+# Docker files themselves (avoid recursive copy)
+docker-compose*.yml
+Dockerfile*
+docker/
+
+# OS artefacts
+.DS_Store
+Thumbs.db
