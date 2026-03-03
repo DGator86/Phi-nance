@@ -1,0 +1,109 @@
+# ── Phi-nance — Docker Compose (full stack) ───────────────────────────────────
+#
+# Services
+# --------
+#   streamlit   — Streamlit UI  (port 8501, proxied via nginx at :80)
+#   worker      — Headless backtest / PhiAI worker
+#   nginx       — Reverse proxy + TLS termination (port 80/443)
+#
+# Quick start:
+#   cp .env.example .env          # fill in API keys
+#   docker compose up --build -d
+#   open http://localhost
+#
+# Environment variables (set in .env):
+#   ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL
+#   ALPHA_VANTAGE_KEY
+#   MARKETDATAAPP_TOKEN
+#   DATA_CACHE_ROOT  (default: /app/data_cache)
+#   PHINANCE_LOG_LEVEL (default: INFO)
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+
+  # ── Streamlit UI ─────────────────────────────────────────────────────────────
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: phinance:latest
+    container_name: phinance-ui
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PHINANCE_LOG_LEVEL=${PHINANCE_LOG_LEVEL:-INFO}
+      - DATA_CACHE_ROOT=${DATA_CACHE_ROOT:-/app/data_cache}
+    volumes:
+      - data_cache:/app/data_cache
+      - model_store:/app/models
+      - run_store:/app/runs
+    ports:
+      - "8501:8501"     # direct access (useful for dev without nginx)
+    networks:
+      - phinance-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - worker
+
+  # ── Backtest / PhiAI worker ───────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      target: runtime-worker
+    image: phinance-worker:latest
+    container_name: phinance-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PHINANCE_LOG_LEVEL=${PHINANCE_LOG_LEVEL:-INFO}
+      - DATA_CACHE_ROOT=${DATA_CACHE_ROOT:-/app/data_cache}
+    volumes:
+      - data_cache:/app/data_cache
+      - model_store:/app/models
+      - run_store:/app/runs
+    networks:
+      - phinance-net
+    # Keep the worker alive (it handles jobs on demand via the shared volume)
+    command: ["python", "-c", "import time; print('Worker ready'); [time.sleep(60) or None for _ in iter(int, 1)]"]
+
+  # ── Nginx reverse proxy ────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: phinance-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - phinance-net
+    depends_on:
+      - streamlit
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  data_cache:
+    driver: local
+  model_store:
+    driver: local
+  run_store:
+    driver: local
+
+networks:
+  phinance-net:
+    driver: bridge

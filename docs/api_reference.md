@@ -1074,3 +1074,425 @@ signal = DPOIndicator().compute(ohlcv_df, period=20)
 | 29 | Keltner | Volatility/breakout | period, multiplier |
 | 30 | Elder Ray | Bull/bear power | period |
 | 31 | DPO | Cycle/detrend | period |
+
+---
+
+## Phase 8: Platform Enhancements
+
+---
+
+## Docker Deployment
+
+Phinance ships with a complete Docker-based deployment stack.
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `Dockerfile` | Multi-stage production image (builder + runtime) |
+| `docker-compose.yml` | Orchestrates `app` + `nginx` services |
+| `docker/nginx/nginx.conf` | Reverse-proxy config for Streamlit on port 80/443 |
+| `.dockerignore` | Excludes caches, secrets, and data blobs |
+
+### Quick Start
+
+```bash
+# Build and start all services
+docker compose up --build -d
+
+# View logs
+docker compose logs -f app
+
+# Stop
+docker compose down
+```
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and fill in your API keys before building:
+
+```bash
+cp .env.example .env
+# Edit AV_API_KEY, MARKETDATAAPP_API_TOKEN, etc.
+docker compose up --build -d
+```
+
+### Ports
+
+| Service | Internal | Exposed |
+|---|---|---|
+| Streamlit app | 8501 | via nginx:80 |
+| nginx | 80/443 | 80/443 |
+
+---
+
+## phinance.optimization — Advanced Optimizers
+
+### Bayesian Search (`phinance.optimization.bayesian`)
+
+Uses **Optuna's TPE (Tree-structured Parzen Estimator)** sampler for sample-efficient hyperparameter tuning.
+
+```python
+from phinance.optimization.bayesian import bayesian_search, create_study
+
+params, score = bayesian_search(
+    ohlcv_df,
+    objective_fn=my_obj,
+    param_grid={"period": [7, 14, 21], "oversold": [25, 30]},
+    n_trials=50,
+    seed=42,
+)
+```
+
+#### `bayesian_search(ohlcv, objective_fn, param_grid, n_trials=50, seed=None)`
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `ohlcv` | DataFrame | — | OHLCV price data |
+| `objective_fn` | callable | — | `f(df, params) → float` (higher = better) |
+| `param_grid` | dict | — | `{param: [values]}` search space |
+| `n_trials` | int | 50 | Number of Optuna trials |
+| `seed` | int\|None | None | RNG seed for reproducibility |
+
+**Returns**: `(best_params: dict, best_score: float)`
+
+#### `create_study(n_trials=50, seed=None) → optuna.Study`
+
+Creates and configures an Optuna study with the TPE sampler (multivariate mode enabled).
+
+---
+
+### Genetic Algorithm (`phinance.optimization.genetic`)
+
+Implements a **steady-state genetic algorithm** with tournament selection, uniform crossover, and Gaussian mutation.
+
+```python
+from phinance.optimization.genetic import genetic_search
+
+params, score = genetic_search(
+    ohlcv_df,
+    objective_fn=my_obj,
+    param_grid={"period": [7, 14, 21, 28], "oversold": [25, 30, 35]},
+    population_size=20,
+    n_generations=30,
+    seed=0,
+)
+```
+
+#### `genetic_search(ohlcv, objective_fn, param_grid, population_size=20, n_generations=30, mutation_rate=0.2, seed=None)`
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `ohlcv` | DataFrame | — | OHLCV price data |
+| `objective_fn` | callable | — | `f(df, params) → float` |
+| `param_grid` | dict | — | `{param: [values]}` |
+| `population_size` | int | 20 | Number of individuals per generation |
+| `n_generations` | int | 30 | Evolutionary iterations |
+| `mutation_rate` | float | 0.2 | Per-gene mutation probability |
+| `seed` | int\|None | None | RNG seed |
+
+**Returns**: `(best_params: dict, best_score: float)`
+
+**Algorithm details**:
+1. Initialize random population from grid values
+2. Evaluate fitness using `objective_fn`
+3. Tournament selection (size=3) for parents
+4. Uniform crossover to produce offspring
+5. Gaussian mutation clipped to valid grid values
+6. Steady-state replacement (worst individual replaced)
+7. Repeat for `n_generations`
+
+---
+
+### Updated `search()` Dispatcher
+
+The `phinance.optimization.grid_search.search()` function now supports four methods:
+
+```python
+from phinance.optimization.grid_search import search
+
+params, score = search(
+    ohlcv_df, objective_fn, param_grid,
+    method="bayesian",   # "grid" | "random" | "bayesian" | "genetic"
+    max_iter=50,
+)
+```
+
+| `method` | Algorithm | Best For |
+|---|---|---|
+| `"grid"` | Exhaustive grid search | Small grids, complete coverage |
+| `"random"` | Random sampling | Large grids, fast baseline |
+| `"bayesian"` | Optuna TPE | Medium grids, sample efficiency |
+| `"genetic"` | Evolutionary GA | Non-convex, complex landscapes |
+
+#### `SEARCH_METHODS` constant
+
+```python
+from phinance.optimization.grid_search import SEARCH_METHODS
+# ["grid", "random", "bayesian", "genetic"]
+```
+
+---
+
+### `PhiAI` — Updated with `search_method`
+
+```python
+from phinance.optimization.phiai import PhiAI, run_phiai_optimization
+
+ai = PhiAI(
+    max_indicators=5,
+    allow_shorts=False,
+    risk_cap=0.02,
+    search_method="bayesian",   # NEW: "random" | "bayesian" | "genetic"
+)
+print(ai.explain())
+
+result, explanation = run_phiai_optimization(
+    ohlcv_df,
+    indicators={"RSI": True, "MACD": True},
+    max_iter_per_indicator=30,
+    timeframe="1D",
+    search_method="bayesian",   # NEW parameter
+)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `search_method` | str | `"random"` | Optimizer: `"random"`, `"bayesian"`, `"genetic"` |
+
+---
+
+## phinance.strategies.ml_classifier — LightGBM Indicator
+
+Wraps a trained **LightGBM classifier** as a `BaseIndicator`, generating buy/sell signals from engineered features.
+
+### `LGBMClassifierIndicator`
+
+```python
+from phinance.strategies.ml_classifier import LGBMClassifierIndicator
+
+indicator = LGBMClassifierIndicator()
+signal = indicator.compute(
+    ohlcv_df,
+    n_estimators=200,
+    num_leaves=63,
+    learning_rate=0.05,
+    lookback=20,
+)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `n_estimators` | int | 100 | Number of boosting trees |
+| `num_leaves` | int | 31 | Maximum leaves per tree |
+| `learning_rate` | float | 0.05 | Shrinkage rate |
+| `lookback` | int | 20 | Feature window (bars) |
+
+**Returns**: `pd.Series` of signals in `[-1.0, 1.0]` (NaN-filled for warm-up period)
+
+### Feature Engineering
+
+The indicator engineers the following features from raw OHLCV data:
+
+| Feature | Description |
+|---|---|
+| `ret_1` | 1-bar return |
+| `ret_5` | 5-bar return |
+| `ret_20` | 20-bar return |
+| `vol_5` | 5-bar rolling std of returns |
+| `vol_20` | 20-bar rolling std of returns |
+| `rsi_14` | RSI(14) |
+| `macd` | MACD line (12/26) |
+| `bb_pct` | Bollinger %B (20, 2σ) |
+| `volume_ratio` | Volume / 20-bar SMA volume |
+| `hl_range` | (High − Low) / Close |
+
+### Training Pipeline
+
+```python
+from phinance.strategies.ml_classifier import train_lgbm_model, create_features
+
+# 1. Create features
+features_df = create_features(ohlcv_df, lookback=20)
+
+# 2. Train model (returns fitted LGBMClassifier)
+model = train_lgbm_model(
+    features_df,
+    target_col="forward_return",
+    n_estimators=200,
+    num_leaves=63,
+    learning_rate=0.05,
+)
+
+# 3. Save / load
+import joblib
+joblib.dump(model, "lgbm_model.pkl")
+model = joblib.load("lgbm_model.pkl")
+```
+
+### Catalog Registration
+
+```python
+from phinance.strategies.indicator_catalog import compute_indicator
+signal = compute_indicator("LGBM Classifier", ohlcv_df, {
+    "n_estimators": 200,
+    "num_leaves": 63,
+    "learning_rate": 0.05,
+    "lookback": 20,
+})
+```
+
+---
+
+## phinance.live — Live & Paper Trading
+
+Provides broker-agnostic paper/live trading with Alpaca and IBKR adapters.
+
+### Architecture
+
+```
+LiveTradingLoop
+    ├── BrokerAdapter (abstract)
+    │     ├── AlpacaBroker
+    │     ├── IBKRBroker
+    │     └── PaperBroker  (in-memory simulation)
+    └── run_once(ohlcv, symbol) → TradeResult
+```
+
+### `PaperBroker`
+
+In-memory paper trading broker for backtesting/simulation — **no API keys required**.
+
+```python
+from phinance.live.broker import PaperBroker
+
+broker = PaperBroker(initial_capital=50_000.0)
+status = broker.get_account_status()
+# {"equity": 50000.0, "cash": 50000.0, "pnl": 0.0, "positions": {}}
+```
+
+#### Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `place_order` | `(symbol, qty, side, price)` | Execute simulated order |
+| `get_account_status` | `()` | Return equity/cash/PnL/positions dict |
+| `get_positions` | `()` | Return `{symbol: qty}` dict |
+| `close_position` | `(symbol, price)` | Close existing position at price |
+
+---
+
+### `AlpacaBroker`
+
+Connects to the **Alpaca Markets** REST API for paper/live trading.
+
+```python
+from phinance.live.broker import AlpacaBroker
+
+broker = AlpacaBroker(
+    api_key="YOUR_ALPACA_API_KEY",
+    secret_key="YOUR_ALPACA_SECRET",
+    base_url="https://paper-api.alpaca.markets",   # paper trading
+)
+order = broker.place_order("SPY", qty=10, side="buy", price=450.0)
+```
+
+| Parameter | Description |
+|---|---|
+| `api_key` | Alpaca API key |
+| `secret_key` | Alpaca secret key |
+| `base_url` | `paper-api.alpaca.markets` (paper) or `api.alpaca.markets` (live) |
+
+---
+
+### `IBKRBroker`
+
+Connects to **Interactive Brokers** via the `ibapi` client library.
+
+```python
+from phinance.live.broker import IBKRBroker
+
+broker = IBKRBroker(host="127.0.0.1", port=7497, client_id=1)
+broker.connect()
+order = broker.place_order("SPY", qty=10, side="buy", price=450.0)
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `host` | `"127.0.0.1"` | TWS/Gateway hostname |
+| `port` | `7497` | TWS paper port (7497) or live port (7496) |
+| `client_id` | `1` | Unique client identifier |
+
+---
+
+### `LiveTradingLoop`
+
+Orchestrates data fetching → signal computation → order execution.
+
+```python
+from phinance.live.live_loop import LiveTradingLoop
+from phinance.live.broker import PaperBroker
+
+loop = LiveTradingLoop(
+    broker=PaperBroker(initial_capital=50_000),
+    indicators={"RSI": True, "MACD": True},
+    symbol="SPY",
+    signal_threshold=0.3,
+    position_size_pct=0.1,
+)
+
+# Single iteration (call from scheduler / cron / event loop)
+result = loop.run_once(ohlcv_df)
+print(result)
+# TradeResult(signal=-0.248, action="hold", pnl=0.0, ...)
+```
+
+#### `run_once(ohlcv) → TradeResult`
+
+| Field | Description |
+|---|---|
+| `signal` | Composite signal value `[-1, 1]` |
+| `action` | `"buy"` \| `"sell"` \| `"hold"` |
+| `qty` | Shares traded (0 if hold) |
+| `pnl` | Realised PnL for the bar |
+| `account` | Full account status snapshot |
+
+---
+
+### Indicator Catalog Summary (32 total)
+
+| # | Name | Category | Key Params |
+|---|---|---|---|
+| 1 | RSI | Mean-reversion | period, oversold, overbought |
+| 2 | MACD | Momentum | fast, slow, signal |
+| 3 | Bollinger | Mean-reversion | period, num_std |
+| 4 | Dual SMA | Trend | fast_period, slow_period |
+| 5 | EMA Cross | Trend | fast_period, slow_period |
+| 6 | Mean Reversion | Mean-reversion | period, z_threshold |
+| 7 | Breakout | Breakout | period |
+| 8 | Buy & Hold | Benchmark | — |
+| 9 | VWAP | Volume | period, band_pct |
+| 10 | ATR | Volatility | period, lookback, z_threshold |
+| 11 | Stochastic | Mean-reversion | k_period, d_period, smooth |
+| 12 | Williams %R | Mean-reversion | period, oversold, overbought |
+| 13 | CCI | Oscillator | period, scale |
+| 14 | OBV | Volume/momentum | period |
+| 15 | PSAR | Trend | initial_af, step_af, max_af |
+| 16 | Aroon | Trend strength | period |
+| 17 | Ulcer Index | Drawdown/risk | period |
+| 18 | KST | Multi-period momentum | roc1..roc4, signal |
+| 19 | TRIX | Momentum | period, signal |
+| 20 | Mass Index | Reversal | fast_period, slow_period |
+| 21 | DEMA | Trend (low-lag MA) | period |
+| 22 | TEMA | Trend (ultra low-lag MA) | period |
+| 23 | KAMA | Adaptive trend | er_period, fast_period, slow_period |
+| 24 | ZLEMA | Trend (zero-lag MA) | period |
+| 25 | HMA | Trend (hull MA) | period |
+| 26 | VWMA | Volume-weighted trend | period |
+| 27 | Ichimoku | Trend/momentum | fast_period, slow_period, cloud_period |
+| 28 | Donchian | Breakout/channel | period |
+| 29 | Keltner | Volatility/breakout | period, multiplier |
+| 30 | Elder Ray | Bull/bear power | period |
+| 31 | DPO | Cycle/detrend | period |
+| 32 | LGBM Classifier | ML/classification | n_estimators, num_leaves, learning_rate, lookback |
+
