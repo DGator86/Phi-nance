@@ -78,7 +78,8 @@ from phinance.strategies import list_indicators
 print(list_indicators())
 # ['RSI', 'MACD', 'Bollinger', 'Dual SMA', 'EMA Cross', 'Mean Reversion',
 #  'Breakout', 'Buy & Hold', 'VWAP', 'ATR', 'Stochastic', 'Williams %R',
-#  'CCI', 'OBV', 'PSAR']
+#  'CCI', 'OBV', 'PSAR',
+#  'Aroon', 'Ulcer Index', 'KST', 'TRIX', 'Mass Index']
 ```
 
 ### `compute_indicator(name, df, params=None)`
@@ -107,6 +108,187 @@ Abstract base class for all indicators.
 | `compute(df, **params)` | Abstract — returns pd.Series |
 | `compute_with_defaults(df, params)` | Merges params with defaults, calls compute |
 | `get_param_grid()` | Returns param_grid dict |
+
+### Registered Indicators (20 total)
+
+#### Original 15 Indicators
+
+| Name | Class | Category | Default Params |
+|---|---|---|---|
+| `RSI` | `RSIIndicator` | Mean-reversion | period=14, oversold=30, overbought=70 |
+| `MACD` | `MACDIndicator` | Momentum | fast=12, slow=26, signal=9 |
+| `Bollinger` | `BollingerIndicator` | Mean-reversion | period=20, num_std=2.0 |
+| `Dual SMA` | `DualSMAIndicator` | Trend | fast=50, slow=200 |
+| `EMA Cross` | `EMACrossIndicator` | Trend | fast=12, slow=26 |
+| `Mean Reversion` | `MeanReversionIndicator` | Mean-reversion | period=20, z_threshold=2.0 |
+| `Breakout` | `BreakoutIndicator` | Breakout | period=20 |
+| `Buy & Hold` | `BuyHoldIndicator` | Benchmark | — |
+| `VWAP` | `VWAPIndicator` | Volume | period=20, band_pct=0.5 |
+| `ATR` | `ATRIndicator` | Volatility | period=14 |
+| `Stochastic` | `StochasticIndicator` | Mean-reversion | k=14, d=3, smooth=3 |
+| `Williams %R` | `WilliamsRIndicator` | Mean-reversion | period=14 |
+| `CCI` | `CCIIndicator` | Momentum | period=14, scale=100 |
+| `OBV` | `OBVIndicator` | Volume | period=14 |
+| `PSAR` | `PSARIndicator` | Trend | initial_af=0.02, max_af=0.2 |
+
+#### Advanced Indicators (Added)
+
+| Name | Class | Category | Signal Convention |
+|---|---|---|---|
+| `Aroon` | `AroonIndicator` | Trend strength | +1 = strong uptrend (Aroon Up=100, Down=0) |
+| `Ulcer Index` | `UlcerIndexIndicator` | Risk/Drawdown | −1 = high drawdown risk, +1 = calm market |
+| `KST` | `KSTIndicator` | Momentum | +1 = strong positive multi-period momentum |
+| `TRIX` | `TRIXIndicator` | Momentum | +1 = rising triple-smoothed EMA (uptrend) |
+| `Mass Index` | `MassIndexIndicator` | Reversal | −1 = reversal bulge (range expansion) |
+
+#### `AroonIndicator`
+
+Tushar Chande's Aroon oscillator measures how recently the highest high and
+lowest low occurred within a rolling window. The oscillator (Aroon Up − Aroon
+Down) spans [−100, +100], normalised to [−1, +1].
+
+```python
+from phinance.strategies.aroon import AroonIndicator
+
+indicator = AroonIndicator()
+sig = indicator.compute(df, period=25)
+# +1 → new high just occurred (strong uptrend)
+# −1 → new low just occurred (strong downtrend)
+```
+
+**Formula:**
+```
+Aroon Up   = ((period − days_since_period_high) / period) × 100
+Aroon Down = ((period − days_since_period_low)  / period) × 100
+Oscillator = Aroon Up − Aroon Down   ∈ [−100, +100]
+signal     = Oscillator / 100
+```
+
+**Default params:** `period=25`  
+**Param grid:** `period: [10, 14, 20, 25, 30]`  
+**References:** Chande (1995); StockCharts ChartSchool; Stock.Indicators (.NET) `GetAroon()`
+
+---
+
+#### `UlcerIndexIndicator`
+
+Peter Martin's Ulcer Index quantifies downside risk by computing the RMS of
+percentage drawdowns from rolling highs. High UI = high drawdown risk = negative
+signal; calm market (low UI) = near-zero signal.
+
+```python
+from phinance.strategies.ulcer_index import UlcerIndexIndicator
+
+indicator = UlcerIndexIndicator()
+sig = indicator.compute(df, period=14)
+# −1 → high drawdown / high risk environment
+# 0  → typical risk level
+```
+
+**Formula:**
+```
+rolling_max   = max(close, window=period)
+drawdown_pct  = (close − rolling_max) / rolling_max × 100   [≤ 0]
+UI            = sqrt(mean(drawdown_pct², window=period))
+signal        = normalize(−UI)   [inverted: high UI → negative signal]
+```
+
+**Default params:** `period=14`  
+**Param grid:** `period: [7, 10, 14, 20, 28]`  
+**References:** Martin & McCann (1989); Stock.Indicators (.NET) `GetUlcerIndex()`
+
+---
+
+#### `KSTIndicator`
+
+Martin Pring's Know Sure Thing (KST) combines four smoothed Rate-of-Change
+(ROC) components at different timeframes into a single momentum oscillator.
+Positive KST indicates broad-based bullish momentum across all four timeframes.
+
+```python
+from phinance.strategies.kst import KSTIndicator
+
+indicator = KSTIndicator()
+sig = indicator.compute(df)
+# +1 → KST strongly positive (momentum aligned bullish across all periods)
+# −1 → KST strongly negative (momentum aligned bearish)
+```
+
+**Formula:**
+```
+ROC(n)  = (close / close.shift(n) − 1) × 100
+RCMA1   = SMA(ROC(roc1), sma1)   × 1
+RCMA2   = SMA(ROC(roc2), sma2)   × 2
+RCMA3   = SMA(ROC(roc3), sma3)   × 3
+RCMA4   = SMA(ROC(roc4), sma4)   × 4
+KST     = RCMA1 + RCMA2 + RCMA3 + RCMA4
+signal  = normalize(KST)
+```
+
+**Default params:** `roc1=10, roc2=15, roc3=20, roc4=30, sma1=10, sma2=10, sma3=10, sma4=15, signal=9`  
+**Param grid:** `roc1: [8,10,12], roc4: [25,30,35], signal: [7,9,12]`  
+**References:** Pring (1992); Investopedia; Stock.Indicators (.NET) `GetKst()`
+
+---
+
+#### `TRIXIndicator`
+
+Jack Hutson's TRIX is the percentage rate-of-change of a triple-smoothed
+(three-pass) EMA. The triple smoothing acts as a low-pass filter eliminating
+short cycles and noise, leaving only the dominant trend direction.
+
+```python
+from phinance.strategies.trix import TRIXIndicator
+
+indicator = TRIXIndicator()
+sig = indicator.compute(df, period=15)
+# +1 → TRIX positive (triple-smoothed upward momentum)
+# −1 → TRIX negative (triple-smoothed downward momentum)
+```
+
+**Formula:**
+```
+EMA1 = EMA(close, period)
+EMA2 = EMA(EMA1,  period)
+EMA3 = EMA(EMA2,  period)
+TRIX = (EMA3 − EMA3.shift(1)) / EMA3.shift(1) × 100
+signal = normalize(TRIX)
+```
+
+**Default params:** `period=15, signal=9`  
+**Param grid:** `period: [8,10,12,15,18,21], signal: [7,9,12]`  
+**References:** Hutson (1983); LuxAlgo TRIX guide; Stock.Indicators (.NET) `GetTrix()`; `python.stockindicators.dev/indicators/Trix/`
+
+---
+
+#### `MassIndexIndicator`
+
+Donald Dorsey's Mass Index detects trend reversals by measuring the ratio of a
+single EMA to a double EMA of the high-low range. When this ratio-sum rises
+above the "reversal bulge" threshold (27) and falls back below 26.5, a trend
+reversal is signalled. The MI is scale-independent (normalised as a ratio).
+
+```python
+from phinance.strategies.mass_index import MassIndexIndicator
+
+indicator = MassIndexIndicator()
+sig = indicator.compute(df, fast_period=9, slow_period=25)
+# −1 → reversal bulge forming (range expansion, high MI)
+# +1 → range compressed (low MI, quiet market)
+```
+
+**Formula:**
+```
+Single EMA  = EMA(high − low, fast_period)
+Double EMA  = EMA(Single EMA, fast_period)
+EMA Ratio   = Single EMA / Double EMA
+Mass Index  = SUM(EMA Ratio, slow_period)
+signal      = −normalize_zscore(Mass Index)   [inverted: high MI → negative]
+```
+
+**Default params:** `fast_period=9, slow_period=25, bulge_high=27.0, bulge_low=26.5`  
+**Param grid:** `fast_period: [7,9,12], slow_period: [20,25,30]`  
+**References:** Dorsey (1992); StockCharts ChartSchool; Wikipedia Mass Index; Stock.Indicators (.NET) `GetMassIndex()`
 
 ---
 
