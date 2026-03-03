@@ -835,3 +835,242 @@ print(config.explain())
 
 Returns `(optimized_indicators: dict, explanation: str)`.
 Uses `ThreadPoolExecutor` for parallel random search across indicators.
+
+---
+
+## phinance.strategies — New Indicators (Phase 7)
+
+### Moving Average Family
+
+#### `DEMAIndicator` — Double Exponential Moving Average
+
+```python
+from phinance.strategies.dema import DEMAIndicator
+ind = DEMAIndicator()
+signal = ind.compute(ohlcv_df, period=21)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `period` | int | 21 | EMA window |
+
+**Formula**: `DEMA = 2 × EMA(close, n) − EMA(EMA(close, n), n)`. Halves EMA lag. Signal = `(close − DEMA) / DEMA`, normalised to [−1, +1].
+
+**Reference**: Mulloy (1994), *Technical Analysis of Stocks & Commodities*; Stock.Indicators `.NET` `GetDema()`.
+
+---
+
+#### `TEMAIndicator` — Triple Exponential Moving Average
+
+```python
+from phinance.strategies.tema import TEMAIndicator
+signal = TEMAIndicator().compute(ohlcv_df, period=21)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `period` | int | 21 | EMA window |
+
+**Formula**: `TEMA = 3×EMA1 − 3×EMA2 + EMA3`. Near-zero lag. Signal = `(close − TEMA) / TEMA`.
+
+**Reference**: Mulloy (1994); TA-Lib TEMA; Stock.Indicators `.NET` `GetTema()`.
+
+---
+
+#### `KAMAIndicator` — Kaufman Adaptive Moving Average
+
+```python
+from phinance.strategies.kama import KAMAIndicator
+signal = KAMAIndicator().compute(ohlcv_df, er_period=10, fast_period=2, slow_period=30)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `er_period` | int | 10 | Efficiency Ratio look-back |
+| `fast_period` | int | 2 | Fast EMA period (trending) |
+| `slow_period` | int | 30 | Slow EMA period (ranging) |
+
+**Formula**: Adapts smoothing constant via Efficiency Ratio — fast in trends, slow in noise. Signal = `(close − KAMA) / KAMA`.
+
+**Reference**: Perry Kaufman (1998), *Trading Systems and Methods*; Stock.Indicators `.NET` `GetKama()`.
+
+---
+
+#### `ZLEMAIndicator` — Zero Lag EMA
+
+```python
+from phinance.strategies.zlema import ZLEMAIndicator
+signal = ZLEMAIndicator().compute(ohlcv_df, period=21)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `period` | int | 21 | EMA window |
+
+**Formula**: `lag = (period − 1) // 2`; `ZLEMA = EMA(2 × close − close.shift(lag), period)`. Signal = `(close − ZLEMA) / ZLEMA`.
+
+**Reference**: Ehlers & Way (2010), *Stocks & Commodities* Jan 2010; Stock.Indicators `.NET` `GetZlEma()`.
+
+---
+
+#### `HMAIndicator` — Hull Moving Average
+
+```python
+from phinance.strategies.hma import HMAIndicator
+signal = HMAIndicator().compute(ohlcv_df, period=20)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `period` | int | 20 | HMA window |
+
+**Formula**: `HMA = WMA(2×WMA(close, n/2) − WMA(close, n), √n)`. Virtually eliminates lag. Signal = `(close − HMA) / HMA`.
+
+**Reference**: Alan Hull (2005) [alanhull.com]; Stock.Indicators `.NET` `GetHma()`.
+
+---
+
+#### `VWMAIndicator` — Volume Weighted Moving Average
+
+```python
+from phinance.strategies.vwma import VWMAIndicator
+signal = VWMAIndicator().compute(ohlcv_df, period=20)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `period` | int | 20 | Rolling window in bars |
+
+**Formula**: `VWMA = Σ(close × volume) / Σ(volume)` over rolling window. Signal = `(close − VWMA) / VWMA`.
+
+**Reference**: TradingView built-in `vwma()`; Stock.Indicators `.NET` `GetVwma()`.
+
+---
+
+### Channel / Band Indicators
+
+#### `IchimokuIndicator` — Ichimoku Kinko Hyo
+
+```python
+from phinance.strategies.ichimoku import IchimokuIndicator
+signal = IchimokuIndicator().compute(ohlcv_df, fast_period=9, slow_period=26)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `fast_period` | int | 9 | Tenkan-sen period |
+| `slow_period` | int | 26 | Kijun-sen period |
+| `cloud_period` | int | 26 | Senkou displacement |
+
+**Signal**: Composite vote from price vs Tenkan (+0.4), price vs Kijun (+0.4), Tenkan vs Kijun (+0.2). Range [−1, +1].
+
+**Reference**: Hosoda (1969); [Investopedia Ichimoku Cloud](https://www.investopedia.com/terms/i/ichimoku-cloud.asp).
+
+---
+
+#### `DonchianIndicator` — Donchian Channel
+
+```python
+from phinance.strategies.donchian import DonchianIndicator
+signal = DonchianIndicator().compute(ohlcv_df, period=20)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `period` | int | 20 | Highest-high / lowest-low window |
+
+**Formula**: `position = (close − midpoint) / (channel_width / 2)`, already in [−1, +1]. +1 = breakout up, −1 = breakout down.
+
+**Reference**: Richard Donchian (1960s); Stock.Indicators `.NET` `GetDonchian()`.
+
+---
+
+#### `KeltnerIndicator` — Keltner Channel
+
+```python
+from phinance.strategies.keltner import KeltnerIndicator
+signal = KeltnerIndicator().compute(ohlcv_df, period=20, multiplier=2.0)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `period` | int | 20 | EMA and ATR period |
+| `multiplier` | float | 2.0 | ATR band multiplier |
+
+**Formula**: `middle = EMA(close, n)`, `ATR` via Wilder's smoothing, `position = (close − middle) / (multiplier × ATR)`, clipped to [−1, +1].
+
+**Reference**: Keltner (1960) / Raschke ATR variant; Stock.Indicators `.NET` `GetKeltner()`.
+
+---
+
+### Oscillators
+
+#### `ElderRayIndicator` — Elder Ray Index
+
+```python
+from phinance.strategies.elder_ray import ElderRayIndicator
+signal = ElderRayIndicator().compute(ohlcv_df, period=13)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `period` | int | 13 | EMA period |
+
+**Formula**: `Bull Power = high − EMA`, `Bear Power = low − EMA`, `Net = Bull + Bear`. Normalised to [−1, +1].
+
+**Reference**: Dr. Alexander Elder (1993), *Trading for a Living*; Stock.Indicators `.NET` `GetElderRay()`.
+
+---
+
+#### `DPOIndicator` — Detrended Price Oscillator
+
+```python
+from phinance.strategies.dpo import DPOIndicator
+signal = DPOIndicator().compute(ohlcv_df, period=20)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `period` | int | 20 | SMA period |
+
+**Formula**: `lookback = period // 2 + 1`; `DPO = close.shift(lookback) − SMA(close, period)`. Contrarian signal — negative DPO (cycle trough) maps to +1 (buy).
+
+**Reference**: [StockCharts DPO](https://chartschool.stockcharts.com); Stock.Indicators `.NET` `GetDpo()`.
+
+---
+
+### Indicator Catalog Summary (31 total)
+
+| # | Name | Category | Key Params |
+|---|---|---|---|
+| 1 | RSI | Mean-reversion | period, oversold, overbought |
+| 2 | MACD | Momentum | fast, slow, signal |
+| 3 | Bollinger | Mean-reversion | period, num_std |
+| 4 | Dual SMA | Trend | fast_period, slow_period |
+| 5 | EMA Cross | Trend | fast_period, slow_period |
+| 6 | Mean Reversion | Mean-reversion | period, z_threshold |
+| 7 | Breakout | Breakout | period |
+| 8 | Buy & Hold | Benchmark | — |
+| 9 | VWAP | Volume | period, band_pct |
+| 10 | ATR | Volatility | period, lookback, z_threshold |
+| 11 | Stochastic | Mean-reversion | k_period, d_period, smooth |
+| 12 | Williams %R | Mean-reversion | period, oversold, overbought |
+| 13 | CCI | Oscillator | period, scale |
+| 14 | OBV | Volume/momentum | period |
+| 15 | PSAR | Trend | initial_af, step_af, max_af |
+| 16 | Aroon | Trend strength | period |
+| 17 | Ulcer Index | Drawdown/risk | period |
+| 18 | KST | Multi-period momentum | roc1..roc4, signal |
+| 19 | TRIX | Momentum | period, signal |
+| 20 | Mass Index | Reversal | fast_period, slow_period |
+| 21 | DEMA | Trend (low-lag MA) | period |
+| 22 | TEMA | Trend (ultra low-lag MA) | period |
+| 23 | KAMA | Adaptive trend | er_period, fast_period, slow_period |
+| 24 | ZLEMA | Trend (zero-lag MA) | period |
+| 25 | HMA | Trend (hull MA) | period |
+| 26 | VWMA | Volume-weighted trend | period |
+| 27 | Ichimoku | Trend/momentum | fast_period, slow_period, cloud_period |
+| 28 | Donchian | Breakout/channel | period |
+| 29 | Keltner | Volatility/breakout | period, multiplier |
+| 30 | Elder Ray | Bull/bear power | period |
+| 31 | DPO | Cycle/detrend | period |

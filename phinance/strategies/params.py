@@ -29,6 +29,15 @@ Sources
     * Lambert (1980) — CCI
     * stockstats default windows — OBV, VWAP
     * Stock.Indicators (.NET) default parameters
+    * Hull (2005) — HMA
+    * Kaufman (1998) — KAMA
+    * Ehlers & Way (2010) — ZLEMA
+    * Mulloy (1994) — DEMA, TEMA
+    * Hosoda (1969) — Ichimoku
+    * Donchian (1960s) — Donchian Channel
+    * Keltner/Raschke — Keltner Channel
+    * Elder (1993) — Elder Ray
+    * Detrended Price Oscillator formula
 """
 
 from __future__ import annotations
@@ -144,6 +153,61 @@ DAILY_GRIDS: Dict[str, Dict[str, list]] = {
         "fast_period": [7, 9, 12],
         "slow_period": [20, 25, 30],
     },
+
+    # ── Moving average family (added phase: DEMA, TEMA, KAMA, ZLEMA, HMA, VWMA)
+
+    "DEMA": {
+        "period": [10, 14, 21, 34, 55],
+    },
+
+    "TEMA": {
+        "period": [10, 14, 21, 34, 55],
+    },
+
+    "KAMA": {
+        "er_period":   [5, 8, 10, 14, 20],
+        "fast_period": [2, 3, 5],
+        "slow_period": [20, 30, 40],
+    },
+
+    "ZLEMA": {
+        "period": [10, 14, 21, 34, 55],
+    },
+
+    "HMA": {
+        "period": [9, 14, 20, 30, 50],
+    },
+
+    "VWMA": {
+        "period": [10, 14, 20, 30, 50],
+    },
+
+    # ── Channel / band indicators (Ichimoku, Donchian, Keltner)
+
+    "Ichimoku": {
+        "fast_period":  [7, 9, 12],
+        "slow_period":  [20, 26, 34],
+        "cloud_period": [26, 52],
+    },
+
+    "Donchian": {
+        "period": [10, 14, 20, 30, 55],
+    },
+
+    "Keltner": {
+        "period":     [10, 14, 20, 30],
+        "multiplier": [1.5, 2.0, 2.5],
+    },
+
+    # ── Oscillators (Elder Ray, DPO)
+
+    "Elder Ray": {
+        "period": [8, 10, 13, 20, 26],
+    },
+
+    "DPO": {
+        "period": [10, 14, 20, 30, 40],
+    },
 }
 
 # ── Intraday parameter grids  ─────────────────────────────────────────────────
@@ -253,6 +317,61 @@ INTRADAY_GRIDS: Dict[str, Dict[str, list]] = {
     "Mass Index": {
         "fast_period": [5, 7, 9],
         "slow_period": [15, 20, 25],
+    },
+
+    # ── Moving average family (intraday — shorter periods)
+
+    "DEMA": {
+        "period": [7, 10, 14, 21, 34],
+    },
+
+    "TEMA": {
+        "period": [7, 10, 14, 21, 34],
+    },
+
+    "KAMA": {
+        "er_period":   [3, 5, 8, 10, 14],
+        "fast_period": [2, 3, 5],
+        "slow_period": [15, 20, 30],
+    },
+
+    "ZLEMA": {
+        "period": [7, 10, 14, 21, 34],
+    },
+
+    "HMA": {
+        "period": [7, 9, 14, 20, 30],
+    },
+
+    "VWMA": {
+        "period": [5, 10, 14, 20, 30],
+    },
+
+    # ── Channel / band indicators (intraday)
+
+    "Ichimoku": {
+        "fast_period":  [5, 7, 9],
+        "slow_period":  [14, 20, 26],
+        "cloud_period": [20, 26],
+    },
+
+    "Donchian": {
+        "period": [5, 10, 14, 20, 30],
+    },
+
+    "Keltner": {
+        "period":     [7, 10, 14, 20],
+        "multiplier": [1.5, 2.0, 2.5],
+    },
+
+    # ── Oscillators (intraday)
+
+    "Elder Ray": {
+        "period": [5, 8, 10, 13, 20],
+    },
+
+    "DPO": {
+        "period": [7, 10, 14, 20, 30],
     },
 }
 
