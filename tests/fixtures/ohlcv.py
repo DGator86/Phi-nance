@@ -32,10 +32,10 @@ def make_ohlcv(n: int = 50, start: str = "2023-01-01", negative: bool = False) -
     idx = pd.date_range(start, periods=n, freq="D")
     return pd.DataFrame(
         {
-            "open": closes * 0.999,
-            "high": closes * 1.005,
-            "low": closes * 0.995,
-            "close": closes,
+            "open":   closes * 0.999,
+            "high":   closes * 1.005,
+            "low":    closes * 0.995,
+            "close":  closes,
             "volume": rng.integers(100_000, 1_000_000, size=n).astype(float),
         },
         index=idx,

@@ -1,0 +1,388 @@
+Lumibot version 4.4.49
+Running backtest: buy_and_hold
+  Period: 2024-01-01 to 2024-02-01
+  Budget: $100,000
+  Benchmark: SPY
+  Data Source: Alpha Vantage
+
+!!!! AV FIXED INSTANTIATED !!!! config=<strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource.__init__.<locals>.Config object at 0x0000017CBD88F4D0>
+!!!! AV FIXED INIT DONE !!!! api_key=PLN25H3ESMM1IRBN
+
+Progress |Γûê-----------------------------|   4.37% [Elapsed: 0:00:00 ETA: 0:00:12] | Sim Time: 2024-01-02 08:30 [K!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,603 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-02 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,606 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-03 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,609 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-04 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,611 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-05 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,614 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-08 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,616 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-09 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,618 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-10 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,619 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-11 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,621 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-12 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,624 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-16 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,626 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-17 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,629 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-18 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,631 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-19 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,633 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-22 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,635 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-23 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,637 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-24 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,640 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-25 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,643 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-26 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,647 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-29 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,650 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-30 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price using timestep=minute !!!!
+X_FIXED_X_HIST_X for SPY length=1 timestep=minute
+2026-02-23 21:09:21,653 | ERROR | alpha_vantage_fixed.py:get_historical_prices:49 | DEBUG: [AVFixed] get_historical_prices for SPY length=1 timestep=minute
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 85, in get_last_price
+    bars = self.get_historical_prices(asset, 1, timestep=timestep, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 51, in get_historical_prices
+    data = self._pull_source_symbol_bars(
+        asset,
+    ...<5 lines>...
+        include_after_hours=include_after_hours
+    )
+TypeError: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep'
+!!!! AV FIXED get_last_price ERROR: AlphaVantageFixedDataSource._pull_source_symbol_bars() got multiple values for argument 'timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-31 09:30:00-05:00

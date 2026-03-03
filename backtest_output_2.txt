@@ -1,0 +1,304 @@
+Lumibot version 4.4.49
+Running backtest: buy_and_hold
+  Period: 2024-01-01 to 2024-02-01
+  Budget: $100,000
+  Benchmark: SPY
+  Data Source: Alpha Vantage
+
+!!!! AV FIXED INSTANTIATED !!!! config=<strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource.__init__.<locals>.Config object at 0x0000023F22A8F620>
+!!!! AV FIXED INIT DONE !!!! api_key=PLN25H3ESMM1IRBN
+
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Traceback (most recent call last):
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 74, in get_last_price
+    bars = self.get_historical_prices(asset, 1, quote=quote, exchange=exchange)
+  File "C:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance\strategies\alpha_vantage_fixed.py", line 41, in get_historical_prices
+    timestep = self.get_timestep()
+  File "C:\Users\Darrin Vogeli\AppData\Local\Programs\Python\Python313\Lib\site-packages\lumibot\data_sources\data_source.py", line 281, in get_timestep
+    return self._timestep if self._timestep else self.MIN_TIMESTEP
+                             ^^^^^^^^^^^^^^
+AttributeError: 'AlphaVantageFixedDataSource' object has no attribute '_timestep'. Did you mean: 'get_timestep'?
+Progress |Γûê-----------------------------|   4.37% [Elapsed: 0:00:00 ETA: 0:00:12] | Sim Time: 2024-01-02 08:30 [K!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-02 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-03 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-04 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-05 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-08 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-09 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-10 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-11 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-12 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-16 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-17 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-18 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-19 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-22 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-23 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-24 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-25 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-26 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-29 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-30 09:30:00-05:00
+!!!! AV FIXED get_last_price for SPY !!!!
+!!!! AV FIXED get_last_price ERROR: 'AlphaVantageFixedDataSource' object has no attribute '_timestep' !!!!
+DEBUG: [Strategy] Symbol: SPY, Price: None
+DEBUG: [Strategy] Datasource class: <class 'strategies.alpha_vantage_fixed.AlphaVantageFixedDataSource'>
+DEBUG: [Strategy] Current time: 2024-01-31 09:30:00-05:00

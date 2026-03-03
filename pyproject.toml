@@ -1,42 +1,104 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
-build-backend = "setuptools.build_meta"
+requires      = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
-name = "phi-nance"
-version = "0.1.0"
-description = "EPP v2 projection system — projection ends at ProjectionPacket"
-readme = "README.md"
+name        = "phinance"
+version     = "1.0.0"
+description = "Open-source quantitative research platform: data → strategy → blend → optimise → backtest → UI"
+readme      = "README.md"
+license     = { text = "MIT" }
 requires-python = ">=3.10"
+authors = [{ name = "Phi-nance Contributors" }]
+keywords = ["quantitative finance", "backtesting", "trading strategies", "streamlit"]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Scientific/Engineering",
+]
+
 dependencies = [
-    "pydantic>=2.0",
-    "pyarrow>=14.0",
     "pandas>=2.0",
     "numpy>=1.24",
-    "httpx>=0.25",
+    "pyarrow>=14.0",
+    "requests>=2.28",
     "python-dotenv>=1.0",
+    "yfinance>=0.2.40",
+    "streamlit>=1.30.0",
+    "plotly>=5.18",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov", "ruff>=0.1"]
-# Official Polygon/Massive client for list_aggs backfill
-massive = ["massive>=1.0"]
-# Lumibot backtesting (same code path for backtest/live; uses our bar store via PandasDataBacktesting)
-lumibot = ["lumibot>=3.0"]
-# backtesting.py (kernc) — lightweight, no broker; DataFrame + Strategy.run()
-backtesting = ["backtesting>=0.4"]
-# MCP server for Agent World Model / any MCP client (get_projection, run_backtest tools)
-mcp = ["mcp[cli]>=1.0"]
-# Web GUI: strategy picker, backtest comparison, Ask the Agent (needs backtesting + optional openai)
-gui = ["streamlit>=1.28", "backtesting>=0.4", "openai>=1.0"]
+options = [
+    "scipy>=1.11",
+]
+ml = [
+    "scikit-learn>=1.3.0",
+    "lightgbm>=4.0.0",
+    "joblib>=1.3.0",
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.1",
+    "mypy>=1.7",
+    "pre-commit>=3.5",
+]
+all = [
+    "scipy>=1.11",
+    "scikit-learn>=1.3.0",
+    "lightgbm>=4.0.0",
+    "joblib>=1.3.0",
+]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[project.scripts]
+phinance-backtest  = "scripts.run_backtest:main"
+phinance-fetch     = "scripts.fetch_data:main"
+phinance-runs      = "scripts.list_runs:main"
+
+[project.urls]
+Homepage   = "https://github.com/DGator86/Phi-nance"
+Repository = "https://github.com/DGator86/Phi-nance"
+Issues     = "https://github.com/DGator86/Phi-nance/issues"
+
+# ── Tool configuration ────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths  = ["tests"]
+addopts    = "-v --tb=short"
+filterwarnings = ["ignore::DeprecationWarning", "ignore::FutureWarning"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501", "E741"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
+[tool.ruff.per-file-ignores]
+"tests/*"     = ["S", "ANN"]
+"scripts/*"   = ["T201"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = false
+
+[tool.coverage.run]
+source = ["phinance"]
+omit   = ["*/tests/*", "*/scripts/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "except ImportError",
+]

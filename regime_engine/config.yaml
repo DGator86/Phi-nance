@@ -1,0 +1,568 @@
+# ============================================================
+# Regime Probability Field Engine — Configuration
+# All numeric parameters are AI-tunable.
+# ============================================================
+
+# ── Alpha Vantage Data Source ────────────────────────────────
+alpha_vantage:
+  api_key:   "PLN25H3ESMM1IRBN"        # override with env var AV_API_KEY
+  mcp_token: "G7jhPGMv69WcDYerwJ6VZ2Tw6upJ"  # mcp.alphavantage.co bearer
+  mcp_url:   "https://mcp.alphavantage.co/"
+  rate_limit: 12.0            # seconds between calls (5 req/min free tier)
+  cache_dir:  ".av_cache"     # local response cache directory
+  default_interval:  "1min"
+  default_outputsize: "full"  # 'compact' for latest 100 bars, 'full' for 30d
+
+# ── Feature Engine ──────────────────────────────────────────
+features:
+  drift_windows: [15, 30, 60]
+  vol_windows: [30, 120]
+  er_windows: [30, 60, 120]
+  autocorr_lag: 10
+  autocorr_window: 40
+  flip_rate_window: 30
+  median_cross_window: 30
+  impulse_revert_window: 30
+  impulse_revert_sigma: 1.5      # multiplier on rolling std for "large move"
+  illiquidity_window: 60
+  volume_zscore_window: 200
+  entropy_window: 30
+  entropy_bins: 10
+  range_expansion_window: 30
+  # Robust normalization
+  robust_norm_window: 60
+  mad_floor: 1.0e-8
+  mad_small_multiplier: 10.0     # if MAD < floor * this → use EWMA std
+  ewma_norm_span: 30
+  # MFT Phase 1 — L2 proxy feature parameters
+  dissipation_window: 30         # rolling window for dissipation_proxy
+
+# ── Taxonomy Smoothing (sticky-logit EWM alpha per level) ───
+taxonomy:
+  smoothing:
+    kingdom: 0.10    # alpha = 1 - persistence → low alpha = sticky
+    phylum:  0.12
+    class_:  0.15
+    order:   0.18
+    family:  0.20
+    genus:   0.22
+
+  # ── Gate steepness γ per feature (Interface 1→2) ──────────
+  # Controls sharpness of tanh/tanh_abs gate applied to each feature.
+  # Higher γ → harder threshold; lower γ → smoother response.
+  gate_steepness:
+    default:        1.0    # used for any feature not explicitly listed
+    d_mass_dt:      2.0    # rate-of-change: sharper gate
+    d_lambda:       1.5    # lambda change: slightly sharper
+    mass:           1.0    # near-equilibrium gate
+    ofi_proxy:      1.2    # order-flow: mild boost
+    dissipation_proxy: 1.3
+
+  # ── MSL Condition Matrix scale (Interfaces 2 & 3) ─────────
+  # Global multiplier on all MSL hardcoded matrix weights.
+  # Set to 0.0 to disable; set to 1.0 for full strength.
+  msl_kingdom_scale: 0.8   # slightly discounted until backtested
+
+  # ── Energy coefficients  alpha_{node,feature} ─────────────
+  # Sign convention: positive → feature↑ raises node energy
+  # Features referenced by their normalized column name.
+  # Only non-zero coefficients need to be listed.
+  energy:
+
+    # ── KINGDOM ──────────────────────────────────────────────
+    kingdom:
+      DIR:
+        drift_tscore_30:  0.40
+        drift_tscore_60:  0.25
+        er_30:            0.30
+        autocorr:         0.20
+        flip_rate:       -0.15
+        impulse_revert:  -0.10
+      NDR:
+        er_30:           -0.35
+        autocorr:        -0.25
+        flip_rate:        0.20
+        impulse_revert:   0.25
+        median_cross:     0.15
+        drift_tscore_30: -0.20
+      TRN:
+        entropy:          0.25
+        rv_delta:         0.30
+        range_expansion:  0.25
+        volume_zscore:    0.20
+        drift_tscore_30:  0.00   # neutral — direction irrelevant at TRN
+        # MFT L2-proxy weights at KINGDOM level
+      DIR:
+        d_lambda:         0.20   # book thinning → confirms directional impetus
+        mass:            -0.15   # low mass → thin book → breakout-prone
+        d_mass_dt:       -0.20   # collapsing mass → precedes acceleration
+        ofi_proxy:        0.25   # signed order flow → directional pressure
+        dissipation_proxy: 0.15  # trending field alignment
+      NDR:
+        absorption_score:  0.20  # volume absorbed without movement → S/R holding
+        dissipation_proxy: -0.20 # opposing flow → mean-reverting field
+        d_mass_dt:         0.15  # mass growing → depth rebuilding → consolidation
+      TRN:
+        d_lambda:         0.20   # rapid lambda change → transitional
+        d_mass_dt:       -0.15   # mass collapsing → transition incoming
+
+    # ── PHYLUM ───────────────────────────────────────────────
+    phylum:
+      LV:
+        rv_30:           -0.50
+        true_range:      -0.30
+        volume_zscore:   -0.20
+        rv_delta:        -0.15
+      NV:
+        rv_30:            0.00
+        illiquidity:      0.10
+        volume_zscore:   -0.05
+      HV:
+        rv_30:            0.50
+        true_range:       0.30
+        volume_zscore:    0.20
+        rv_delta:         0.15
+        # MFT L2-proxy weights at PHYLUM (volatility) level
+        mass:            -0.25   # low mass → thin book → high vol environment
+        d_mass_dt:       -0.20   # mass collapse → volatility expansion
+        absorption_score: -0.15  # low absorption → no one catching the fall
+      LV:
+        mass:             0.20   # high mass → deep book → bounded range
+        absorption_score:  0.25  # high absorption → vol suppression
+
+    # ── CLASS ─────────────────────────────────────────────────
+    # DIR classes
+    class_:
+      PT:
+        drift_tscore_60:  0.50
+        er_60:            0.35
+        flip_rate:       -0.20
+        autocorr:         0.15
+        drift_tscore_30:  0.15
+      PX:
+        rv_delta:         0.35
+        drift_tscore_30:  0.40
+        range_expansion:  0.30
+        er_30:            0.15
+      TE:
+        impulse_revert:   0.45
+        autocorr:        -0.30
+        er_30:           -0.30
+        flip_rate:        0.15
+        rv_delta:         0.10
+      # NDR classes
+      BR:
+        er_30:           -0.40
+        autocorr:        -0.20
+        median_cross:     0.40
+        flip_rate:        0.15
+        rv_delta:        -0.10
+      RR:
+        impulse_revert:   0.50
+        autocorr:        -0.25
+        flip_rate:        0.30
+        er_30:           -0.15
+      AR:
+        volume_zscore:    0.40
+        illiquidity:     -0.20
+        er_30:           -0.20
+        median_cross:     0.15
+      # TRN classes
+      SR:
+        rv_delta:         0.45
+        entropy:         -0.25
+        range_expansion:  0.30
+        volume_zscore:    0.15
+      RB:
+        rv_delta:         0.40
+        er_30:            0.35
+        gap_score:        0.25
+        volume_zscore:    0.20
+      FB:
+        impulse_revert:   0.45
+        gap_score:        0.30
+        autocorr:        -0.25
+        flip_rate:        0.15
+        # MFT L2-proxy weights at CLASS level
+        ofi_proxy:        0.25   # directional flow → context for all classes
+        dissipation_proxy: 0.20  # trending vs mean-reverting field discriminator
+      PT:
+        d_mass_dt:       -0.15   # mass collapse confirms trend continuation
+      BR:
+        absorption_score:  0.25  # volume absorbed → confirms trading range
+        mass:             0.15   # deep book → bounded range
+      SR:
+        d_mass_dt:       -0.20   # mass collapse precedes squeeze release
+        d_lambda:         0.15   # rapid lambda change → transitional regime
+      RB:
+        ofi_proxy:        0.15   # order flow confirms breakout direction
+
+    # ── ORDER ────────────────────────────────────────────────
+    order:
+      AGC:
+        drift_tscore_30:  0.50
+        er_30:            0.30
+        volume_zscore:    0.20
+        flip_rate:       -0.10
+      RVP:
+        impulse_revert:   0.40
+        autocorr:        -0.30
+        flip_rate:        0.30
+        er_30:           -0.10
+      ABS:
+        er_60:           -0.30
+        rv_delta:        -0.30
+        flip_rate:        0.20
+        volume_zscore:   -0.10
+      EXH:
+        autocorr:        -0.40
+        impulse_revert:   0.40
+        rv_delta:         0.20
+        drift_tscore_30: -0.15
+        # MFT L2-proxy weights at ORDER level
+        d_mass_dt:       -0.20   # mass collapse → exhaustion / acceleration
+        ofi_proxy:        0.20   # flow confirms directional order type
+        absorption_score:  0.15  # confirms absorption order type
+        dissipation_proxy: 0.15  # field character discriminator
+
+    # ── FAMILY ───────────────────────────────────────────────
+    family:
+      ALN:
+        drift_tscore_60:  0.40
+        er_120:           0.40
+        autocorr:         0.20
+        er_60:            0.10
+      CT:
+        autocorr:        -0.30
+        flip_rate:        0.30
+        impulse_revert:   0.40
+        drift_tscore_30: -0.20
+      CST:
+        rv_30:           -0.30
+        er_30:           -0.20
+        volume_zscore:   -0.20
+        range_expansion: -0.15
+
+    # ── GENUS ────────────────────────────────────────────────
+    genus:
+      RUN:
+        drift_tscore_30:  0.50
+        er_30:            0.30
+        flip_rate:       -0.20
+        autocorr:         0.10
+      PBM:
+        impulse_revert:   0.40
+        autocorr:        -0.30
+        er_30:           -0.10
+        rv_delta:        -0.10
+      FLG:
+        rv_delta:        -0.30
+        er_60:            0.30
+        volume_zscore:   -0.15
+        flip_rate:        0.10
+      VWM:
+        volume_zscore:    0.40
+        illiquidity:     -0.20
+        median_cross:     0.15
+      RRO:
+        median_cross:     0.40
+        autocorr:        -0.30
+        flip_rate:        0.20
+      SRR:
+        impulse_revert:   0.45
+        autocorr:        -0.25
+        flip_rate:        0.30
+        rv_delta:         0.10
+        # MFT L2-proxy weights at GENUS level (most granular)
+        ofi_proxy:        0.20   # directional OFI proxy for all directional genera
+        dissipation_proxy: 0.20  # field character discriminator
+        absorption_score:  0.15  # confirms S/R holding (VWM, RRO)
+        d_mass_dt:        0.15   # mass collapse precedes RUN (momentum) genus
+      RUN:
+        d_mass_dt:       -0.20   # mass collapse → momentum run fuel
+      VWM:
+        absorption_score:  0.25  # high absorption → volume wall matched
+        mass:             0.15   # deep book at strike level
+      RRO:
+        absorption_score:  0.20  # ranging range oscillation confirmed by absorption
+      FLG:
+        d_mass_dt:        0.15   # consolidating mass → flag continuation
+
+# ── Projection Engine — AR(1) regime priors ─────────────────
+# x_{t+1}^r = mu_r + phi_r*(x_t - mu_r) + beta_r*Delta_x_t
+# sigma_r: residual noise std (for variance mixture)
+projection:
+  regimes:
+    TREND_UP:
+      mu:    0.30
+      phi:   0.90
+      beta:  0.10
+      sigma: 0.15
+    TREND_DN:
+      mu:   -0.30
+      phi:   0.90
+      beta:  0.10
+      sigma: 0.15
+    RANGE:
+      mu:    0.00
+      phi:   0.20
+      beta:  0.00
+      sigma: 0.20
+    BREAKOUT_UP:
+      mu:    0.50
+      phi:   0.95
+      beta:  0.20
+      sigma: 0.25
+    BREAKOUT_DN:
+      mu:   -0.50
+      phi:   0.95
+      beta:  0.20
+      sigma: 0.25
+    EXHAUST_REV:
+      mu:    0.00
+      phi:  -0.20
+      beta: -0.10
+      sigma: 0.30
+    LOWVOL:
+      mu:    0.00
+      phi:   0.30
+      beta:  0.00
+      sigma: 0.08
+    HIGHVOL:
+      mu:    0.00
+      phi:   0.60
+      beta:  0.05
+      sigma: 0.35
+
+# ── Confidence ───────────────────────────────────────────────
+confidence:
+  epsilon: 1.0e-8
+  # Both features are robust z-scores from FeatureEngine
+  liquidity_volume_scale: 0.5   # sigmoid(vol_zscore * scale)
+  liquidity_gap_scale:    0.5   # sigmoid(-|gap_zscore| * scale)
+
+  # Interface 4: blend ratio between species-pattern validity weights
+  # and entropy-weighted affinity weights. 0 = validity-only, 1 = affinity-only.
+  affinity_blend: 0.5
+
+  # Interface 6: quadratic composite blending. 1.0 = pure linear (original
+  # behaviour). Lower values allow cross-indicator interactions to modulate.
+  interaction_alpha: 0.7
+
+# ── Scanner ──────────────────────────────────────────────────
+scanner:
+  min_bars: 300          # minimum bars required to run engine
+  lookback_bars: 60      # bars used for most recent feature window
+  top_n: 20             # top N tickers to return
+
+# ── Indicator Library — per-indicator config ─────────────────
+indicators:
+  rsi:
+    period: 14
+    type: A
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+    type: B
+  stochastic:
+    k_period: 14
+    d_period: 3
+    type: A
+  roc:
+    period: 10
+    type: B
+  vwap_dev:
+    session_minutes: 390
+    type: D
+  cmf:
+    period: 20
+    type: A
+  range_pos:
+    period: 20
+    type: A
+  momentum:
+    period: 10
+    type: B
+  atr_ratio:
+    atr_period: 14
+    ma_period: 50
+    type: B
+  vol_profile_dev:
+    period: 30
+    type: D
+
+# ── Phase 2: Options Gamma Overlay ───────────────────────────
+gamma:
+  enabled: false              # set true when AV_API_KEY has options access
+  # How often to refresh the options chain (seconds)
+  refresh_interval_s: 3600
+  # Number of strikes each side of ATM to include in GEX computation
+  strike_range: 20
+  # ATM window as fraction of spot (e.g. 0.15 = ±15%)
+  atm_window_pct: 0.15
+  # Expiry filters (calendar days)
+  min_expiry_days: 1
+  max_expiry_days: 90
+  # Gamma wall classification thresholds
+  # |gamma_net| > strong_gex_threshold → price expected to pin at wall
+  strong_gex_threshold: 1.0e8  # in $ gamma units
+  # Distance features
+  max_wall_distance_pct: 0.10  # clip at 10% from spot
+
+# ── Variable Registry — assumption-free state-space model ────
+# Every quantity here is an initial prior, not a fixed constant.
+# All values will adapt over time via their own update equations.
+# The only true constants are in bounds.rho_min / rho_max.
+variable_registry:
+
+  # ── Initial priors (starting values before market data arrives) ──
+  initial_priors:
+
+    # Natural timescale τ(t)
+    tau: 20.0             # initial autocorrelation decay lag (bars)
+    rho_tau: 0.05         # initial meta-learning rate for τ
+    tau_threshold: 0.10   # initial autocorr magnitude threshold (30th pct quantile)
+
+    # Smoothing constants η_L(t) per taxonomy level
+    # These match the current config values so initial behaviour is identical.
+    # They will adapt based on regime velocity and prediction error.
+    eta:
+      kingdom: 0.10
+      phylum:  0.12
+      class_:  0.15
+      order:   0.18
+      family:  0.20
+      genus:   0.22
+    kappa_eta: 0.05       # how fast η adapts toward η_target
+    beta_eta: 2.0         # steepness of η_target sigmoid
+
+    # Condition matrix C(i, k, t) — starts at zero
+    # (Prior signal-node weights come from MSL matrices + config energy)
+    lambda_C: 0.05        # initial adaptation rate for C
+    rho_C: 0.05           # meta-learning rate for lambda_C
+
+    # Signal weights α_j(t) and windows W_j(t)
+    W_j_init: 60.0        # initial adaptive window per signal (bars)
+
+    # Projection parameters θ_r(t) — seeded from projection.regimes below
+    # They will adapt via weighted gradient on prediction error.
+    Gamma_init: 0.01      # initial per-param, per-regime learning rate
+    theta_r:
+      TREND_UP:    {mu:  0.30, phi: 0.90, beta: 0.10, sigma: 0.15}
+      TREND_DN:    {mu: -0.30, phi: 0.90, beta: 0.10, sigma: 0.15}
+      RANGE:       {mu:  0.00, phi: 0.20, beta: 0.00, sigma: 0.20}
+      BREAKOUT_UP: {mu:  0.50, phi: 0.95, beta: 0.20, sigma: 0.25}
+      BREAKOUT_DN: {mu: -0.50, phi: 0.95, beta: 0.20, sigma: 0.25}
+      EXHAUST_REV: {mu:  0.00, phi: -0.20, beta: -0.10, sigma: 0.30}
+      LOWVOL:      {mu:  0.00, phi: 0.30, beta: 0.00, sigma: 0.08}
+      HIGHVOL:     {mu:  0.00, phi: 0.60, beta: 0.05, sigma: 0.35}
+
+    # Cone parameters σ(H, t)
+    sigma_cone_init: 0.10  # initial empirical cone width per horizon
+    cone_window: 200        # rolling buffer length for cone error accumulation
+
+    # Projection horizons H_k(t) — EMA of observed transition times per level
+    # No assumed H2/H1 ratio. Data will reveal the true scale relationships.
+    H_k_init:
+      kingdom: 120.0
+      phylum:   60.0
+      class_:   40.0
+      order:    20.0
+      family:   10.0
+      genus:     5.0
+    alpha_H: 0.05           # adaptation rate for H_k
+
+    # Cross-scale consistency
+    consistency_init: 0.5   # initial micro-macro agreement estimate
+    W_con_init: 60.0        # initial consistency window (bars)
+    lambda_con_init: 0.05   # initial consistency adaptation rate
+
+  # ── Stability bounds (the ONLY true constants in the framework) ──
+  # These are not parameters — they are hard limits on learning rates
+  # to prevent numerical instability. Nothing else is hardcoded.
+  bounds:
+    rho_min: 0.0001        # minimum learning rate (stability floor)
+    rho_max: 0.50          # maximum learning rate (stability ceiling)
+    eta_min: 0.02          # smoothing constant lower bound
+    eta_max: 0.60          # smoothing constant upper bound
+    C_max:   3.0           # condition matrix cell magnitude bound
+    alpha_j_lr: 0.05       # signal weight update step size
+    M_lr: 0.02             # interaction matrix update step size
+    W_min: 10.0            # minimum adaptive window length (bars)
+    W_max: 500.0           # maximum adaptive window length (bars)
+    W_lr: 0.02             # window length update step size
+    persistence_lr: 0.02   # regime persistence update step size
+    tau_transition_lr: 0.05 # transition time EMA step size
+    W_con_min: 10.0        # minimum consistency window
+    W_con_max: 500.0       # maximum consistency window
+
+# ── Phase 3: Polygon.io Live L2 Feed ─────────────────────────
+polygon:
+  enabled: false              # set true when POLYGON_API_KEY is set
+  api_key: ""                 # override with env var POLYGON_API_KEY
+  # WebSocket configuration
+  ws_url: "wss://socket.polygon.io/stocks"
+  reconnect_delay_s: 5
+  max_reconnect_attempts: 10
+  # OFI and book-imbalance computation
+  book_depth_levels: 5        # number of price levels to track each side
+  ofi_window_trades: 200      # rolling window for true OFI computation
+  # REST fallback (when WebSocket unavailable)
+  rest_fallback: true
+  rest_cache_ttl_s: 30        # quote snapshot TTL for REST fallback
+  # Graceful degradation: emit zero signals if no data available
+  zero_on_missing: true
+
+# ── Options Engine (L1/L2/L3 regime-conditioned options trading) ───────
+options_engine:
+  # Expiry targets (days to expiration)
+  target_dte_short: 21          # front-month (premium selling, defined-risk)
+  target_dte_long:  45          # main expiry (directional, long vol)
+  target_dte_back:  60          # back-month (calendar spreads)
+  # Volatility regime classification
+  iv_high_ratio:   1.30         # IV/HV > 1.30 → HIGH_IV (sell premium)
+  iv_low_ratio:    0.80         # IV/HV < 0.80 → LOW_IV  (buy vol)
+  # GEX regime classification
+  gex_pin_thresh:  0.30         # gamma_net >  0.30 → PINNING
+  gex_amp_thresh: -0.30         # gamma_net < -0.30 → AMPLIFY
+  # Strike selection
+  spread_width_pct: 0.05        # OTM spread width as % of spot (5% = 5 pts on $100)
+  min_oi:           10          # minimum open interest to consider a strike
+  min_iv:           0.05        # minimum IV (5%) to treat as valid
+  # Options data
+  max_chain_exps:   4           # max number of expiries to fetch from yfinance
+
+# ── Auto Learning (automated backtest learning cycles) ─────────────────
+auto_learning:
+  # Rolling-window backtest parameters
+  min_warmup_bars:  100         # minimum bars before scoring begins
+  window_bars:      500         # bars per learning window
+  stride_bars:      50          # bars between window starts
+  # Lesson feedback parameters
+  lesson_lr:        0.02        # learning rate for VariableRegistry updates
+  error_clip:       2.00        # clip prediction error magnitude
+  lesson_decay:     0.95        # decay factor applied each cycle
+  # Performance targets
+  accuracy_target:  0.55        # per-regime accuracy goal; below → tighten
+  # Scheduling
+  auto_run_every_n_bars: 50     # run learning cycle every N trading iterations
+
+# ── Parameter Tuner (regime × GEX × liquidity conditioned thresholds) ──
+param_tuner:
+  # Adaptive learning
+  learning_rate: 0.02           # rate at which lessons adjust parameter banks
+  decay:         0.995          # decay toward defaults between updates
+  # Position size bounds
+  max_pos_mult:  2.00           # maximum position size multiplier
+  min_pos_mult:  0.00           # minimum (0 = skip trade entirely)
+  # Feature toggles
+  enable_gex:       true        # apply GEX overlay in tune()
+  enable_liquidity: true        # apply L2 liquidity overlay in tune()
+  # Persistence (leave empty to disable)
+  persist_path: ""              # e.g. "logs/param_tuner_banks.yaml"
+  # Per-regime overrides (merged with built-in defaults at startup)
+  # regime_banks:
+  #   TREND_UP:
+  #     signal_threshold: 0.12
+  #     position_size_mult: 1.10

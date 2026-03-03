@@ -1,90 +1,163 @@
 #!/usr/bin/env python3
 """
-Run a walk-forward backtest. With no data in data/bars, uses synthetic 1m bars.
+scripts/run_backtest.py
+========================
+CLI entry point for running a Phi-nance backtest from the command line.
 
-  python -m scripts.run_backtest                    # synthetic, 1 ticker, 1 fold
-  python -m scripts.run_backtest --tickers SPY QQQ  # synthetic, 2 tickers
-  python -m scripts.run_backtest --data-root data/bars  # use Parquet store if present
+Usage
+-----
+    python scripts/run_backtest.py \\
+        --symbol SPY \\
+        --start  2022-01-01 \\
+        --end    2024-12-31 \\
+        --tf     1D \\
+        --vendor yfinance \\
+        --indicators RSI MACD Bollinger \\
+        --blend  weighted_sum \\
+        --capital 100000 \\
+        --phiai
 
-Output: per-fold and mean OOS AUC, cone coverage (50/75/90), and gate (mean AUC >= 0.52).
+Output
+------
+Prints a summary table to stdout and saves the run to the local runs/ store.
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
-# Add project root so phinence is importable
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import pandas as pd
-
-from phinence.assignment.engine import AssignmentEngine
-from phinence.composer.composer import Composer
-from phinence.engines.hedge import HedgeEngine
-from phinence.engines.liquidity import LiquidityEngine
-from phinence.engines.regime import RegimeEngine
-from phinence.engines.sentiment import SentimentEngine
-from phinence.store.memory_store import InMemoryBarStore
-from phinence.store.parquet_store import ParquetBarStore
-from phinence.validation.backtest_runner import make_synthetic_bars, run_backtest_fold
-from phinence.validation.walk_forward import WFMode, WalkForwardHarness, expanding_windows
+# ── Path setup ────────────────────────────────────────────────────────────────
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description="Run WF backtest (synthetic or data/bars).")
-    p.add_argument("--tickers", nargs="+", default=["SPY"], help="Tickers to run")
-    p.add_argument("--start", default="2023-01-01", help="Start date (synthetic or filter)")
-    p.add_argument("--end", default="2024-06-30", help="End date")
-    p.add_argument("--data-root", type=str, default="", help="Path to data/bars (Parquet). If empty, use synthetic.")
-    p.add_argument("--mode", choices=["intraday", "daily"], default="daily")
-    args = p.parse_args()
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Phi-nance command-line backtest runner",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument("--symbol",     default="SPY",  help="Ticker symbol")
+    p.add_argument("--start",      default="2022-01-01", help="Start date YYYY-MM-DD")
+    p.add_argument("--end",        default="2024-12-31", help="End date YYYY-MM-DD")
+    p.add_argument("--tf",         default="1D",   help="Timeframe (1D, 1H, 15m …)")
+    p.add_argument("--vendor",     default="yfinance",
+                   choices=["yfinance", "alphavantage", "binance"])
+    p.add_argument("--indicators", nargs="+",
+                   default=["RSI", "MACD"],
+                   help="Indicator names (e.g. RSI MACD Bollinger)")
+    p.add_argument("--blend",      default="weighted_sum",
+                   choices=["weighted_sum", "voting", "regime_weighted", "phiai_chooses"],
+                   help="Blend method")
+    p.add_argument("--capital",    type=float, default=100_000.0, help="Initial capital")
+    p.add_argument("--threshold",  type=float, default=0.15,  help="Signal threshold")
+    p.add_argument("--position",   type=float, default=0.95,  help="Position size (0–1)")
+    p.add_argument("--phiai",      action="store_true",       help="Run PhiAI optimisation")
+    p.add_argument("--max-iter",   type=int,   default=20,    help="PhiAI max iterations")
+    p.add_argument("--api-key",    default="",  help="Alpha Vantage API key (if needed)")
+    p.add_argument("--no-cache",   action="store_true",       help="Bypass data cache")
+    return p.parse_args()
 
-    if args.data_root and Path(args.data_root).exists():
-        bar_store = ParquetBarStore(Path(args.data_root))
-        tickers = args.tickers if args.tickers else bar_store.list_tickers()
-        if not tickers:
-            print("No tickers in store; falling back to synthetic.")
-            bar_store = InMemoryBarStore()
-            for t in args.tickers:
-                df = make_synthetic_bars(t, args.start, args.end, seed=hash(t) % 10000)
-                bar_store.put_1m_bars(t, df)
-            tickers = args.tickers
-    else:
-        bar_store = InMemoryBarStore()
-        for t in args.tickers:
-            df = make_synthetic_bars(t, args.start, args.end, seed=hash(t) % 10000)
-            bar_store.put_1m_bars(t, df)
-        tickers = args.tickers
 
-    mode = WFMode.DAILY if args.mode == "daily" else WFMode.INTRADAY
-    harness = WalkForwardHarness(mode=mode)
-    assigner = AssignmentEngine(bar_store)
-    composer = Composer()
-    engines = {
-        "liquidity": LiquidityEngine(),
-        "regime": RegimeEngine(),
-        "sentiment": SentimentEngine(),
-        "hedge": HedgeEngine(),
+def main() -> int:
+    args = parse_args()
+
+    from phinance.data import fetch_and_cache
+    from phinance.backtest import run_backtest
+    from phinance.storage import RunHistory
+    from phinance.config.run_config import RunConfig
+
+    print(f"\n{'='*60}")
+    print(f"  Phi-nance CLI Backtest Runner")
+    print(f"{'='*60}")
+    print(f"  Symbol    : {args.symbol}")
+    print(f"  Period    : {args.start} → {args.end}")
+    print(f"  Timeframe : {args.tf}")
+    print(f"  Vendor    : {args.vendor}")
+    print(f"  Indicators: {', '.join(args.indicators)}")
+    print(f"  Blend     : {args.blend}")
+    print(f"  Capital   : ${args.capital:,.0f}")
+    print(f"  PhiAI     : {'on' if args.phiai else 'off'}")
+    print(f"{'='*60}\n")
+
+    # ── Fetch data ────────────────────────────────────────────────────────
+    print("⬇  Fetching data…")
+    df = fetch_and_cache(
+        vendor    = args.vendor,
+        symbol    = args.symbol,
+        timeframe = args.tf,
+        start     = args.start,
+        end       = args.end,
+        api_key   = args.api_key or None,
+    )
+    print(f"   Loaded {len(df):,} bars  [{df.index[0].date()} → {df.index[-1].date()}]\n")
+
+    # ── Indicator config ──────────────────────────────────────────────────
+    indicators = {
+        name: {"enabled": True, "auto_tune": args.phiai, "params": {}}
+        for name in args.indicators
     }
-    start_ts = pd.Timestamp(args.start)
-    end_ts = pd.Timestamp(args.end)
-    folds = list(expanding_windows(start_ts, end_ts, mode))
-    if not folds:
-        print("Not enough date range for a single fold.")
-        return
-    all_metrics: list[dict] = []
-    for ticker in tickers:
-        for fold in folds:
-            m = harness.run_fold(fold, ticker, bar_store, assigner, engines, composer)
-            all_metrics.append(m)
-            print(f"  {ticker} fold {fold.test_start.date()}–{fold.test_end.date()}: AUC={m['oos_auc']:.3f} cone50/75/90={m['cone_50']:.2%}/{m['cone_75']:.2%}/{m['cone_90']:.2%} n={m.get('n_obs', 0)}")
-    mean_auc = sum(x["oos_auc"] for x in all_metrics) / len(all_metrics)
-    mean_c75 = sum(x["cone_75"] for x in all_metrics) / len(all_metrics)
-    gate = "PASS" if harness.gate_passed(all_metrics) else "FAIL"
-    print(f"Mean OOS AUC: {mean_auc:.3f}  Mean 75%% cone: {mean_c75:.2%}  Gate (>=0.52): {gate}")
+
+    # ── PhiAI optimisation ────────────────────────────────────────────────
+    if args.phiai:
+        from phinance.optimization import run_phiai_optimization
+        print(f"🤖 PhiAI optimising {len(indicators)} indicator(s) "
+              f"({args.max_iter} iter each)…")
+        indicators, explanation = run_phiai_optimization(
+            ohlcv                  = df,
+            indicators             = indicators,
+            max_iter_per_indicator = args.max_iter,
+            timeframe              = args.tf,
+        )
+        print(f"\n{explanation}\n")
+
+    # ── Run backtest ──────────────────────────────────────────────────────
+    print("🚀 Running backtest…")
+    result = run_backtest(
+        ohlcv            = df,
+        symbol           = args.symbol,
+        indicators       = indicators,
+        blend_method     = args.blend,
+        signal_threshold = args.threshold,
+        initial_capital  = args.capital,
+        position_size_pct= args.position,
+    )
+
+    # ── Print results ─────────────────────────────────────────────────────
+    print(f"\n{'─'*40}")
+    print(f"  Results for {args.symbol}")
+    print(f"{'─'*40}")
+    print(f"  Total Return  : {result.total_return:+.2%}")
+    print(f"  CAGR          : {result.cagr:+.2%}")
+    print(f"  Max Drawdown  : -{result.max_drawdown:.2%}")
+    print(f"  Sharpe Ratio  : {result.sharpe:.3f}")
+    print(f"  Sortino Ratio : {result.sortino:.3f}")
+    print(f"  Win Rate      : {result.win_rate:.1%}")
+    print(f"  Total Trades  : {result.total_trades}")
+    print(f"  Net P&L       : ${result.net_pl:+,.2f}")
+    print(f"{'─'*40}\n")
+
+    # ── Persist run ───────────────────────────────────────────────────────
+    cfg = RunConfig(
+        symbols         = [args.symbol],
+        start_date      = args.start,
+        end_date        = args.end,
+        timeframe       = args.tf,
+        vendor          = args.vendor,
+        initial_capital = args.capital,
+        indicators      = indicators,
+        blend_method    = args.blend,
+        phiai_enabled   = args.phiai,
+    )
+    history = RunHistory()
+    run_id  = history.create_run(cfg)
+    history.save_results(run_id, result.to_dict())
+    print(f"💾 Run saved:  {run_id}\n")
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

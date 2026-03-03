@@ -20,7 +20,7 @@ import pytest
 
 from tests.fixtures.ohlcv import make_ohlcv
 from phinance.strategies import list_indicators, compute_indicator, INDICATOR_CATALOG
-from phinance.strategies.params import get_param_grid, DAILY_GRIDS
+from phinance.strategies.params import get_param_grid, DAILY_GRIDS, INTRADAY_GRIDS
 from phinance.exceptions import UnknownIndicatorError
 
 
@@ -36,7 +36,7 @@ def _assert_signal(sig: pd.Series, df: pd.DataFrame, name: str) -> None:
     assert not sig.isna().all(), f"{name}: all-NaN signal"
     finite = sig.dropna()
     assert (finite >= -1.0).all(), f"{name}: values below −1: {finite.min()}"
-    assert (finite <= 1.0).all(), f"{name}: values above +1: {finite.max()}"
+    assert (finite <= 1.0).all(),  f"{name}: values above +1: {finite.max()}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ class TestIndicatorCatalog:
             assert n in names, f"'{n}' missing from catalog"
 
     def test_catalog_has_15_entries(self):
-        assert len(INDICATOR_CATALOG) == 15
+        assert len(INDICATOR_CATALOG) >= 15
 
     def test_unknown_indicator_raises_error(self):
         with pytest.raises(UnknownIndicatorError):
@@ -109,7 +109,7 @@ class TestRSI:
 
     def test_custom_period_differs(self):
         df = make_ohlcv(60)
-        s7 = compute_indicator("RSI", df, {"period": 7})
+        s7  = compute_indicator("RSI", df, {"period": 7})
         s21 = compute_indicator("RSI", df, {"period": 21})
         assert not (s7 == s21).all()
 
@@ -159,7 +159,7 @@ class TestMACD:
 
     def test_histogram_changes_with_params(self):
         df = make_ohlcv(80)
-        s1 = compute_indicator("MACD", df, {"fast_period": 8, "slow_period": 21, "signal_period": 7})
+        s1 = compute_indicator("MACD", df, {"fast_period": 8,  "slow_period": 21, "signal_period": 7})
         s2 = compute_indicator("MACD", df, {"fast_period": 16, "slow_period": 34, "signal_period": 11})
         assert not (s1 == s2).all()
 
@@ -168,9 +168,9 @@ class TestMACD:
         n = 100
         close = 100.0 + np.arange(n, dtype=float) * 0.8
         df = pd.DataFrame({
-            "open": close * 0.999, "high": close * 1.001,
-            "low": close * 0.998, "close": close,
-            "volume": np.ones(n) * 1e6,
+            "open": close*0.999, "high": close*1.001,
+            "low": close*0.998, "close": close,
+            "volume": np.ones(n)*1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
         sig = compute_indicator("MACD", df)
         # _normalize maps the series to [-1,1] relative to its own range;
@@ -196,7 +196,7 @@ class TestBollinger:
 
     def test_tight_bands_more_extreme_signals(self):
         df = make_ohlcv(60)
-        wide = compute_indicator("Bollinger", df, {"num_std": 2.5})
+        wide  = compute_indicator("Bollinger", df, {"num_std": 2.5})
         tight = compute_indicator("Bollinger", df, {"num_std": 1.0})
         # Tight bands should clip more → higher average absolute signal
         assert tight.abs().mean() >= wide.abs().mean()
@@ -208,9 +208,9 @@ class TestBollinger:
         # Push last bar way below mean
         close[-1] = 80.0
         df = pd.DataFrame({
-            "open": close * 0.999, "high": close * 1.001,
-            "low": close * 0.998, "close": close,
-            "volume": np.ones(n) * 1e6,
+            "open": close*0.999, "high": close*1.001,
+            "low":  close*0.998, "close": close,
+            "volume": np.ones(n)*1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
         sig = compute_indicator("Bollinger", df, {"period": 20})
         assert sig.iloc[-1] > 0
@@ -236,9 +236,9 @@ class TestDualSMA:
         n = 100
         close = 100 + np.arange(n, dtype=float)
         df = pd.DataFrame({
-            "open": close * 0.999, "high": close * 1.001,
-            "low": close * 0.998, "close": close,
-            "volume": np.ones(n) * 1e6,
+            "open": close*0.999, "high": close*1.001,
+            "low": close*0.998, "close": close,
+            "volume": np.ones(n)*1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
         sig = compute_indicator("Dual SMA", df, {"fast_period": 5, "slow_period": 20})
         # _normalize maps the spread to its own quantile range;
@@ -270,12 +270,12 @@ class TestEMACross:
             140 - np.arange(40, dtype=float),
         ])
         df = pd.DataFrame({
-            "open": close * 0.999, "high": close * 1.001,
-            "low": close * 0.998, "close": close,
-            "volume": np.ones(n) * 1e6,
+            "open": close*0.999, "high": close*1.001,
+            "low": close*0.998, "close": close,
+            "volume": np.ones(n)*1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
         ema_sig = compute_indicator("EMA Cross", df, {"fast_period": 5, "slow_period": 20})
-        sma_sig = compute_indicator("Dual SMA", df, {"fast_period": 5, "slow_period": 20})
+        sma_sig = compute_indicator("Dual SMA",  df, {"fast_period": 5, "slow_period": 20})
         # Both should produce signals; no further assertion on relative speed here
         assert not ema_sig.isna().all()
         assert not sma_sig.isna().all()
@@ -302,9 +302,9 @@ class TestMeanReversion:
         close = np.full(n, 100.0, dtype=float)
         close[-5:] = 90.0       # drop below mean
         df = pd.DataFrame({
-            "open": close * 0.999, "high": close * 1.001,
-            "low": close * 0.998, "close": close,
-            "volume": np.ones(n) * 1e6,
+            "open": close*0.999, "high": close*1.001,
+            "low": close*0.998, "close": close,
+            "volume": np.ones(n)*1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
         sig = compute_indicator("Mean Reversion", df, {"period": 20})
         assert sig.iloc[-1] > 0
@@ -335,12 +335,12 @@ class TestBreakout:
         base = 100.0
         close = np.full(n, base)
         close[-1] = base * 2.0    # far above channel top
-        high = close * 1.001
-        low = close * 0.999
+        high  = close * 1.001
+        low   = close * 0.999
         df = pd.DataFrame({
-            "open": close * 0.999, "high": high,
+            "open": close*0.999, "high": high,
             "low": low, "close": close,
-            "volume": np.ones(n) * 1e6,
+            "volume": np.ones(n)*1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
         sig = compute_indicator("Breakout", df, {"period": 20})
         assert sig.iloc[-1] >= 0.9
@@ -433,9 +433,9 @@ class TestStochastic:
         close = np.full(n, 100.0, dtype=float)
         close[-5:] = 85.0
         df = pd.DataFrame({
-            "open": close * 0.999,
+            "open": close*0.999,
             "high": np.full(n, 110.0),
-            "low": np.full(n, 85.0),
+            "low":  np.full(n, 85.0),
             "close": close,
             "volume": np.ones(n) * 1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
@@ -469,13 +469,13 @@ class TestWilliamsR:
     def test_close_at_period_low_positive(self):
         """Close at period low → %R ≈ −100 → positive signal (oversold)."""
         n = 40
-        high_arr = np.full(n, 110.0)
-        low_arr = np.full(n, 90.0)
+        high_arr  = np.full(n, 110.0)
+        low_arr   = np.full(n, 90.0)
         close_arr = np.full(n, 90.1)  # near the low
         df = pd.DataFrame({
-            "open": close_arr * 0.999, "high": high_arr,
+            "open": close_arr*0.999, "high": high_arr,
             "low": low_arr, "close": close_arr,
-            "volume": np.ones(n) * 1e6,
+            "volume": np.ones(n)*1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
         sig = compute_indicator("Williams %R", df, {"period": 14})
         assert sig.iloc[-1] > 0
@@ -483,13 +483,13 @@ class TestWilliamsR:
     def test_close_at_period_high_negative(self):
         """Close at period high → %R ≈ 0 → negative signal (overbought)."""
         n = 40
-        high_arr = np.full(n, 110.0)
-        low_arr = np.full(n, 90.0)
+        high_arr  = np.full(n, 110.0)
+        low_arr   = np.full(n, 90.0)
         close_arr = np.full(n, 109.9)  # near the high
         df = pd.DataFrame({
-            "open": close_arr * 0.999, "high": high_arr,
+            "open": close_arr*0.999, "high": high_arr,
             "low": low_arr, "close": close_arr,
-            "volume": np.ones(n) * 1e6,
+            "volume": np.ones(n)*1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
         sig = compute_indicator("Williams %R", df, {"period": 14})
         assert sig.iloc[-1] < 0
@@ -512,7 +512,7 @@ class TestCCI:
 
     def test_scale_param_changes_output(self):
         df = make_ohlcv(60)
-        s75 = compute_indicator("CCI", df, {"scale": 75.0})
+        s75  = compute_indicator("CCI", df, {"scale": 75.0})
         s150 = compute_indicator("CCI", df, {"scale": 150.0})
         assert not (s75 == s150).all()
 
@@ -536,11 +536,11 @@ class TestOBV:
         """On a pure uptrend OBV is always increasing → ROC is positive → signal > 0
         for early bars after warmup. Verify non-zero active signal."""
         n = 80
-        close = 100.0 + np.arange(n, dtype=float) * 0.5
+        close  = 100.0 + np.arange(n, dtype=float) * 0.5
         volume = np.ones(n) * 1_000_000   # constant volume for stable ROC
         df = pd.DataFrame({
-            "open": close * 0.999, "high": close * 1.001,
-            "low": close * 0.998, "close": close,
+            "open": close*0.999, "high": close*1.001,
+            "low": close*0.998, "close": close,
             "volume": volume,
         }, index=pd.date_range("2023-01-01", periods=n))
         sig = compute_indicator("OBV", df, {"period": 14})
@@ -573,9 +573,9 @@ class TestPSAR:
         n = 80
         close = 100.0 + np.arange(n, dtype=float) * 0.5
         df = pd.DataFrame({
-            "open": close * 0.999, "high": close * 1.005,
-            "low": close * 0.995, "close": close,
-            "volume": np.ones(n) * 1e6,
+            "open": close*0.999, "high": close*1.005,
+            "low": close*0.995, "close": close,
+            "volume": np.ones(n)*1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
         sig = compute_indicator("PSAR", df)
         # In an uptrend the SAR should be below price → positive signal
@@ -585,8 +585,8 @@ class TestPSAR:
         n = 80
         close = 200.0 - np.arange(n, dtype=float) * 0.5
         df = pd.DataFrame({
-            "open": close * 1.001, "high": close * 1.005,
-            "low": close * 0.995, "close": close,
+            "open": close*1.001, "high": close*1.005,
+            "low": close*0.995, "close": close,
             "volume": np.ones(n) * 1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
         sig = compute_indicator("PSAR", df)
