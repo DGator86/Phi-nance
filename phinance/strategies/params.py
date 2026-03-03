@@ -118,6 +118,32 @@ DAILY_GRIDS: Dict[str, Dict[str, list]] = {
         "step_af":    [0.01, 0.02, 0.03],
         "max_af":     [0.10, 0.20, 0.30],
     },
+
+    # ── Advanced indicators (added phase: Aroon, Ulcer, KST, TRIX, Mass Index)
+
+    "Aroon": {
+        "period": [14, 20, 25, 30, 40],
+    },
+
+    "Ulcer Index": {
+        "period": [7, 10, 14, 20, 28],
+    },
+
+    "KST": {
+        "roc1":   [8, 10, 12],
+        "roc4":   [25, 30, 35],
+        "signal": [7, 9, 12],
+    },
+
+    "TRIX": {
+        "period": [10, 12, 15, 18, 21],
+        "signal": [7, 9, 12],
+    },
+
+    "Mass Index": {
+        "fast_period": [7, 9, 12],
+        "slow_period": [20, 25, 30],
+    },
 }
 
 # ── Intraday parameter grids  ─────────────────────────────────────────────────
@@ -201,6 +227,32 @@ INTRADAY_GRIDS: Dict[str, Dict[str, list]] = {
         "initial_af": [0.01, 0.02, 0.03],
         "step_af":    [0.01, 0.02, 0.03],
         "max_af":     [0.10, 0.20, 0.30],
+    },
+
+    # ── Advanced indicators (intraday grids — shorter periods)
+
+    "Aroon": {
+        "period": [8, 10, 14, 20, 25],
+    },
+
+    "Ulcer Index": {
+        "period": [5, 7, 10, 14, 20],
+    },
+
+    "KST": {
+        "roc1":   [6, 8, 10],
+        "roc4":   [18, 22, 25],
+        "signal": [5, 7, 9],
+    },
+
+    "TRIX": {
+        "period": [7, 9, 12, 15],
+        "signal": [5, 7, 9],
+    },
+
+    "Mass Index": {
+        "fast_period": [5, 7, 9],
+        "slow_period": [15, 20, 25],
     },
 }
 

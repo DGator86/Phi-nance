@@ -34,6 +34,11 @@ Registered indicators
   CCI           — Commodity Channel Index
   OBV           — On-Balance Volume momentum
   PSAR          — Parabolic SAR trend-following
+  Aroon         — Aroon Oscillator trend strength
+  Ulcer Index   — Downside-risk / drawdown severity
+  KST           — Know Sure Thing multi-period momentum
+  TRIX          — Triple Smoothed EMA momentum oscillator
+  Mass Index    — High-low range expansion reversal indicator
 """
 
 from __future__ import annotations
@@ -57,6 +62,11 @@ from phinance.strategies.williams_r    import WilliamsRIndicator
 from phinance.strategies.cci           import CCIIndicator
 from phinance.strategies.obv           import OBVIndicator
 from phinance.strategies.psar          import PSARIndicator
+from phinance.strategies.aroon         import AroonIndicator
+from phinance.strategies.ulcer_index   import UlcerIndexIndicator
+from phinance.strategies.kst           import KSTIndicator
+from phinance.strategies.trix          import TRIXIndicator
+from phinance.strategies.mass_index    import MassIndexIndicator
 
 # ── Registry ─────────────────────────────────────────────────────────────────
 
@@ -76,6 +86,11 @@ INDICATOR_CATALOG: Dict[str, Any] = {
     "CCI":            CCIIndicator(),
     "OBV":            OBVIndicator(),
     "PSAR":           PSARIndicator(),
+    "Aroon":          AroonIndicator(),
+    "Ulcer Index":    UlcerIndexIndicator(),
+    "KST":            KSTIndicator(),
+    "TRIX":           TRIXIndicator(),
+    "Mass Index":     MassIndexIndicator(),
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
