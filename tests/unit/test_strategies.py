@@ -587,7 +587,7 @@ class TestPSAR:
         df = pd.DataFrame({
             "open": close*1.001, "high": close*1.005,
             "low": close*0.995, "close": close,
-            "volume": np.ones(n)*1e6,
+            "volume": np.ones(n) * 1e6,
         }, index=pd.date_range("2023-01-01", periods=n))
         sig = compute_indicator("PSAR", df)
         assert sig.iloc[-10:].mean() < 0
@@ -621,7 +621,7 @@ class TestParamGrids:
 
     def test_daily_and_intraday_differ(self):
         """RSI daily period grid should differ from intraday grid."""
-        daily    = get_param_grid("RSI", "1D")
+        daily = get_param_grid("RSI", "1D")
         intraday = get_param_grid("RSI", "15m")
         assert daily["period"] != intraday["period"]
 
@@ -638,7 +638,7 @@ class TestParamGrids:
 
     def test_intraday_grids_have_smaller_windows(self):
         """Intraday RSI default period should be smaller than daily."""
-        daily_max    = max(get_param_grid("RSI", "1D")["period"])
+        daily_max = max(get_param_grid("RSI", "1D")["period"])
         intraday_max = max(get_param_grid("RSI", "15m")["period"])
         assert intraday_max <= daily_max
 
@@ -663,7 +663,7 @@ class TestIndicatorParamVariation:
     def test_macd_params_vary(self):
         self._check_params_differ(
             "MACD",
-            {"fast_period": 8,  "slow_period": 21},
+            {"fast_period": 8, "slow_period": 21},
             {"fast_period": 16, "slow_period": 34},
         )
 
