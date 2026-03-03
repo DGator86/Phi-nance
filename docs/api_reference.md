@@ -629,3 +629,209 @@ def fetch_data(): ...
 | `ConfigurationError` | Invalid RunConfig |
 | `RunNotFoundError` | Run ID not in storage |
 | `OptimizationError` | PhiAI search failure |
+
+---
+
+## phinance.options.iv_surface
+
+Implied Volatility Surface — build, interpolate, smile, and term-structure.
+
+### `build_iv_surface(quotes, spot, r=0.05, as_of=None, reference_date=None)`
+
+Build an `IVSurface` from a DataFrame of option quotes.
+
+**Required DataFrame columns:** `strike`, `expiry`, `option_type`, `bid`, `ask`
+
+```python
+from phinance.options.iv_surface import build_iv_surface
+
+surf = build_iv_surface(quotes_df, spot=450.0, r=0.05,
+                        reference_date=date(2026, 3, 3))
+```
+
+### `IVSurface` methods
+
+| Method | Returns | Description |
+|---|---|---|
+| `expiries()` | `list[str]` | Sorted expiry date strings |
+| `strikes()` | `list[float]` | Sorted strike prices |
+| `smile_for_expiry(expiry)` | `pd.Series` | Strike → IV for one expiry |
+| `term_structure(moneyness=1.0)` | `pd.Series` | ATM IV per expiry |
+| `interpolate(strike, T, method)` | `float` | Bilinear / nearest IV interpolation |
+| `to_dataframe()` | `pd.DataFrame` | All IVPoints as tidy table |
+
+### `interpolate_iv(surface, strike, T, method="bilinear")`
+
+Wrapper for `surface.interpolate()`.
+
+### `smile_for_expiry(surface, expiry)` / `term_structure(surface, moneyness=1.0)`
+
+Convenience wrappers for surface methods.
+
+---
+
+## phinance.agents
+
+Agentic AI layer — deterministic and LLM-backed agents with orchestration.
+
+### `AgentBase` (abstract)
+
+```python
+from phinance.agents.base import AgentBase, AgentResult
+
+class MyAgent(AgentBase):
+    @property
+    def name(self) -> str:
+        return "MyAgent"
+
+    def analyze(self, context: dict) -> AgentResult:
+        signal = context.get("signal", 0.0)
+        action = "buy" if signal > 0.3 else "sell" if signal < -0.3 else "hold"
+        return AgentResult(agent=self.name, action=action, confidence=abs(signal),
+                           rationale=f"Signal: {signal:.3f}")
+```
+
+#### `AgentResult` attributes
+
+| Field | Type | Description |
+|---|---|---|
+| `agent` | str | Agent name |
+| `action` | str | `"buy"` \| `"sell"` \| `"hold"` |
+| `confidence` | float | 0.0–1.0 |
+| `rationale` | str | Human-readable explanation |
+| `data` | dict | Optional payload (regime, signal, etc.) |
+| `signal_value` | float (property) | action × confidence in [-1, 1] |
+
+### `RuleBasedAgent`
+
+Fast, deterministic agent. No LLM or network required.
+
+```python
+from phinance.agents import RuleBasedAgent
+agent = RuleBasedAgent(buy_threshold=0.3, sell_threshold=-0.3, regime_boost=0.15)
+result = agent.analyze({"signal": 0.7, "regime": "TREND_UP"})
+# result.action → "buy", result.confidence → 0.85
+```
+
+### `AgentOrchestrator`
+
+Multi-agent pipeline with regime detection, signal blending, and optional backtest oversight.
+
+```python
+from phinance.agents import AgentOrchestrator, RuleBasedAgent
+
+orch = AgentOrchestrator(
+    agents=[RuleBasedAgent()],
+    blend_method="weighted_sum",
+    backtest_fn=my_backtest_fn,   # optional: (ohlcv) → dict
+)
+result = orch.run(
+    ohlcv_df,
+    indicators={"RSI": {"enabled": True, "params": {}}},
+)
+print(result.consensus_action)   # "buy" / "sell" / "hold"
+print(result.summary)            # human-readable pipeline summary
+```
+
+#### `OrchestratorResult` attributes
+
+| Field | Type | Description |
+|---|---|---|
+| `consensus_action` | str | Aggregated vote |
+| `consensus_conf` | float | Confidence-weighted average |
+| `regime` | str | Detected market regime |
+| `composite_signal` | float | Blended indicator signal |
+| `agent_results` | list[AgentResult] | Per-agent details |
+| `backtest_summary` | dict | Optional backtest stats |
+| `summary` | str | Human-readable summary paragraph |
+| `elapsed_ms` | float | Pipeline wall-clock time |
+
+### `run_with_agents(ohlcv, agents=None, indicators=None, weights=None, ...)`
+
+One-shot convenience wrapper:
+
+```python
+from phinance.agents import run_with_agents
+result = run_with_agents(ohlcv_df, indicators={"RSI": {"enabled": True, "params": {}}})
+```
+
+### `OllamaAgent`
+
+Local LLM agent via Ollama:
+
+```python
+from phinance.agents import OllamaAgent, check_ollama_ready
+if check_ollama_ready():
+    agent = OllamaAgent(model="llama3.2")
+    reply = agent.chat("Analyse: regime TREND_UP, signal +0.7")
+```
+
+---
+
+## phinance.blending (refactored)
+
+The blending engine is split into 4 focused modules:
+
+| Module | Responsibility |
+|---|---|
+| `blender.py` | Public `blend_signals()` dispatcher |
+| `methods.py` | Pure blend implementations (weighted_sum, voting, regime_weighted) |
+| `regime_detector.py` | `detect_regime()` OHLCV → label Series, `regime_to_probs()` |
+| `weights.py` | `normalise_weights`, `equal_weights`, `boost_weights`, `regime_adjusted_weights` |
+
+### `blend_signals(signals, weights=None, method="weighted_sum", regime_probs=None)`
+
+```python
+from phinance.blending import blend_signals
+
+composite = blend_signals(
+    signals_df,
+    weights={"RSI": 0.4, "MACD": 0.6},
+    method="regime_weighted",
+    regime_probs=regime_probs_df,
+)
+```
+
+### `detect_regime(ohlcv, lookback=20)`
+
+Returns a `pd.Series` of regime labels: `TREND_UP`, `TREND_DN`, `RANGE`, `HIGHVOL`, `LOWVOL`, `BREAKOUT_UP`, `BREAKOUT_DN`.
+
+```python
+from phinance.blending.regime_detector import detect_regime, regime_to_probs
+labels = detect_regime(ohlcv_df)
+probs  = regime_to_probs(labels)   # one-hot probability DataFrame
+```
+
+### Blend methods
+
+| Method | Description |
+|---|---|
+| `weighted_sum` | Linear weighted average |
+| `voting` | Majority vote with optional threshold |
+| `regime_weighted` | Regime-aware boost/dampen using `REGIME_INDICATOR_BOOST` |
+| `phiai_chooses` | Placeholder → delegates to weighted_sum |
+
+---
+
+## phinance.optimization.phiai
+
+### `PhiAI` config class
+
+```python
+from phinance.optimization.phiai import PhiAI, run_phiai_optimization
+
+config = PhiAI(max_indicators=5, allow_shorts=False, risk_cap=0.02)
+
+optimized, explanation = run_phiai_optimization(
+    ohlcv_df,
+    indicators={"RSI": {"enabled": True, "auto_tune": True, "params": {}}},
+    max_iter_per_indicator=20,
+    timeframe="1D",
+)
+print(config.explain())
+```
+
+### `run_phiai_optimization(ohlcv, indicators, max_iter_per_indicator=20, timeframe="1D")`
+
+Returns `(optimized_indicators: dict, explanation: str)`.
+Uses `ThreadPoolExecutor` for parallel random search across indicators.
