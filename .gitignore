@@ -1,11 +1,25 @@
+# Python
 __pycache__/
-*.pyc
-.env
-.av_cache/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Distribution / packaging
+dist/
+build/
 *.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Ruff cache
+.ruff_cache/
+
+# OS
 .DS_Store
-data/cache/
-data_cache/
-runs/
-logs/
-*.parquet
