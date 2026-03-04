@@ -1,14 +1,7 @@
-"""
-Phi-nance Blending Module
-=========================
+"""Phi blending public API."""
 
-Blend multiple indicator signals:
-  - Weighted Sum
-  - Regime-Weighted
-  - Voting
-  - PhiAI Chooses
-"""
+from .blender import blend_signals
+from .manual import REGIME_INDICATOR_BOOST
+from .registry import BLEND_METHODS
 
-from .blender import blend_signals, BLEND_METHODS
-
-__all__ = ["blend_signals", "BLEND_METHODS"]
+__all__ = ["blend_signals", "BLEND_METHODS", "REGIME_INDICATOR_BOOST"]

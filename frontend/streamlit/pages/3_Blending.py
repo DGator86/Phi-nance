@@ -34,18 +34,26 @@ if not active:
     st.stop()
 
 # ── Method selection ──────────────────────────────────────────────────────────
+ai_mode = st.toggle("AI Mode", value=st.session_state.get("blend_method") == "ai_driven")
+
 blend_method = st.radio(
     "Blend Method",
     BLEND_METHODS,
-    index=BLEND_METHODS.index(st.session_state.get("blend_method", "weighted_sum")),
+    index=BLEND_METHODS.index(st.session_state.get("blend_method", "weighted_sum")) if st.session_state.get("blend_method", "weighted_sum") in BLEND_METHODS else 0,
     horizontal=True,
 )
+
+if ai_mode:
+    blend_method = "phiai_chooses"
+    c1, c2 = st.columns(2)
+    c1.checkbox("Auto-tune blend weights", value=True, key="blend_ai_autotune")
+    c2.slider("AI blend window (bars)", 10, 500, 100, 10, key="blend_ai_window")
 
 _METHOD_HELP = {
     "weighted_sum":     "Linear weighted average of all signals.",
     "voting":           "Each indicator votes +1/0/-1; majority wins.",
     "regime_weighted":  "Weights are boosted for indicators that excel in the current regime.",
-    "phiai_chooses":    "PhiAI selects and adjusts weights automatically (placeholder).",
+    "phiai_chooses":    "PhiAI-inspired blending using pre-tuned or auto-derived weights.",
 }
 st.info(_METHOD_HELP.get(blend_method, ""), icon="ℹ️")
 
