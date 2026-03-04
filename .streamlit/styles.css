@@ -252,6 +252,8 @@ hr {
 /* ── Chart containers — match theme ── */
 [data-testid="stVerticalBlock"] > div[style*="border"] {
     border-color: rgba(168, 85, 247, 0.2) !important;
+}
+
 /* =============================================================================
    PHI-NANCE PREMIUM DASHBOARD v3.0
    $250/mo SaaS-Grade UI
