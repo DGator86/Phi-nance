@@ -34,6 +34,22 @@ from phinance.agents.orchestrator import (
     OrchestratorResult,
     run_with_agents,
 )
+from phinance.agents.strategy_proposer import StrategyProposerAgent, StrategyProposal
+from phinance.agents.strategy_validator import StrategyValidator, ValidationResult
+from phinance.agents.autonomous_deployer import (
+    AutonomousDeployer,
+    DeploymentRecord,
+    DeploymentStatus,
+    StrategyRegistry,
+)
+from phinance.agents.autonomous_pipeline import AutonomousPipeline, PipelineRunResult
+from phinance.agents.evolution_engine import (
+    EvolutionEngine,
+    EvolutionConfig,
+    Individual,
+    GenerationResult,
+    run_evolution,
+)
 
 __all__ = [
     # base interfaces
@@ -49,4 +65,21 @@ __all__ = [
     "AgentOrchestrator",
     "OrchestratorResult",
     "run_with_agents",
+    # agentic autonomy
+    "StrategyProposerAgent",
+    "StrategyProposal",
+    "StrategyValidator",
+    "ValidationResult",
+    "AutonomousDeployer",
+    "DeploymentRecord",
+    "DeploymentStatus",
+    "StrategyRegistry",
+    "AutonomousPipeline",
+    "PipelineRunResult",
+    # evolution
+    "EvolutionEngine",
+    "EvolutionConfig",
+    "Individual",
+    "GenerationResult",
+    "run_evolution",
 ]

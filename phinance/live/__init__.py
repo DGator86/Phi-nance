@@ -52,6 +52,8 @@ try:
 except ImportError:  # pragma: no cover
     IBKRBroker = None  # type: ignore[assignment,misc]
 
+from phinance.live.scheduler import TradingScheduler, SchedulerConfig, ScheduledTick, run_paper_scheduler
+
 __all__ = [
     "BrokerAdapter",
     "OrderSide",
@@ -62,5 +64,9 @@ __all__ = [
     "Position",
     "PaperBroker",
     "LiveTradingLoop",
+    "TradingScheduler",
+    "SchedulerConfig",
+    "ScheduledTick",
+    "run_paper_scheduler",
     *__all_brokers__,
 ]
