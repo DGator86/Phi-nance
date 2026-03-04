@@ -29,6 +29,7 @@ from datetime import date, datetime
 # Suppress Lumibot pandas FutureWarning (Series.__getitem__)
 warnings.filterwarnings("ignore", category=FutureWarning, module="lumibot.entities.bars")
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
@@ -570,6 +571,10 @@ def render_dataset_builder():
             initial_capital = st.number_input("Initial Capital ($)", value=100_000, min_value=1_000,
                                                step=10_000, key="ds_cap")
 
+    if start_d >= end_d:
+        st.error("Start date must be before end date.")
+        return None
+
     if initial_capital <= 0:
         st.error("Initial capital must be > 0")
         return None
@@ -1065,108 +1070,476 @@ def _render_phibot_review(config, results, strat, indicators, blend_method, blen
 
 
 # ---------------------------------------------------------------------------
+# Results — helper builders
+# ---------------------------------------------------------------------------
+
+def _monthly_returns_pivot(prediction_log: list, portfolio_values: list) -> pd.DataFrame:
+    """Return a year × month pivot of monthly returns, or empty DataFrame."""
+    if not prediction_log or len(portfolio_values) < 10:
+        return pd.DataFrame()
+    try:
+        dates = [r.get("date") for r in prediction_log if r.get("date") is not None]
+        pvs = portfolio_values[1 : len(dates) + 1]
+        if len(dates) < 5 or len(pvs) < 5:
+            return pd.DataFrame()
+        series = pd.Series(pvs, index=pd.DatetimeIndex(dates)).sort_index()
+        try:
+            monthly = series.resample("ME").last()
+        except ValueError:
+            monthly = series.resample("M").last()
+        monthly_ret = monthly.pct_change().dropna()
+        if len(monthly_ret) < 2:
+            return pd.DataFrame()
+        _M = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
+              7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
+        df = pd.DataFrame({
+            "year": monthly_ret.index.year,
+            "month": monthly_ret.index.month,
+            "ret": monthly_ret.values,
+        })
+        pivot = df.pivot(index="year", columns="month", values="ret")
+        pivot.columns = [_M.get(c, str(c)) for c in pivot.columns]
+        return pivot
+    except Exception:
+        return pd.DataFrame()
+
+
+def _trade_statistics(prediction_log: list) -> dict:
+    """Reconstruct trade P&L from the bar-by-bar signal log."""
+    if not prediction_log:
+        return {}
+    trades = []
+    in_trade = False
+    entry_price = 0.0
+    entry_idx = 0
+    for i, row in enumerate(prediction_log):
+        sig = row.get("signal", "NEUTRAL")
+        price = float(row.get("price") or 0)
+        prev_sig = prediction_log[i - 1].get("signal", "NEUTRAL") if i > 0 else "NEUTRAL"
+        if sig == "UP" and prev_sig != "UP" and not in_trade and price > 0:
+            in_trade, entry_price, entry_idx = True, price, i
+        elif sig in ("DOWN", "NEUTRAL") and prev_sig == "UP" and in_trade and price > 0:
+            in_trade = False
+            trades.append({"pnl": price - entry_price, "bars": i - entry_idx})
+    if not trades:
+        return {}
+    pnls = [t["pnl"] for t in trades]
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
+    gross_loss = abs(sum(losses))
+    return {
+        "total_trades": len(trades),
+        "win_rate": len(wins) / len(trades),
+        "avg_bars_held": float(np.mean([t["bars"] for t in trades])),
+        "profit_factor": abs(sum(wins)) / gross_loss if gross_loss > 0 else float("inf"),
+        "avg_win": float(np.mean(wins)) if wins else 0.0,
+        "avg_loss": float(np.mean(losses)) if losses else 0.0,
+        "largest_win": float(max(wins)) if wins else 0.0,
+        "largest_loss": float(min(losses)) if losses else 0.0,
+    }
+
+
+def _make_equity_fig(prediction_log: list, portfolio_values: list, cap: float):
+    """Equity curve with buy ▲ / sell ▼ entry markers."""
+    pvs = portfolio_values[1 : len(prediction_log) + 1] if prediction_log else portfolio_values[1:]
+    if len(pvs) < 2:
+        return None
+    has_dates = bool(prediction_log and prediction_log[0].get("date") is not None)
+    x_vals = [r.get("date") for r in prediction_log[: len(pvs)]] if has_dates else list(range(len(pvs)))
+    line_color = "#22c55e" if pvs[-1] > cap else "#ef4444"
+    fill_color = "rgba(34,197,94,0.05)" if pvs[-1] > cap else "rgba(239,68,68,0.05)"
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=x_vals, y=pvs, mode="lines",
+        line=dict(color=line_color, width=2, shape="spline", smoothing=0.3),
+        fill="tozeroy", fillcolor=fill_color, name="Portfolio",
+        hovertemplate="<b>%{x}</b><br>$%{y:,.0f}<extra></extra>",
+    ))
+    if prediction_log:
+        buy_x, buy_y, sell_x, sell_y = [], [], [], []
+        for i, (row, pv) in enumerate(zip(prediction_log[: len(pvs)], pvs)):
+            sig = row.get("signal")
+            prev = prediction_log[i - 1].get("signal") if i > 0 else "NEUTRAL"
+            xi = row.get("date", i) if has_dates else i
+            if sig == "UP" and prev != "UP":
+                buy_x.append(xi); buy_y.append(pv)
+            elif sig != "UP" and prev == "UP":
+                sell_x.append(xi); sell_y.append(pv)
+        if buy_x:
+            fig.add_trace(go.Scatter(
+                x=buy_x, y=buy_y, mode="markers", name="Buy",
+                marker=dict(symbol="triangle-up", size=9, color="#22c55e",
+                            line=dict(color="#15803d", width=1)),
+                hovertemplate="BUY $%{y:,.0f}<extra></extra>",
+            ))
+        if sell_x:
+            fig.add_trace(go.Scatter(
+                x=sell_x, y=sell_y, mode="markers", name="Sell",
+                marker=dict(symbol="triangle-down", size=9, color="#ef4444",
+                            line=dict(color="#b91c1c", width=1)),
+                hovertemplate="SELL $%{y:,.0f}<extra></extra>",
+            ))
+    fig.add_hline(y=cap, line_dash="dot", line_color="rgba(148,163,184,0.2)",
+                  annotation_text=f"Start ${cap:,.0f}", annotation_font_color="#7a7a90",
+                  annotation_font_size=10)
+    fig.update_layout(
+        yaxis_tickformat="$,.0f",
+        legend=dict(orientation="h", yanchor="bottom", y=1.0, xanchor="right", x=1),
+        margin=dict(l=50, r=20, t=30, b=30),
+    )
+    return fig
+
+
+def _make_drawdown_fig(portfolio_values: list):
+    """Underwater drawdown area chart."""
+    if not portfolio_values or len(portfolio_values) < 2:
+        return None
+    pv = np.array(portfolio_values, dtype=float)
+    peak = np.maximum.accumulate(pv)
+    dd = (pv - peak) / (peak + 1e-12) * 100
+    fig = go.Figure(go.Scatter(
+        y=dd, mode="lines",
+        line=dict(color="rgba(239,68,68,0.7)", width=1.5),
+        fill="tozeroy", fillcolor="rgba(239,68,68,0.1)",
+        name="Drawdown", hovertemplate="%{y:.1f}%<extra></extra>",
+    ))
+    fig.update_layout(
+        yaxis_title="Drawdown", yaxis_ticksuffix="%",
+        margin=dict(l=50, r=20, t=10, b=30),
+    )
+    return fig
+
+
+def _make_monthly_heatmap_fig(pivot_df: pd.DataFrame):
+    """Calendar heatmap of monthly returns — red/green diverging."""
+    if pivot_df.empty:
+        return None
+    z = pivot_df.values * 100
+    abs_max = float(max(np.nanmax(np.abs(z)), 1.0))
+    text_vals = [[f"{v:+.1f}%" if not np.isnan(v) else "" for v in row] for row in z]
+    fig = go.Figure(data=go.Heatmap(
+        z=z, x=list(pivot_df.columns), y=[str(y) for y in pivot_df.index],
+        text=text_vals, texttemplate="%{text}",
+        textfont=dict(size=11, family="'JetBrains Mono','Courier New',monospace", color="#eeeef2"),
+        colorscale=[
+            [0.0,  "#7f1d1d"], [0.2, "#b91c1c"], [0.45, "#3d0d0d"],
+            [0.5,  "#131318"],
+            [0.55, "#0d3d0d"], [0.8, "#15803d"], [1.0,  "#14532d"],
+        ],
+        zmid=0, zmin=-abs_max, zmax=abs_max, showscale=False,
+        hovertemplate="<b>%{y} %{x}</b><br>%{text}<extra></extra>",
+    ))
+    fig.update_layout(
+        xaxis=dict(side="top", tickfont=dict(size=11)),
+        yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
+        margin=dict(l=50, r=20, t=40, b=10),
+    )
+    return fig
+
+
+def _make_annual_returns_fig(pivot_df: pd.DataFrame):
+    """Bar chart of approximate annual returns from monthly pivot."""
+    if pivot_df.empty:
+        return None
+    annual = pivot_df.sum(axis=1) * 100
+    colors = ["#22c55e" if v >= 0 else "#ef4444" for v in annual.values]
+    fig = go.Figure(go.Bar(
+        x=[str(y) for y in annual.index], y=annual.values,
+        marker_color=colors, marker_opacity=0.85,
+        text=[f"{v:+.1f}%" for v in annual.values], textposition="outside",
+        textfont=dict(size=11, family="'JetBrains Mono',monospace"),
+        hovertemplate="<b>%{x}</b>: %{y:.1f}%<extra></extra>",
+    ))
+    fig.update_layout(
+        yaxis_ticksuffix="%", showlegend=False,
+        margin=dict(l=40, r=20, t=20, b=30),
+    )
+    return fig
+
+
+def _make_blend_fig(indicators: dict, blend_weights: dict):
+    """Horizontal weight bars for active indicators."""
+    enabled = [k for k, v in indicators.items()
+               if isinstance(v, dict) and v.get("enabled", True)]
+    if not enabled:
+        return None
+    total = sum(blend_weights.get(k, 1.0) for k in enabled) or 1.0
+    pcts = [blend_weights.get(k, 1.0) / total * 100 for k in enabled]
+    fig = go.Figure(go.Bar(
+        y=enabled, x=pcts, orientation="h",
+        marker=dict(color=CHART_COLORS[: len(enabled)], opacity=0.85),
+        text=[f"{p:.0f}%" for p in pcts], textposition="inside",
+        textfont=dict(size=11),
+        hovertemplate="%{y}: %{x:.1f}%<extra></extra>",
+    ))
+    fig.update_layout(
+        xaxis_ticksuffix="%", yaxis=dict(autorange="reversed"),
+        showlegend=False, margin=dict(l=10, r=20, t=10, b=20),
+    )
+    return fig
+
+
+# ---------------------------------------------------------------------------
 # Results Display
 # ---------------------------------------------------------------------------
 def _display_results(config, results, strat, indicators, blend_method, blend_weights, sc=None):
+    if results is None:
+        st.error("Backtest produced no results.")
+        return
     sc = sc or {}
-    tr = _extract_scalar(getattr(results, "total_return", None) or results.get("total_return"))
-    cagr = _extract_scalar(getattr(results, "cagr", None) or results.get("cagr"))
-    dd = _extract_scalar(getattr(results, "max_drawdown", None) or results.get("max_drawdown"))
-    sharpe = _extract_scalar(getattr(results, "sharpe", None) or results.get("sharpe"))
-    cap = config.get("initial_capital", 100_000)
-    pv = getattr(results, "portfolio_value", None)
-    if pv is None: pv = results.get("portfolio_value", [])
-    end_cap = pv[-1] if pv and len(pv) else cap
-    net_pl = end_cap - cap
-    net_pct = (net_pl / cap) * 100 if cap else 0
 
-    st.markdown(_render_section_header("", "RESULTS", "BACKTEST"), unsafe_allow_html=True)
+    # ── Extract scalars ────────────────────────────────────────────────────
+    tr     = float(_extract_scalar(getattr(results, "total_return", None) or results.get("total_return")) or 0)
+    cagr   = float(_extract_scalar(getattr(results, "cagr",         None) or results.get("cagr"))         or 0)
+    dd     = float(_extract_scalar(getattr(results, "max_drawdown", None) or results.get("max_drawdown")) or 0)
+    sharpe = float(_extract_scalar(getattr(results, "sharpe",       None) or results.get("sharpe"))       or 0)
+    cap    = float(config.get("initial_capital", 100_000))
+    pv     = list(getattr(results, "portfolio_value", None) or results.get("portfolio_value") or [])
+    end_cap = float(pv[-1]) if pv else cap
+    net_pl  = end_cap - cap
+    acc     = float(sc.get("accuracy", 0) or 0)
 
-    # Profit/Loss hero display
-    pl_color = "#22c55e" if net_pl >= 0 else "#ef4444"
+    plog    = (strat.prediction_log if strat and hasattr(strat, "prediction_log") else []) or []
+    tstats  = _trade_statistics(plog)
+    monthly = _monthly_returns_pivot(plog, pv)
+
+    # ── Derived display values ────────────────────────────────────────────
+    symbol     = (config.get("symbols") or ["--"])[0]
+    tf         = config.get("timeframe", "1D")
+    start_lbl  = str(config.get("start", ""))[:10]
+    end_lbl    = str(config.get("end",   ""))[:10]
+    n_ind      = len([v for v in indicators.values()
+                      if isinstance(v, dict) and v.get("enabled", True)])
+    blend_lbl  = blend_method.replace("_", " ").title()
+    pl_color   = "#22c55e" if net_pl >= 0 else "#ef4444"
+    ret_color  = "#22c55e" if tr   >= 0 else "#ef4444"
+    sh_color   = "#22c55e" if sharpe > 1 else ("#f97316" if sharpe > 0 else "#ef4444")
+    win_rate   = tstats.get("win_rate", 0)
+    pf         = tstats.get("profit_factor", 0)
+    n_trades   = tstats.get("total_trades", 0)
+    pf_str     = f"{pf:.2f}" if pf != float("inf") else "∞"
+
+    opt_metrics = ""
+    if n_trades > 0:
+        opt_metrics += f"""
+        <div class="phi-rm-item">
+          <div class="phi-rm-value">{win_rate:.0%}</div>
+          <div class="phi-rm-label">Win Rate</div>
+        </div>
+        <div class="phi-rm-item">
+          <div class="phi-rm-value">{pf_str}</div>
+          <div class="phi-rm-label">Profit Factor</div>
+        </div>"""
+
+    # ── Results banner ────────────────────────────────────────────────────
     st.markdown(f"""
-    <div style="text-align:center;padding:1.8rem;background:rgba(18,18,26,0.7);border-radius:16px;
-                border:1px solid {pl_color}22;margin-bottom:1.5rem;backdrop-filter:blur(16px);">
-        <div style="color:#7a7a90;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;font-weight:600;">
-            Net Profit / Loss
+    <div class="phi-results-banner">
+      <div class="phi-results-meta-row">
+        <span class="phi-results-symbol">{symbol}</span>
+        <span class="phi-meta-sep">◆</span>
+        <span class="phi-results-period">{start_lbl} → {end_lbl}</span>
+        <span class="phi-meta-sep">◆</span>
+        <span class="phi-results-tf">{tf}</span>
+        <span class="phi-meta-sep">◆</span>
+        <span class="phi-results-tf">{n_ind} indicator{"s" if n_ind != 1 else ""} · {blend_lbl}</span>
+      </div>
+      <div class="phi-results-metrics-row">
+        <div class="phi-rm-item phi-rm-hero">
+          <div class="phi-rm-value" style="color:{pl_color};font-size:2.4rem;">${net_pl:+,.0f}</div>
+          <div class="phi-rm-label">Net Profit / Loss</div>
         </div>
-        <div style="color:{pl_color};font-size:2.5rem;font-weight:800;font-family:'JetBrains Mono',monospace;
-                    letter-spacing:-0.04em;line-height:1.2;margin-top:0.3rem;">
-            ${net_pl:+,.0f}
+        <div class="phi-rm-divider"></div>
+        <div class="phi-rm-item">
+          <div class="phi-rm-value" style="color:{ret_color};">{tr:+.1%}</div>
+          <div class="phi-rm-label">Total Return</div>
         </div>
-        <div style="color:{pl_color};font-size:1rem;font-weight:600;opacity:0.8;font-family:'JetBrains Mono',monospace;">
-            {net_pct:+.1f}%
+        <div class="phi-rm-item">
+          <div class="phi-rm-value">{cagr:+.1%}</div>
+          <div class="phi-rm-label">CAGR</div>
         </div>
+        <div class="phi-rm-item">
+          <div class="phi-rm-value" style="color:{sh_color};">{sharpe:.2f}</div>
+          <div class="phi-rm-label">Sharpe</div>
+        </div>
+        <div class="phi-rm-item">
+          <div class="phi-rm-value" style="color:#ef4444;">{dd:.1%}</div>
+          <div class="phi-rm-label">Max Drawdown</div>
+        </div>
+        <div class="phi-rm-item">
+          <div class="phi-rm-value">{acc:.1%}</div>
+          <div class="phi-rm-label">Direction Acc</div>
+        </div>
+        {opt_metrics}
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
-    kpis = [
-        ("Start Capital", f"${cap:,.0f}", "", "neutral"),
-        ("End Capital", f"${end_cap:,.0f}", "", "positive" if end_cap > cap else "negative"),
-        ("CAGR", f"{cagr:+.1%}" if isinstance(cagr, (int, float)) else "--", "", "neutral"),
-        ("Sharpe", f"{sharpe:.2f}" if isinstance(sharpe, (int, float)) else "--", "", "neutral"),
-        ("Max Drawdown", f"{dd:.1%}" if isinstance(dd, (int, float)) else "--", "", "negative"),
-    ]
-    st.markdown(_render_kpi_row(kpis), unsafe_allow_html=True)
-
-    tab_curve, tab_summary, tab_trades, tab_metrics, tab_review = st.tabs(
-        ["Equity Curve", "Summary", "Trades", "Metrics", "🤖 Phibot Review"]
+    # ── 5 tabs ────────────────────────────────────────────────────────────
+    tab_ov, tab_mon, tab_tr, tab_met, tab_rev = st.tabs(
+        ["📈 Overview", "📅 Monthly Returns", "🔁 Trades", "📊 Metrics", "🤖 AI Review"]
     )
 
-    with tab_curve:
-        if pv and len(pv) > 1:
-            fig = go.Figure()
-            # Color the fill based on performance
-            fill_color = "rgba(34,197,94,0.06)" if pv[-1] > cap else "rgba(239,68,68,0.06)"
-            line_color = "#22c55e" if pv[-1] > cap else "#ef4444"
-            fig.add_trace(go.Scatter(
-                y=pv, mode="lines",
-                line=dict(color=line_color, width=2.5, shape="spline", smoothing=0.8),
-                fill="tozeroy", fillcolor=fill_color,
-                name="Portfolio", hovertemplate="$%{y:,.0f}<extra></extra>",
-            ))
-            fig.add_hline(y=cap, line_dash="dot", line_color="rgba(148,163,184,0.2)",
-                          annotation_text=f"Start: ${cap:,.0f}", annotation_font_color="#7a7a90")
-            fig.update_layout(
-                title=dict(text="EQUITY CURVE", font=dict(size=14, color="#7a7a90")),
-                yaxis_title="Portfolio Value ($)", yaxis_tickformat="$,.0f",
-            )
-            _phi_chart(fig, height=420)
+    # ── Tab 1: Overview ───────────────────────────────────────────────────
+    with tab_ov:
+        col_chart, col_stats = st.columns([3, 1])
+        with col_chart:
+            eq_fig = _make_equity_fig(plog, pv, cap)
+            if eq_fig:
+                st.markdown('<div class="phi-chart-label">EQUITY CURVE</div>', unsafe_allow_html=True)
+                _phi_chart(eq_fig, height=340)
+            dd_fig = _make_drawdown_fig(pv)
+            if dd_fig:
+                st.markdown('<div class="phi-chart-label">DRAWDOWN</div>', unsafe_allow_html=True)
+                _phi_chart(dd_fig, height=130)
+        with col_stats:
+            trade_rows = ""
+            if n_trades:
+                trade_rows = f"""
+                <div class="phi-stat-card">
+                  <div class="phi-stat-label">Total Trades</div>
+                  <div class="phi-stat-value">{n_trades}</div>
+                </div>
+                <div class="phi-stat-card">
+                  <div class="phi-stat-label">Avg Hold (bars)</div>
+                  <div class="phi-stat-value">{tstats.get('avg_bars_held', 0):.0f}</div>
+                </div>"""
+            st.markdown(f"""
+            <div class="phi-stat-stack">
+              <div class="phi-stat-card">
+                <div class="phi-stat-label">Start Capital</div>
+                <div class="phi-stat-value">${cap:,.0f}</div>
+              </div>
+              <div class="phi-stat-card">
+                <div class="phi-stat-label">End Capital</div>
+                <div class="phi-stat-value" style="color:{pl_color};">${end_cap:,.0f}</div>
+              </div>
+              {trade_rows}
+            </div>
+            """, unsafe_allow_html=True)
+            blend_fig = _make_blend_fig(indicators, blend_weights)
+            if blend_fig:
+                st.markdown('<div class="phi-chart-label">BLEND WEIGHTS</div>', unsafe_allow_html=True)
+                _phi_chart(blend_fig, height=max(160, 40 + 36 * n_ind))
 
-    with tab_summary:
-        c1, c2 = st.columns(2)
-        c1.metric("Max Drawdown", f"{dd:.1%}" if isinstance(dd, (int, float)) else "--")
-        acc = sc.get('accuracy', 0)
-        c2.metric("Direction Accuracy", f"{acc:.1%}" if isinstance(acc, (int, float)) else "--")
-
-    with tab_trades:
-        if strat and hasattr(strat, "prediction_log") and strat.prediction_log:
-            st.dataframe(pd.DataFrame(strat.prediction_log), use_container_width=True)
+    # ── Tab 2: Monthly Returns ────────────────────────────────────────────
+    with tab_mon:
+        if monthly.empty:
+            st.info("Need at least 60 days of bars for a monthly breakdown.")
         else:
-            st.caption("No trade log available.")
+            hm_fig = _make_monthly_heatmap_fig(monthly)
+            if hm_fig:
+                st.markdown('<div class="phi-chart-label">MONTHLY RETURNS</div>', unsafe_allow_html=True)
+                _phi_chart(hm_fig, height=max(180, 60 + 52 * len(monthly)))
+            ann_fig = _make_annual_returns_fig(monthly)
+            if ann_fig:
+                st.markdown('<div class="phi-chart-label">ANNUAL RETURNS</div>', unsafe_allow_html=True)
+                _phi_chart(ann_fig, height=220)
 
-    with tab_metrics:
-        payload = {"total_return": tr, "cagr": cagr, "max_drawdown": dd,
-                   "sharpe": sharpe, "accuracy": sc.get("accuracy")}
+    # ── Tab 3: Trades ─────────────────────────────────────────────────────
+    with tab_tr:
+        if not plog:
+            st.caption("No trade log available.")
+        else:
+            if tstats:
+                lg_win  = tstats.get("largest_win",  0)
+                lg_loss = tstats.get("largest_loss", 0)
+                av_win  = tstats.get("avg_win",  0)
+                av_loss = tstats.get("avg_loss", 0)
+                wr_col  = "#22c55e" if win_rate >= 0.5 else "#ef4444"
+                pf_col  = "#22c55e" if pf > 1 else "#ef4444"
+                st.markdown(f"""
+                <div class="phi-trade-stats-grid">
+                  <div class="phi-ts-card">
+                    <div class="phi-ts-label">Total Trades</div>
+                    <div class="phi-ts-value">{n_trades}</div>
+                  </div>
+                  <div class="phi-ts-card">
+                    <div class="phi-ts-label">Win Rate</div>
+                    <div class="phi-ts-value" style="color:{wr_col};">{win_rate:.1%}</div>
+                  </div>
+                  <div class="phi-ts-card">
+                    <div class="phi-ts-label">Profit Factor</div>
+                    <div class="phi-ts-value" style="color:{pf_col};">{pf_str}</div>
+                  </div>
+                  <div class="phi-ts-card">
+                    <div class="phi-ts-label">Avg Hold (bars)</div>
+                    <div class="phi-ts-value">{tstats.get("avg_bars_held", 0):.0f}</div>
+                  </div>
+                  <div class="phi-ts-card">
+                    <div class="phi-ts-label">Avg Win</div>
+                    <div class="phi-ts-value" style="color:#22c55e;">${av_win:+,.2f}</div>
+                  </div>
+                  <div class="phi-ts-card">
+                    <div class="phi-ts-label">Avg Loss</div>
+                    <div class="phi-ts-value" style="color:#ef4444;">${av_loss:+,.2f}</div>
+                  </div>
+                  <div class="phi-ts-card">
+                    <div class="phi-ts-label">Largest Win</div>
+                    <div class="phi-ts-value" style="color:#22c55e;">${lg_win:+,.2f}</div>
+                  </div>
+                  <div class="phi-ts-card">
+                    <div class="phi-ts-label">Largest Loss</div>
+                    <div class="phi-ts-value" style="color:#ef4444;">${lg_loss:+,.2f}</div>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+            df_log = pd.DataFrame(plog)
+            csv_bytes = df_log.to_csv(index=False).encode()
+            st.download_button(
+                label="⬇ Export Trade Log (CSV)",
+                data=csv_bytes,
+                file_name=f"phi_{symbol}_{start_lbl}_{end_lbl}.csv",
+                mime="text/csv",
+            )
+            st.dataframe(df_log, use_container_width=True, height=320)
+
+    # ── Tab 4: Metrics ────────────────────────────────────────────────────
+    with tab_met:
+        mc1, mc2 = st.columns(2)
+        with mc1:
+            st.markdown("**Returns**")
+            st.metric("Total Return", f"{tr:+.2%}")
+            st.metric("CAGR",         f"{cagr:+.2%}")
+        with mc2:
+            st.markdown("**Risk**")
+            st.metric("Max Drawdown", f"{dd:.2%}")
+            st.metric("Sharpe Ratio", f"{sharpe:.3f}")
+        payload: dict = {
+            "total_return": tr, "cagr": cagr,
+            "max_drawdown": dd, "sharpe": sharpe,
+            "direction_accuracy": acc,
+        }
+        if n_trades:
+            payload.update({
+                "total_trades": n_trades, "win_rate": win_rate,
+                "profit_factor": pf if pf != float("inf") else None,
+            })
         if isinstance(results, dict) and results.get("options_snapshot"):
-            payload["options_snapshot"] = results.get("options_snapshot")
+            payload["options_snapshot"] = results["options_snapshot"]
+        st.markdown("**Full payload**")
         st.json(payload)
 
-    with tab_review:
+    # ── Tab 5: AI Review ──────────────────────────────────────────────────
+    with tab_rev:
         _render_phibot_review(config, results, strat, indicators, blend_method, blend_weights)
 
+    # ── Persist run ───────────────────────────────────────────────────────
     from phi.run_config import RunConfig, RunHistory
+    _cfg_start = config.get("start", "")
+    _cfg_end   = config.get("end",   "")
     run_cfg = RunConfig(
         symbols=config.get("symbols", ["SPY"]),
-        start_date=str(config["start"].date()) if hasattr(config["start"], "date") else str(config["start"]),
-        end_date=str(config["end"].date()) if hasattr(config["end"], "date") else str(config["end"]),
+        start_date=str(_cfg_start.date()) if hasattr(_cfg_start, "date") else str(_cfg_start),
+        end_date=str(_cfg_end.date())     if hasattr(_cfg_end,   "date") else str(_cfg_end),
         timeframe=config.get("timeframe", "1D"), initial_capital=cap,
         indicators=indicators, blend_method=blend_method, blend_weights=blend_weights,
     )
     hist = RunHistory()
     run_id = hist.create_run(run_cfg)
-    hist.save_results(run_id, {"total_return": tr, "cagr": cagr, "max_drawdown": dd,
-                                "sharpe": sharpe, "accuracy": sc.get("accuracy"), "net_pl": net_pl})
+    hist.save_results(run_id, {
+        "total_return": tr, "cagr": cagr, "max_drawdown": dd,
+        "sharpe": sharpe, "accuracy": acc, "net_pl": net_pl,
+    })
     st.caption(f"Run saved: `{run_id}`")
 
 
@@ -1227,98 +1600,11 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
 
         def run_phiai():
             try:
-                opt_progress = st.progress(
-                    0, text="Running options backtest... 0%"
-                )
-                opt_result = [None]
-                opt_exc = [None]
-
-                def run_opt():
-                    try:
-                        dfs = st.session_state.get("workbench_dataset", {})
-                        sym = config["symbols"][0]
-                        ohlcv = dfs.get(sym)
-                        if ohlcv is None or ohlcv.empty:
-                            msg = "No data for options backtest. Fetch first."
-                            raise ValueError(msg)
-
-                        bt_opts = st.session_state.get(
-                            "bt_options_controls", {}
-                        )
-                        # pylint: disable=import-outside-toplevel
-                        from phi.options import run_options_backtest
-                        opt_result[0] = run_options_backtest(
-                            ohlcv,
-                            symbol=sym,
-                            strategy_type=bt_opts.get(
-                                "strategy_type", "long_call"
-                            ),
-                            initial_capital=config.get(
-                                "initial_capital", 100_000
-                            ),
-                            position_pct=0.1,
-                            exit_profit_pct=bt_opts.get(
-                                "exit_profit_pct", 0.5
-                            ),
-                            exit_stop_pct=bt_opts.get(
-                                "exit_stop_pct", -0.3
-                            ),
-                        )
-                    except Exception as e:  # pylint: disable=broad-except
-                        opt_exc[0] = e
-
-                th_opt = threading.Thread(target=run_opt)
-                th_opt.start()
-                pct = 0
-                start_t = time.time()
-                while th_opt.is_alive():
-                    time.sleep(0.2)
-                    elapsed = time.time() - start_t
-                    pct = min(95, int(elapsed * 25))  # ramps quickly
-                    opt_progress.progress(
-                        pct / 100,
-                        text=f"Running options backtest... {pct}%"
-                    )
-                if (oe := opt_exc[0]) is not None:
-                    opt_progress.empty()
-                    # pylint: disable=raising-bad-type
-                    raise oe
-                results = opt_result[0]
-                opt_progress.progress(1.0, text="Complete — 100%")
-                time.sleep(0.3)
-                opt_progress.empty()
-                if results:
-                    _display_results(
-                        config, results, None, indicators_to_use,
-                        blend_method, blend_weights
-                    )
-                else:
-                    st.error("Options backtest returned no results.")
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                st.error(str(e))
-                st.exception(e)
-            return
-
-        # Equities: direct vectorized backtest (no Lumibot dependency)
-        progress = st.progress(0, text="Preparing backtest... 0%")
-
-        try:
-            sym = config["symbols"][0]
-            dfs = st.session_state.get("workbench_dataset", {})
-            ohlcv = dfs.get(sym)
-            if ohlcv is None or (hasattr(ohlcv, "empty") and ohlcv.empty):
-                progress.empty()
-                st.error(
-                    "No dataset loaded. Complete Step 1 (Fetch & Cache Data) first."
-                )
-                return
-
-            # Run direct backtest in thread with live progress %
-            result_holder = [None]
-            exc_holder = [None]
                 if _ohlcv is not None and len(_ohlcv) > 100:
                     from phi.phiai import run_phiai_optimization
-                    phiai_result[0] = run_phiai_optimization(_ohlcv, indicators_to_use, max_iter_per_indicator=15)
+                    phiai_result[0] = run_phiai_optimization(
+                        _ohlcv, indicators_to_use, max_iter_per_indicator=15
+                    )
             except Exception as ex:
                 phiai_exc[0] = ex
 
@@ -1345,26 +1631,13 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
 
             def run_opt():
                 try:
-                    # pylint: disable=import-outside-toplevel
-                    from phi.backtest import run_direct_backtest
-                    result_holder[0] = run_direct_backtest(
-                        ohlcv=ohlcv,
-                        symbol=sym,
-                        indicators=indicators_to_use,
-                        blend_weights=blend_weights,
-                        blend_method=blend_method,
-                        signal_threshold=_signal_threshold,
-                        initial_capital=config["initial_capital"],
-                        position_size_pct=_position_size_pct,
-                    )
-                except Exception as e:  # pylint: disable=broad-except
-                    exc_holder[0] = e
                     dfs = st.session_state.get("workbench_dataset", {})
                     sym = config["symbols"][0]
                     ohlcv = dfs.get(sym)
                     if ohlcv is None or ohlcv.empty:
-                        raise ValueError("No data")
+                        raise ValueError("No data for options backtest. Fetch first.")
                     bt_opts = st.session_state.get("bt_options_controls", {})
+                    # pylint: disable=import-outside-toplevel
                     from phi.options import run_options_backtest
                     opt_result[0] = run_options_backtest(
                         ohlcv, symbol=sym,
@@ -1374,40 +1647,20 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
                         exit_profit_pct=bt_opts.get("exit_profit_pct", 0.5),
                         exit_stop_pct=bt_opts.get("exit_stop_pct", -0.3),
                     )
-                except Exception as e:
+                except Exception as e:  # pylint: disable=broad-except
                     opt_exc[0] = e
 
-            th = threading.Thread(target=run_opt)
-            th.start()
+            th_opt = threading.Thread(target=run_opt)
+            th_opt.start()
             start_t = time.time()
-            while th.is_alive():
-                time.sleep(0.3)
-                elapsed = time.time() - start_t
-                pct = min(95, 5 + int(elapsed * 8))
-                progress.progress(
-                    pct / 100, text=f"Running backtest... {pct}%"
-                )
-
-            if (eh := exc_holder[0]) is not None:
-                # pylint: disable=raising-bad-type
-                raise eh
-
-            if (res_h := result_holder[0]) is not None:
-                results, strat = res_h
-                progress.progress(1.0, text="Complete — 100%")
-                time.sleep(0.3)
-                progress.empty()
-
-                has_log = hasattr(strat, "prediction_log")
-                sc = _compute_accuracy(strat) if has_log else {}
-                _display_results(
-                    config, results, strat, indicators_to_use,
-                    blend_method, blend_weights, sc
-                )
+            while th_opt.is_alive():
                 time.sleep(0.2)
-                pct = min(95, int((time.time() - start_t) * 25))
-                opt_progress.progress(pct / 100, text=f"Options backtest... {pct}%")
-            if opt_exc[0]: raise opt_exc[0]
+                elapsed = time.time() - start_t
+                pct = min(95, int(elapsed * 25))
+                opt_progress.progress(pct / 100, text=f"Running options backtest... {pct}%")
+            if opt_exc[0]:
+                opt_progress.empty()
+                raise opt_exc[0]  # pylint: disable=raising-bad-type
             results = opt_result[0]
             opt_progress.progress(1.0, text="Complete!")
             time.sleep(0.3)
@@ -1416,104 +1669,50 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
                 _display_results(config, results, None, indicators_to_use, blend_method, blend_weights)
             else:
                 st.error("No results returned.")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             st.error(str(e))
         return
 
-    # Equities backtest
-    use_blended = len(indicators_to_use) >= 2
-    progress = st.progress(0, text="Preparing backtest...")
+    # Equities backtest — direct vectorized path (no Lumibot)
+    progress = st.progress(0, text="Running backtest...")
 
     try:
-        if use_blended:
-            strat_cls = _load_strategy("strategies.blended_workbench_strategy.BlendedWorkbenchStrategy")
-            params = {"symbol": config["symbols"][0], "indicators": indicators_to_use,
-                      "blend_method": blend_method, "blend_weights": blend_weights,
-                      "signal_threshold": _signal_threshold, "lookback_bars": 200}
-        else:
-            first_name = list(indicators_to_use.keys())[0]
-            info = INDICATOR_CATALOG[first_name]
-            strat_cls = _load_strategy(str(info["strategy"]))
-            p_defaults = {k: default for k, (_, _, default) in info["params"].items()}
-            p_user = {k: int(v) if isinstance(v, float) and v == int(v) else v
-                      for k, v in indicators_to_use[first_name].get("params", {}).items()}
-            params = {**p_defaults, **p_user, "symbol": config["symbols"][0]}
+        sym = config["symbols"][0]
+        dfs_bt = st.session_state.get("workbench_dataset", {})
+        ohlcv_bt = dfs_bt.get(sym)
+        if ohlcv_bt is None or (hasattr(ohlcv_bt, "empty") and ohlcv_bt.empty):
+            progress.empty()
+            st.error("No dataset loaded. Complete Step 1 (Fetch & Cache Data) first.")
+            return
 
-    st.markdown(
-        """
-        <div style="font-size:1.15rem; font-weight:700; color:#e4e4e7;
-                    letter-spacing:-0.01em; margin:1.5rem 0 0.8rem;">
-            Results
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    r1, r2, r3, r4, r5 = st.columns(5)
-    r1.metric("Start Capital", f"${cap:,.0f}")
-    r2.metric("End Capital", f"${end_cap:,.0f}")
-    r3.metric("Net P/L", f"${net_pl:+,.0f}", f"{net_pct:+.1f}%")
-    r4.metric(
-        "CAGR", f"{cagr:+.1%}" if isinstance(cagr, (int, float)) else "—"
-    )
-    r5.metric(
-        "Sharpe", f"{sharpe:.2f}" if isinstance(sharpe, (int, float)) else "—"
-    )
-
-    tab_sum, tab_curve, tab_trades, tab_metrics = st.tabs(
-        ["Summary", "Equity Curve", "Trades", "Metrics"]
-    )
-    with tab_sum:
-        st.metric(
-            "Max Drawdown",
-            f"{dd:.1%}" if isinstance(dd, (int, float)) else "—"
-        )
-        acc = sc.get('accuracy', 0)
-        acc_text = (
-            f"{acc:.1%}" if sc and isinstance(acc, (int, float)) else "—"
-        )
-        st.metric("Direction Accuracy", acc_text)
-    with tab_curve:
-        if pv and len(pv) > 1:
-            fig = go.Figure()
-            fig.add_trace(
-                go.Scatter(
-                    y=pv, mode="lines",
-                    line=dict(color=CHART_COLORS[0], width=2),
-                    fill="tozeroy",
-                    fillcolor="rgba(168,85,247,0.07)",
-                )
-            )
-            fig.update_layout(
-                template="plotly_dark",
-                paper_bgcolor="#0f0f12",
-                plot_bgcolor="#1a1a1f",
-                font_color="#e4e4e7",
-                margin=dict(l=40, r=40, t=40, b=40),
-                xaxis=dict(gridcolor="rgba(168,85,247,0.08)", showgrid=True),
-                yaxis=dict(gridcolor="rgba(168,85,247,0.08)", showgrid=True),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    with tab_trades:
-        if strat and hasattr(strat, "prediction_log") and strat.prediction_log:
-            st.dataframe(pd.DataFrame(strat.prediction_log), width="stretch")
         result_holder, exc_holder = [None], [None]
 
         def run_bt():
             try:
-                result_holder[0] = _run_backtest(strat_cls, params, config)
-            except Exception as e:
+                from phi.backtest import run_direct_backtest  # pylint: disable=import-outside-toplevel
+                result_holder[0] = run_direct_backtest(
+                    ohlcv=ohlcv_bt,
+                    symbol=sym,
+                    indicators=indicators_to_use,
+                    blend_weights=blend_weights,
+                    blend_method=blend_method,
+                    signal_threshold=_signal_threshold,
+                    initial_capital=config["initial_capital"],
+                    position_size_pct=_position_size_pct,
+                )
+            except Exception as e:  # pylint: disable=broad-except
                 exc_holder[0] = e
 
         th = threading.Thread(target=run_bt)
         th.start()
         start_t = time.time()
         while th.is_alive():
-            time.sleep(0.4)
-            pct = min(95, 5 + int((time.time() - start_t) * 1.5))
+            time.sleep(0.3)
+            pct = min(95, 5 + int((time.time() - start_t) * 8))
             progress.progress(pct / 100, text=f"Running backtest... {pct}%")
 
-        if exc_holder[0]: raise exc_holder[0]
+        if exc_holder[0]:
+            raise exc_holder[0]  # pylint: disable=raising-bad-type
         if result_holder[0] and isinstance(result_holder[0], (list, tuple)) and len(result_holder[0]) == 2:
             results, strat = result_holder[0]
             progress.progress(1.0, text="Complete!")
@@ -1534,7 +1733,7 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
                 </div>
                 """, unsafe_allow_html=True)
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         progress.empty()
         st.error(str(e))
         st.exception(e)
@@ -1693,11 +1892,19 @@ def main():
         )
         fa_col1, fa_col2, fa_col3 = st.columns(3)
         with fa_col1:
-        page_title="Phi-nance | Live Workbench",
-        page_icon="📈",
-        layout="wide",
-        initial_sidebar_state="collapsed",
-    )
+            fa_sym_q = st.text_input("Symbol", value="SPY", key="fa_sym_q")
+            fa_start_q = st.date_input("Start", value=date(2020, 1, 1), key="fa_start_q")
+        with fa_col2:
+            fa_end_q = st.date_input("End", value=date(2024, 12, 31), key="fa_end_q")
+            fa_cap_q = st.number_input("Capital ($)", value=100_000, min_value=1000, key="fa_cap_q")
+        with fa_col3:
+            fa_ollama_q = st.checkbox("Use Ollama", value=True, key="fa_ollama_q")
+            fa_host_q = st.text_input("Host", value="http://localhost:11434", key="fa_host_q")
+        if st.button("⚡ Run", type="primary", key="fa_run_q", use_container_width=True):
+            _run_fully_automated(
+                fa_sym_q or "SPY", str(fa_start_q), str(fa_end_q),
+                fa_cap_q, fa_ollama_q, fa_host_q
+            )
     _inject_css()
 
     # Device detection (JS already injected by _inject_css)

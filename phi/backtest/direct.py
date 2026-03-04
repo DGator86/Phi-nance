@@ -5,10 +5,13 @@ Uses OHLCV DataFrame directly. Guaranteed to work with pipeline data.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 _TRADING_MINUTES_PER_YEAR = 252 * 390  # US equity market
@@ -51,6 +54,10 @@ def run_direct_backtest(
     results_dict: total_return, cagr, max_drawdown, sharpe, portfolio_value
     strat_like: object with .prediction_log for accuracy display
     """
+    if initial_capital <= 0:
+        raise ValueError(f"initial_capital must be > 0, got {initial_capital}")
+    position_size_pct = float(np.clip(position_size_pct, 0.01, 1.0))
+
     df = ohlcv.copy()
     cols = {c.lower(): c for c in df.columns}
     required = ["open", "high", "low", "close", "volume"]
@@ -71,8 +78,8 @@ def run_direct_backtest(
             sig = compute_indicator(name, df, params)
             if sig is not None and not sig.empty:
                 signals_dict[name] = sig
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("run_direct_backtest: indicator %r failed: %s", name, exc)
 
     if not signals_dict:
         return _empty_results(initial_capital), _empty_strat()

@@ -66,10 +66,14 @@ class LightGBMStrategy(PredictionMixin, Strategy):
             return
 
         df = bars[asset_key].df
-        X = get_regime_features(df, lookback=lookback)
-
-        direction  = self.classifier.predict(X)
-        confidence = self.classifier.predict_proba(X)
+        try:
+            X          = get_regime_features(df, lookback=lookback)
+            direction  = self.classifier.predict(X)
+            confidence = self.classifier.predict_proba(X)
+        except Exception as exc:
+            self.log_message(f"LightGBMStrategy: feature/predict error ({exc}); defaulting NEUTRAL")
+            self.record_prediction(symbol, "NEUTRAL", self._safe_price(symbol))
+            return
 
         current_price = self._safe_price(symbol)
 

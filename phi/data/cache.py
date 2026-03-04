@@ -421,10 +421,11 @@ class DataCache:
                                     "Cached data for %s %s is %.1f days old (threshold: %d days).",
                                     symbol, timeframe, age_days, max_age,
                                 )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Cache metadata parse failed for %s: %s", p, exc)
             return pd.read_parquet(p)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Cache load failed for %s: %s", p, exc)
             return None
 
     def save(

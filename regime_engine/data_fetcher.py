@@ -726,15 +726,29 @@ class YFinanceIntradayFetcher:
             start_dt = end_dt - pd.Timedelta(days=max_days)
 
         tkr = yf.Ticker(symbol)
-        df  = tkr.history(
-            start=str(start_dt.date()),
-            end=str(end_dt.date()),
-            interval=yf_interval,
-            auto_adjust=True,
-        )
+        last_exc: Exception = ValueError(f"YFinanceIntradayFetcher: no data for {symbol} {yf_interval}")
+        df = pd.DataFrame()
+        for attempt in range(3):
+            try:
+                df = tkr.history(
+                    start=str(start_dt.date()),
+                    end=str(end_dt.date()),
+                    interval=yf_interval,
+                    auto_adjust=True,
+                )
+                if not df.empty:
+                    break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "YFinanceIntradayFetcher.intraday attempt %d/3 for %s %s: %s",
+                    attempt + 1, symbol, yf_interval, exc,
+                )
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
 
         if df.empty:
-            raise ValueError(f"YFinanceIntradayFetcher: no data for {symbol} {yf_interval}")
+            raise last_exc
 
         # Normalise: tz-strip, lowercase columns, keep OHLCV only
         if df.index.tz is not None:
@@ -747,6 +761,69 @@ class YFinanceIntradayFetcher:
         df.sort_index(inplace=True)
 
         logger.info("YFinanceIntradayFetcher: %s %s → %d bars", symbol, yf_interval, len(df))
+        return df
+
+    def intraday_month(
+        self,
+        symbol:    str,
+        month:     str,          # format: 'YYYY-MM'
+        interval:  str = "5min",
+        adjusted:  bool = True,
+        extended:  bool = False,
+        cache_ttl: int  = 0,
+    ) -> pd.DataFrame:
+        """
+        Fetch a specific calendar month of intraday data via yfinance.
+
+        yfinance lookback limits apply: 1m→7 days, 5m/15m/30m→60 days,
+        60m→730 days.  Months outside these windows will return partial or
+        empty data.
+
+        Parameters
+        ----------
+        month : 'YYYY-MM'  (e.g. '2025-02')
+        """
+        import yfinance as yf
+
+        year, mon = int(month[:4]), int(month[5:7])
+        start_s = f"{year:04d}-{mon:02d}-01"
+        end_s   = f"{year + 1:04d}-01-01" if mon == 12 else f"{year:04d}-{mon + 1:02d}-01"
+
+        yf_interval = self._INTERVAL_MAP.get(interval, "5m")
+        tkr = yf.Ticker(symbol)
+        last_exc: Exception = ValueError(
+            f"YFinanceIntradayFetcher.intraday_month: no data for "
+            f"{symbol} {yf_interval} {month} (may exceed lookback limit)"
+        )
+        df = pd.DataFrame()
+        for attempt in range(3):
+            try:
+                df = tkr.history(start=start_s, end=end_s, interval=yf_interval, auto_adjust=True)
+                if not df.empty:
+                    break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "YFinanceIntradayFetcher.intraday_month attempt %d/3 for %s %s %s: %s",
+                    attempt + 1, symbol, yf_interval, month, exc,
+                )
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
+
+        if df.empty:
+            raise last_exc
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        df.columns = [c.lower() for c in df.columns]
+        df = df[["open", "high", "low", "close", "volume"]].copy()
+        for col in ["open", "high", "low", "close"]:
+            df[col] = df[col].astype(float)
+        df["volume"] = df["volume"].astype(int)
+        df.sort_index(inplace=True)
+        logger.info(
+            "YFinanceIntradayFetcher.intraday_month: %s %s %s → %d bars",
+            symbol, yf_interval, month, len(df),
+        )
         return df
 
     def intraday_mtf(

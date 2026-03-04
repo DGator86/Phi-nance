@@ -7,12 +7,16 @@ Regime-conditioned parameter selection.
 
 from __future__ import annotations
 
+import logging
+from itertools import islice
 from typing import Any, Callable, Dict, List, Optional, Tuple
-
-_MAX_PARALLEL_INDICATORS = 4
 
 import numpy as np
 import pandas as pd
+
+_MAX_PARALLEL_INDICATORS = 4
+
+logger = logging.getLogger(__name__)
 
 
 def auto_tune_params(
@@ -39,15 +43,20 @@ def auto_tune_params(
     -------
     (best_params, best_score)
     """
-    best_params = {}
+    best_params: Dict[str, Any] = {}
     best_score = -np.inf
 
+    # Drop params with empty value lists to avoid downstream crashes.
+    param_grid = {k: v for k, v in param_grid.items() if v}
+    if not param_grid:
+        return best_params, best_score
+
     if method == "grid":
+        from itertools import product
         keys = list(param_grid.keys())
         vals = list(param_grid.values())
-        from itertools import product
-
-        combos = list(product(*vals))[:max_iter]
+        # islice avoids materialising the full cartesian product in memory.
+        combos = list(islice(product(*vals), max_iter))
         for combo in combos:
             params = dict(zip(keys, combo))
             try:
@@ -55,19 +64,19 @@ def auto_tune_params(
                 if score > best_score:
                     best_score = score
                     best_params = params
-            except Exception:
+            except Exception as exc:
+                logger.debug("%s grid trial %s skipped: %s", indicator_name, params, exc)
                 continue
     else:
         for _ in range(max_iter):
-            params = {}
-            for k, vlist in param_grid.items():
-                params[k] = vlist[np.random.randint(len(vlist))]
+            params = {k: vlist[np.random.randint(len(vlist))] for k, vlist in param_grid.items()}
             try:
                 score = objective_fn(ohlcv, params)
                 if score > best_score:
                     best_score = score
                     best_params = params
-            except Exception:
+            except Exception as exc:
+                logger.debug("%s random trial %s skipped: %s", indicator_name, params, exc)
                 continue
 
     return best_params, best_score

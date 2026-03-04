@@ -140,7 +140,7 @@ def compute_vwap(df: pd.DataFrame, band_pct: float = 0.5) -> pd.Series:
     # Group by calendar date so VWAP resets each session.
     dates = df.index.normalize() if hasattr(df.index, "normalize") else pd.to_datetime(df.index).normalize()
     cum_tp_vol = (tp * vol).groupby(dates).cumsum()
-    cum_vol = vol.groupby(dates).cumsum()
+    cum_vol = vol.groupby(dates).cumsum().clip(lower=1e-9)
     vwap = cum_tp_vol / cum_vol
 
     dev_pct = (df["close"] - vwap) / vwap.replace(0, np.nan) * 100
