@@ -17,6 +17,7 @@ from .market_data import get_marketdataapp_snapshot
 from .engine_backtest import run_engine_backtest
 from .ai_advisor import OptionsAIAdvisor, OptionsRecommendation
 from .options_reviewer import review_options_backtest, OptionsBacktestReview
+from .models import black_scholes_price, black_scholes_greeks, Greeks
 
 __all__ = [
     "run_options_backtest",
@@ -27,4 +28,7 @@ __all__ = [
     "OptionsRecommendation",
     "review_options_backtest",
     "OptionsBacktestReview",
+    "black_scholes_price",
+    "black_scholes_greeks",
+    "Greeks",
 ]
