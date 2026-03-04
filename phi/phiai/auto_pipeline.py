@@ -8,10 +8,13 @@ No manual tuning. Uses Ollama when available for indicator/blend suggestions.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 # Default indicators to use when Ollama unavailable
 _DEFAULT_INDICATORS = ["RSI", "MACD", "Bollinger", "Dual SMA"]
@@ -84,10 +87,10 @@ Reply ONLY with valid JSON, no other text: {{"indicators": ["RSI","MACD"], "blen
                 if not inds:
                     inds = ["RSI", "MACD"]
                 return inds, blend
-            except json.JSONDecodeError:
-                pass
-    except Exception:
-        pass
+            except json.JSONDecodeError as exc:
+                logger.debug("Ollama JSON parse failed: %s — raw reply: %.200s", exc, reply)
+    except Exception as exc:
+        logger.debug("Ollama suggestion unavailable: %s", exc)
     return None
 
 

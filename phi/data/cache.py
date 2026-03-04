@@ -137,11 +137,37 @@ def _fetch_stockdata(symbol: str, start_s: str, end_s: str, api_key: str) -> pd.
 
         rows.extend(batch)
 
-        meta = data.get("meta", {})
-        # Stop if we've received everything
-        if len(rows) >= meta.get("found", len(rows)):
-            break
-        page += 1
+        Returns
+        -------
+        pd.DataFrame or None
+        """
+        p = self.get_path(vendor, symbol, timeframe, start, end)
+        if not p.exists():
+            return None
+        try:
+            if check_staleness:
+                meta_p = Path(str(p) + ".metadata.json")
+                if meta_p.exists():
+                    try:
+                        with open(meta_p, encoding="utf-8") as f:
+                            meta = json.load(f)
+                        fetched_at_str = meta.get("fetched_at")
+                        if fetched_at_str:
+                            fetched_at = datetime.fromisoformat(fetched_at_str)
+                            age_days = (datetime.now(timezone.utc).replace(tzinfo=None) - fetched_at).total_seconds() / _SECONDS_PER_DAY
+                            is_intraday = timeframe != "1D"
+                            max_age = 1 if is_intraday else 7
+                            if age_days > max_age:
+                                logger.warning(
+                                    "Cached data for %s %s is %.1f days old (threshold: %d days).",
+                                    symbol, timeframe, age_days, max_age,
+                                )
+                    except Exception as exc:
+                        logger.debug("Cache metadata parse failed for %s: %s", p, exc)
+            return pd.read_parquet(p)
+        except Exception as exc:
+            logger.warning("Cache load failed for %s: %s", p, exc)
+            return None
 
     if not rows:
         raise ValueError(f"StockData.org: no data for {symbol}")
