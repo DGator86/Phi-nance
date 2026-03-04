@@ -1797,6 +1797,8 @@ def main():
     tab_hist, tab_cache, tab_agents = st.tabs(
         ["Run History", "Cache Manager", "AI Agents"]
     )
+    with tab_opts:
+        render_options_workbench()
     with tab_hist:
         render_run_history()
 
