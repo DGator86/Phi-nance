@@ -36,6 +36,8 @@ warnings.filterwarnings("ignore", category=FutureWarning, module="lumibot.entiti
 from datetime import datetime, date, timedelta
 from typing import Dict, Optional
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file (AV_API_KEY, POLYGON_API_KEY, etc.)
 
 os.environ.setdefault("IS_BACKTESTING", "True")
 try:
@@ -1433,12 +1435,10 @@ def render_phi_bot(config: dict):
         if st.button("Run Phi-Bot Backtest", type="primary", use_container_width=True):
             with st.status("Running Phi-Bot...", expanded=True) as s:
                 try:
-                    buf = io.StringIO()
-                    with redirect_stdout(buf), redirect_stderr(buf):
-                        _BlendedMFT = _strat("strategies.blended_mft_strategy.BlendedMFTStrategy")
-                        results, strat = _run_backtest(_BlendedMFT,
-                            {"symbol": bt_sym, "indicator_weights": {},
-                             "signal_threshold": threshold, "confidence_floor": conf_floor}, config)
+                    _BlendedMFT = _strat("strategies.blended_mft_strategy.BlendedMFTStrategy")
+                    results, strat = _run_backtest(_BlendedMFT,
+                        {"symbol": bt_sym, "indicator_weights": {},
+                         "signal_threshold": threshold, "confidence_floor": conf_floor}, config)
                     sc = _compute_accuracy(strat)
                     s.update(label=f"Phi-Bot -- {sc['accuracy']:.1%}", state="complete")
                     t1, t2 = st.tabs(["Portfolio", "Accuracy"])
