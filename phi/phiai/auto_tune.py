@@ -16,8 +16,6 @@ import pandas as pd
 
 _MAX_PARALLEL_INDICATORS = 4
 
-logger = logging.getLogger(__name__)
-
 
 def auto_tune_params(
     ohlcv: pd.DataFrame,
