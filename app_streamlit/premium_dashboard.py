@@ -10,7 +10,6 @@ regime heatmaps, real-time feel, professional trading workstation.
 import os
 import sys
 import time
-import random
 import threading
 import importlib
 import hashlib
@@ -20,13 +19,12 @@ from pathlib import Path
 # Suppress Lumibot pandas FutureWarning (Series.__getitem__)
 warnings.filterwarnings("ignore", category=FutureWarning, module="lumibot.entities.bars")
 from datetime import date, datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
-import plotly.express as px
 from plotly.subplots import make_subplots
 
 # ── Project root ────────────────────────────────────────────────────────────
