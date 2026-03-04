@@ -11,7 +11,7 @@ Quantitative trading research platform with regime-aware MFT (Market Field Theor
 python -m streamlit run app_streamlit/live_workbench.py
 
 # Or the legacy MFT Dashboard
-python -m streamlit run legacy/dashboard.py
+python -m streamlit run dashboard.py
 
 # CLI backtest
 python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budget 100000
@@ -19,24 +19,11 @@ python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budg
 
 ---
 
-
-## Docker
-
-```bash
-docker compose up --build
-```
-
-This starts the Streamlit workbench at `http://localhost:8501`.
-
-VPS scripts were moved to `deploy/` and are optional for manual hosting.
-
----
-
 ## Live Backtest Workbench
 
 1. **Dataset Builder** — Fetch & cache OHLCV (Alpha Vantage, yfinance, Binance Public)
 2. **Indicator Selection** — RSI, MACD, Bollinger, Dual SMA, Mean Reversion, Breakout, Buy & Hold
-3. **Blending Panel** — Weighted Sum, Regime-Weighted, Voting, AI-Driven
+3. **Blending Panel** — Weighted Sum, Regime-Weighted, Voting, PhiAI Chooses
 4. **PhiAI Panel** — Full auto mode for indicator/param/blend optimization
 5. **Backtest Controls** — Equities/Options, position sizing, exit rules
 6. **Run & Results** — Live progress, metrics, Run History, Cache Manager

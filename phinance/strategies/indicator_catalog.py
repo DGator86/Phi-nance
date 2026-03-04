@@ -39,6 +39,18 @@ Registered indicators
   KST           — Know Sure Thing multi-period momentum
   TRIX          — Triple Smoothed EMA momentum oscillator
   Mass Index    — High-low range expansion reversal indicator
+  DEMA          — Double Exponential Moving Average trend
+  TEMA          — Triple Exponential Moving Average trend
+  KAMA          — Kaufman Adaptive Moving Average trend
+  ZLEMA         — Zero Lag EMA trend
+  HMA           — Hull Moving Average trend
+  VWMA          — Volume Weighted Moving Average trend
+  Ichimoku      — Ichimoku Kinko Hyo trend/momentum
+  Donchian      — Donchian Channel position
+  Keltner       — Keltner Channel breakout/volatility
+  Elder Ray     — Elder Ray bull/bear power
+  DPO           — Detrended Price Oscillator cycle
+  LGBM Classifier — LightGBM trained binary classifier (ML)
 """
 
 from __future__ import annotations
@@ -67,6 +79,24 @@ from phinance.strategies.ulcer_index   import UlcerIndexIndicator
 from phinance.strategies.kst           import KSTIndicator
 from phinance.strategies.trix          import TRIXIndicator
 from phinance.strategies.mass_index    import MassIndexIndicator
+from phinance.strategies.dema          import DEMAIndicator
+from phinance.strategies.tema          import TEMAIndicator
+from phinance.strategies.kama          import KAMAIndicator
+from phinance.strategies.zlema         import ZLEMAIndicator
+from phinance.strategies.hma           import HMAIndicator
+from phinance.strategies.vwma          import VWMAIndicator
+from phinance.strategies.ichimoku      import IchimokuIndicator
+from phinance.strategies.donchian      import DonchianIndicator
+from phinance.strategies.keltner       import KeltnerIndicator
+from phinance.strategies.elder_ray     import ElderRayIndicator
+from phinance.strategies.dpo           import DPOIndicator
+
+# ML indicator (graceful no-op if lightgbm not installed)
+try:
+    from phinance.strategies.ml_classifier import LGBMClassifierIndicator
+    _LGBM_INDICATOR: Any = LGBMClassifierIndicator()
+except ImportError:  # pragma: no cover
+    _LGBM_INDICATOR = None
 
 # ── Registry ─────────────────────────────────────────────────────────────────
 
@@ -91,7 +121,22 @@ INDICATOR_CATALOG: Dict[str, Any] = {
     "KST":            KSTIndicator(),
     "TRIX":           TRIXIndicator(),
     "Mass Index":     MassIndexIndicator(),
+    "DEMA":           DEMAIndicator(),
+    "TEMA":           TEMAIndicator(),
+    "KAMA":           KAMAIndicator(),
+    "ZLEMA":          ZLEMAIndicator(),
+    "HMA":            HMAIndicator(),
+    "VWMA":           VWMAIndicator(),
+    "Ichimoku":       IchimokuIndicator(),
+    "Donchian":       DonchianIndicator(),
+    "Keltner":        KeltnerIndicator(),
+    "Elder Ray":      ElderRayIndicator(),
+    "DPO":            DPOIndicator(),
 }
+
+# Add LGBM only if lightgbm is installed
+if _LGBM_INDICATOR is not None:
+    INDICATOR_CATALOG["LGBM Classifier"] = _LGBM_INDICATOR
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

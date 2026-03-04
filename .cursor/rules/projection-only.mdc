@@ -1,0 +1,11 @@
+---
+description: Projection pipeline ends at ProjectionPacket; no strategy, routing, or sizing
+globs: src/phinence/**/*.py
+alwaysApply: false
+---
+
+# Projection-only boundary
+
+- **Hard rule:** Code in the projection pipeline must not perform strategy selection, order routing, or position sizing. The system produces `ProjectionPacket` (direction, drift, cones). What happens after that is out of scope for this codebase.
+- **Contracts:** `ProjectionPacket`, `AssignedPacket`, `MarketFieldMap` are data contracts only. No trading decisions inside them.
+- **Review:** Reject PRs that add strategy/routing/sizing logic to `contracts/`, `engines/`, `composer/`, or `assignment/`.

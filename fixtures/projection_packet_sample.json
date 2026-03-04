@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "ticker": "SPY",
+  "as_of": "2024-01-15T16:00:00Z",
+  "horizons": [
+    {
+      "horizon": "1m",
+      "direction": {"up": 0.35, "down": 0.30, "flat": 0.35},
+      "drift_bps": 0.5,
+      "cone": {
+        "p50_bps": 2.0,
+        "p75_bps": 3.5,
+        "p90_bps": 5.0,
+        "annualized_sigma": 0.18
+      },
+      "confidence": 0.7
+    },
+    {
+      "horizon": "5m",
+      "direction": {"up": 0.33, "down": 0.33, "flat": 0.34},
+      "drift_bps": 1.0,
+      "cone": {
+        "p50_bps": 4.5,
+        "p75_bps": 7.0,
+        "p90_bps": 10.0,
+        "annualized_sigma": 0.18
+      },
+      "confidence": 0.65
+    },
+    {
+      "horizon": "1d",
+      "direction": {"up": 0.40, "down": 0.35, "flat": 0.25},
+      "drift_bps": 3.0,
+      "cone": {
+        "p50_bps": 50.0,
+        "p75_bps": 75.0,
+        "p90_bps": 100.0,
+        "annualized_sigma": 0.18
+      },
+      "confidence": 0.6
+    }
+  ],
+  "meta": {}
+}
