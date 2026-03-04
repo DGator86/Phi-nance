@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 
+import numpy as np
 import pandas as pd
 
 from .registry import BLEND_METHODS

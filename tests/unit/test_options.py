@@ -6,6 +6,7 @@ Unit tests for phinance.options:
   - Black-Scholes pricing (call, put, put-call parity)
   - Implied volatility
   - Option Greeks
+  - IV Surface (build, smile, term_structure, interpolate)
   - run_options_backtest
 """
 
@@ -16,6 +17,9 @@ import pytest
 import numpy as np
 
 from tests.fixtures.ohlcv import make_ohlcv
+
+import pandas as pd
+from datetime import date, timedelta
 
 from phinance.options.pricing import (
     black_scholes_call,
@@ -28,6 +32,16 @@ from phinance.options.pricing import (
 )
 from phinance.options.greeks import OptionsGreeks, compute_greeks
 from phinance.options.backtest import run_options_backtest
+from phinance.options.iv_surface import (
+    IVSurface,
+    IVPoint,
+    build_iv_surface,
+    interpolate_iv,
+    smile_for_expiry,
+    term_structure,
+    _bracket,
+    _build_grid,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -256,3 +270,267 @@ class TestRunOptionsBacktest:
         df = make_ohlcv(200)
         result = run_options_backtest(df)
         assert np.isfinite(result["sharpe"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  IV Surface
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_quotes(spot: float = 100.0, n_strikes: int = 5, n_expiries: int = 3) -> pd.DataFrame:
+    """Create synthetic option quote DataFrame for testing."""
+    ref = date(2026, 3, 3)
+    rows = []
+    for days in [30, 60, 90][:n_expiries]:
+        expiry = (ref + timedelta(days=days)).isoformat()
+        T = days / 365.0
+        for dk in range(-n_strikes // 2, n_strikes // 2 + 1):
+            strike = round(spot * (1 + dk * 0.05), 1)
+            for opt_type in ("call", "put"):
+                sigma = 0.20 + abs(dk) * 0.01  # slight vol smile
+                price = (
+                    black_scholes_call(spot, strike, T, 0.05, sigma)
+                    if opt_type == "call"
+                    else black_scholes_put(spot, strike, T, 0.05, sigma)
+                )
+                if price > 0.01:
+                    rows.append({
+                        "strike": strike,
+                        "expiry": expiry,
+                        "option_type": opt_type,
+                        "bid": price * 0.99,
+                        "ask": price * 1.01,
+                    })
+    return pd.DataFrame(rows)
+
+
+class TestIVSurface:
+
+    def _surface(self, spot: float = 100.0) -> IVSurface:
+        quotes = _make_quotes(spot)
+        return build_iv_surface(quotes, spot=spot, r=0.05,
+                                reference_date=date(2026, 3, 3))
+
+    # ── build ─────────────────────────────────────────────────────────────────
+
+    def test_build_returns_iv_surface(self):
+        surf = self._surface()
+        assert isinstance(surf, IVSurface)
+
+    def test_points_not_empty(self):
+        surf = self._surface()
+        assert len(surf.points) > 0
+
+    def test_all_points_have_finite_iv(self):
+        surf = self._surface()
+        for p in surf.points:
+            if p.implied_vol is not None:
+                assert 0.001 < p.implied_vol < 5.0, f"IV out of range: {p.implied_vol}"
+
+    def test_grid_not_empty(self):
+        surf = self._surface()
+        assert not surf.grid.empty
+
+    def test_spot_stored(self):
+        surf = self._surface(spot=150.0)
+        assert surf.spot == 150.0
+
+    def test_as_of_set(self):
+        surf = self._surface()
+        assert len(surf.as_of) > 0
+
+    def test_missing_columns_raises(self):
+        with pytest.raises(ValueError, match="missing columns"):
+            build_iv_surface(pd.DataFrame({"strike": [100]}), spot=100.0)
+
+    def test_expired_quotes_excluded(self):
+        """Quotes with expiry in the past should produce no IVPoints."""
+        past_expiry = (date(2026, 3, 3) - timedelta(days=10)).isoformat()
+        quotes = pd.DataFrame([{
+            "strike": 100.0, "expiry": past_expiry, "option_type": "call",
+            "bid": 2.0, "ask": 2.1,
+        }])
+        surf = build_iv_surface(quotes, spot=100.0, reference_date=date(2026, 3, 3))
+        assert len(surf.points) == 0
+
+    # ── expiries / strikes ────────────────────────────────────────────────────
+
+    def test_expiries_sorted(self):
+        surf = self._surface()
+        exp = surf.expiries()
+        assert exp == sorted(exp)
+
+    def test_strikes_sorted(self):
+        surf = self._surface()
+        ks = surf.strikes()
+        assert ks == sorted(ks)
+
+    def test_expiries_count(self):
+        surf = self._surface()
+        assert len(surf.expiries()) == 3  # 30, 60, 90 days
+
+    # ── smile_for_expiry ─────────────────────────────────────────────────────
+
+    def test_smile_returns_series(self):
+        surf = self._surface()
+        expiry = surf.expiries()[0]
+        smile = surf.smile_for_expiry(expiry)
+        assert isinstance(smile, pd.Series)
+
+    def test_smile_strikes_sorted(self):
+        surf = self._surface()
+        smile = surf.smile_for_expiry(surf.expiries()[0])
+        assert list(smile.index) == sorted(smile.index)
+
+    def test_smile_iv_positive(self):
+        surf = self._surface()
+        smile = surf.smile_for_expiry(surf.expiries()[0])
+        assert (smile > 0).all()
+
+    def test_smile_unknown_expiry_empty(self):
+        surf = self._surface()
+        smile = surf.smile_for_expiry("9999-12-31")
+        assert smile.empty
+
+    def test_smile_has_vol_smile_shape(self):
+        """ATM IV should be lower than far OTM IV (smile / smirk)."""
+        surf = self._surface()
+        smile = surf.smile_for_expiry(surf.expiries()[0])
+        if len(smile) >= 3:
+            import numpy as np
+            strikes_arr = np.array(smile.index, dtype=float)
+            atm_idx = int(np.argmin(np.abs(strikes_arr - surf.spot)))
+            atm_k = smile.index[atm_idx]
+            atm_iv = smile[atm_k]
+            # At least one wing should be higher
+            wings = smile.drop(atm_k)
+            assert wings.max() >= atm_iv
+
+    # ── term_structure ────────────────────────────────────────────────────────
+
+    def test_term_structure_returns_series(self):
+        surf = self._surface()
+        ts = surf.term_structure()
+        assert isinstance(ts, pd.Series)
+
+    def test_term_structure_length_matches_expiries(self):
+        surf = self._surface()
+        ts = surf.term_structure()
+        assert len(ts) == len(surf.expiries())
+
+    def test_term_structure_sorted_by_expiry(self):
+        surf = self._surface()
+        ts = surf.term_structure()
+        assert list(ts.index) == sorted(ts.index)
+
+    def test_term_structure_iv_positive(self):
+        surf = self._surface()
+        ts = surf.term_structure()
+        assert (ts > 0).all()
+
+    def test_term_structure_moneyness(self):
+        """Slightly OTM moneyness should still return a series."""
+        surf = self._surface()
+        ts = surf.term_structure(moneyness=1.05)
+        assert not ts.empty
+
+    # ── interpolate ───────────────────────────────────────────────────────────
+
+    def test_interpolate_returns_float(self):
+        surf = self._surface()
+        iv = surf.interpolate(100.0, 0.25)
+        assert iv is not None
+        assert isinstance(iv, float)
+
+    def test_interpolate_positive_iv(self):
+        surf = self._surface()
+        iv = surf.interpolate(100.0, 0.25)
+        assert iv > 0
+
+    def test_interpolate_nearest_method(self):
+        surf = self._surface()
+        iv = surf.interpolate(100.0, 0.25, method="nearest")
+        assert iv is not None and iv > 0
+
+    def test_interpolate_empty_surface_returns_none(self):
+        empty = IVSurface()
+        assert empty.interpolate(100.0, 0.5) is None
+
+    def test_interpolate_iv_wrapper_function(self):
+        surf = self._surface()
+        iv = interpolate_iv(surf, 100.0, 0.25)
+        assert iv is not None and iv > 0
+
+    def test_interpolate_extrapolate_low_strike(self):
+        """Strike below min should return nearest (no crash)."""
+        surf = self._surface()
+        iv = surf.interpolate(1.0, 0.25)  # far below min strike
+        assert iv is not None
+
+    def test_interpolate_extrapolate_far_T(self):
+        """T beyond max should return nearest (no crash)."""
+        surf = self._surface()
+        iv = surf.interpolate(100.0, 10.0)  # far beyond max T
+        assert iv is not None
+
+    # ── to_dataframe ─────────────────────────────────────────────────────────
+
+    def test_to_dataframe_shape(self):
+        surf = self._surface()
+        df = surf.to_dataframe()
+        assert len(df) == len(surf.points)
+        assert set(df.columns) >= {"strike", "expiry", "T", "option_type", "market_mid", "implied_vol"}
+
+    def test_to_dataframe_no_nulls_in_strike(self):
+        surf = self._surface()
+        df = surf.to_dataframe()
+        assert df["strike"].notna().all()
+
+    # ── convenience wrappers ──────────────────────────────────────────────────
+
+    def test_smile_for_expiry_wrapper(self):
+        surf = self._surface()
+        smile = smile_for_expiry(surf, surf.expiries()[0])
+        assert isinstance(smile, pd.Series)
+
+    def test_term_structure_wrapper(self):
+        surf = self._surface()
+        ts = term_structure(surf)
+        assert isinstance(ts, pd.Series)
+
+    # ── internal helpers ──────────────────────────────────────────────────────
+
+    def test_bracket_below_min(self):
+        arr = np.array([1.0, 2.0, 3.0])
+        lo, hi = _bracket(arr, 0.5)
+        assert lo == 0 and hi == 0
+
+    def test_bracket_above_max(self):
+        arr = np.array([1.0, 2.0, 3.0])
+        lo, hi = _bracket(arr, 5.0)
+        assert lo == 2 and hi == 2
+
+    def test_bracket_middle(self):
+        arr = np.array([1.0, 2.0, 3.0])
+        lo, hi = _bracket(arr, 2.5)
+        assert lo == 1 and hi == 2
+
+    def test_build_grid_empty_input(self):
+        grid = _build_grid([])
+        assert grid.empty
+
+    def test_build_grid_single_point(self):
+        pts = [IVPoint(strike=100.0, expiry="2026-06-03", T=0.25,
+                       option_type="call", market_mid=5.0, implied_vol=0.20)]
+        grid = _build_grid(pts)
+        assert not grid.empty
+        assert 100.0 in grid.columns
+
+    # ── public __init__ exports ───────────────────────────────────────────────
+
+    def test_imports_from_init(self):
+        from phinance.options import (
+            black_scholes_call, black_scholes_put, implied_volatility,
+            IVSurface, build_iv_surface, interpolate_iv,
+            smile_for_expiry, term_structure,
+        )
+        assert callable(build_iv_surface)

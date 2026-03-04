@@ -660,6 +660,64 @@ with wire_c2:
                 st.error(f"Error: {e}")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 9 — Advanced Pages
+# ══════════════════════════════════════════════════════════════════════════════
+
+st.markdown("---")
+
+_ADV_PAGES = {
+    "🤖 Autonomous Pipeline":      "autonomous",
+    "📡 Live / Paper Trading":     "live",
+    "🔌 Plugin Browser":           "plugins",
+    "🧬 Evolution Dashboard":      "evolution",
+    "💼 Portfolio Backtest":       "portfolio",
+}
+
+_adv_page = st.radio(
+    "**Advanced Tools**",
+    list(_ADV_PAGES.keys()),
+    horizontal=True,
+    index=None,
+    key="adv_page_radio",
+)
+
+if _adv_page == "🤖 Autonomous Pipeline":
+    try:
+        from app_streamlit.pages.autonomous_pipeline_page import render_autonomous_pipeline
+        render_autonomous_pipeline()
+    except Exception as _e:
+        st.error(f"Autonomous Pipeline error: {_e}")
+
+elif _adv_page == "📡 Live / Paper Trading":
+    try:
+        from app_streamlit.pages.live_trading_dashboard import render_live_trading_dashboard
+        render_live_trading_dashboard()
+    except Exception as _e:
+        st.error(f"Live Trading error: {_e}")
+
+elif _adv_page == "🔌 Plugin Browser":
+    try:
+        from app_streamlit.pages.plugin_browser import render_plugin_browser
+        render_plugin_browser()
+    except Exception as _e:
+        st.error(f"Plugin Browser error: {_e}")
+
+elif _adv_page == "🧬 Evolution Dashboard":
+    try:
+        from app_streamlit.pages.evolution_dashboard import render as render_evolution
+        render_evolution()
+    except Exception as _e:
+        st.error(f"Evolution Dashboard error: {_e}")
+
+elif _adv_page == "💼 Portfolio Backtest":
+    try:
+        from app_streamlit.pages.portfolio_backtest_page import render as render_portfolio
+        render_portfolio()
+    except Exception as _e:
+        st.error(f"Portfolio Backtest error: {_e}")
+
+
 # ── Footer ────────────────────────────────────────────────────────────────
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 st.caption("φ Phi-nance · Market Field Theory · Built for regular people who want an edge.")

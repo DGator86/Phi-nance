@@ -19,10 +19,11 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
+
 _SECONDS_PER_DAY = 86400
 
-import pandas as pd
-import requests
+logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +171,6 @@ def _fetch_from_yfinance_intraday(symbol: str, timeframe: str, start_s: str, end
 
     # Warn if requested range exceeds yfinance lookback cap.
     start_dt = pd.Timestamp(start_s)
-    end_dt = pd.Timestamp(end_s)
     cap_start = pd.Timestamp.now().normalize() - pd.Timedelta(days=max_days)
     if start_dt < cap_start:
         logger.warning(
@@ -303,7 +303,6 @@ def _fetch_from_binance(symbol: str, timeframe: str, start_s: str, end_s: str) -
     for m in months:
         ym = f"{m.year:04d}-{m.month:02d}"
         url = f"{_BINANCE_BASE}/spot/monthly/klines/{symbol.upper()}/{interval}/{symbol.upper()}-{interval}-{ym}.zip"
-        last_exc: Exception = ValueError("Binance fetch failed")
         for attempt in range(3):
             try:
                 resp = requests.get(url, timeout=30)
@@ -318,7 +317,6 @@ def _fetch_from_binance(symbol: str, timeframe: str, start_s: str, end_s: str) -
                 logger.info("binance: fetched %s %s %s", symbol, interval, ym)
                 break
             except Exception as exc:
-                last_exc = exc
                 wait = 2 ** attempt
                 logger.warning("binance attempt %d/%d failed for %s %s: %s. Retrying in %ds.", attempt + 1, 3, symbol, ym, exc, wait)
                 if attempt < 2:
@@ -347,139 +345,15 @@ def _cache_path(vendor: str, symbol: str, timeframe: str, start: str, end: str) 
     """Path to parquet file for this dataset."""
     s = str(start)[:10].replace("-", "")
     e = str(end)[:10].replace("-", "")
-    base = _ensure_cache_dir() / vendor / symbol.upper() / timeframe
-    base.mkdir(parents=True, exist_ok=True)
-    return base / f"{s}_{e}.parquet"
+    return f"{s}_{e}"
 
 
-def _metadata_path(vendor: str, symbol: str, timeframe: str, start: str, end: str) -> Path:
-    """Path to metadata.json for this dataset."""
-    p = _cache_path(vendor, symbol, timeframe, start, end)
-    return p.with_suffix(".parquet.metadata.json")
+def get_cache_path(vendor: str, symbol: str, timeframe: str, start, end) -> Path:
+    return _cache_dir(vendor, symbol, timeframe) / f"{_stem(start, end)}.parquet"
 
 
-class DataCache:
-    """
-    Manages parquet-based dataset cache.
-    """
-
-    def __init__(self, root: Optional[Path] = None) -> None:
-        self.root = root or _DATA_CACHE_ROOT
-
-    def get_path(self, vendor: str, symbol: str, timeframe: str, start: str, end: str) -> Path:
-        s = str(start)[:10].replace("-", "")
-        e = str(end)[:10].replace("-", "")
-        base = self.root / vendor / symbol.upper() / timeframe
-        base.mkdir(parents=True, exist_ok=True)
-        return base / f"{s}_{e}.parquet"
-
-    def exists(self, vendor: str, symbol: str, timeframe: str, start: str, end: str) -> bool:
-        p = self.get_path(vendor, symbol, timeframe, start, end)
-        return p.exists()
-
-    def load(
-        self,
-        vendor: str,
-        symbol: str,
-        timeframe: str,
-        start: str,
-        end: str,
-        check_staleness: bool = False,
-    ) -> Optional[pd.DataFrame]:
-        """Load cached dataset if it exists.
-
-        Parameters
-        ----------
-        vendor, symbol, timeframe, start, end : str
-            Dataset identifiers.
-        check_staleness : bool
-            When ``True``, warn if cached data is older than 1 day for intraday
-            timeframes or 7 days for daily timeframes.
-
-        Returns
-        -------
-        pd.DataFrame or None
-        """
-        p = self.get_path(vendor, symbol, timeframe, start, end)
-        if not p.exists():
-            return None
-        try:
-            if check_staleness:
-                meta_p = Path(str(p) + ".metadata.json")
-                if meta_p.exists():
-                    try:
-                        with open(meta_p, encoding="utf-8") as f:
-                            meta = json.load(f)
-                        fetched_at_str = meta.get("fetched_at")
-                        if fetched_at_str:
-                            fetched_at = datetime.fromisoformat(fetched_at_str)
-                            age_days = (datetime.now(timezone.utc).replace(tzinfo=None) - fetched_at).total_seconds() / _SECONDS_PER_DAY
-                            is_intraday = timeframe != "1D"
-                            max_age = 1 if is_intraday else 7
-                            if age_days > max_age:
-                                logger.warning(
-                                    "Cached data for %s %s is %.1f days old (threshold: %d days).",
-                                    symbol, timeframe, age_days, max_age,
-                                )
-                    except Exception as exc:
-                        logger.debug("Cache metadata parse failed for %s: %s", p, exc)
-            return pd.read_parquet(p)
-        except Exception as exc:
-            logger.warning("Cache load failed for %s: %s", p, exc)
-            return None
-
-    def save(
-        self,
-        df: pd.DataFrame,
-        vendor: str,
-        symbol: str,
-        timeframe: str,
-        start: str,
-        end: str,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Path:
-        """Save dataset and metadata."""
-        p = self.get_path(vendor, symbol, timeframe, start, end)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(p, index=True)
-
-        meta = metadata or {}
-        meta.setdefault("vendor", vendor)
-        meta.setdefault("symbol", symbol)
-        meta.setdefault("timeframe", timeframe)
-        meta.setdefault("start", str(start)[:10])
-        meta.setdefault("end", str(end)[:10])
-        meta.setdefault("rows", len(df))
-        meta.setdefault("columns", list(df.columns))
-        meta["fetched_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
-        meta_path = Path(str(p) + ".metadata.json")
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(meta, f, indent=2)
-        return p
-
-    def list_datasets(self) -> List[Dict[str, Any]]:
-        """List all cached datasets with metadata."""
-        results = []
-        if not self.root.exists():
-            return results
-        for parquet in self.root.rglob("*.parquet"):
-            meta_path = Path(str(parquet) + ".metadata.json")
-            meta = {}
-            if meta_path.exists():
-                try:
-                    with open(meta_path, encoding="utf-8") as f:
-                        meta = json.load(f)
-                except Exception:
-                    pass
-            rel = parquet.relative_to(self.root)
-            parts = rel.parts
-            if len(parts) >= 4:
-                meta.setdefault("vendor", parts[0])
-                meta.setdefault("symbol", parts[1])
-                meta.setdefault("timeframe", parts[2])
-                meta.setdefault("path", str(parquet))
-            results.append(meta)
-        return results
+def get_meta_path(vendor: str, symbol: str, timeframe: str, start, end) -> Path:
+    return _cache_dir(vendor, symbol, timeframe) / f"{_stem(start, end)}_metadata.json"
 
 
 def _fetch_yfinance(symbol: str, timeframe: str, start_s: str, end_s: str) -> pd.DataFrame:
@@ -575,11 +449,37 @@ def _fetch_stockdata(symbol: str, start_s: str, end_s: str, api_key: str) -> pd.
 
         rows.extend(batch)
 
-        meta = data.get("meta", {})
-        # Stop if we've received everything
-        if len(rows) >= meta.get("found", len(rows)):
-            break
-        page += 1
+        Returns
+        -------
+        pd.DataFrame or None
+        """
+        p = self.get_path(vendor, symbol, timeframe, start, end)
+        if not p.exists():
+            return None
+        try:
+            if check_staleness:
+                meta_p = Path(str(p) + ".metadata.json")
+                if meta_p.exists():
+                    try:
+                        with open(meta_p, encoding="utf-8") as f:
+                            meta = json.load(f)
+                        fetched_at_str = meta.get("fetched_at")
+                        if fetched_at_str:
+                            fetched_at = datetime.fromisoformat(fetched_at_str)
+                            age_days = (datetime.now(timezone.utc).replace(tzinfo=None) - fetched_at).total_seconds() / _SECONDS_PER_DAY
+                            is_intraday = timeframe != "1D"
+                            max_age = 1 if is_intraday else 7
+                            if age_days > max_age:
+                                logger.warning(
+                                    "Cached data for %s %s is %.1f days old (threshold: %d days).",
+                                    symbol, timeframe, age_days, max_age,
+                                )
+                    except Exception as exc:
+                        logger.debug("Cache metadata parse failed for %s: %s", p, exc)
+            return pd.read_parquet(p)
+        except Exception as exc:
+            logger.warning("Cache load failed for %s: %s", p, exc)
+            return None
 
     if not rows:
         raise ValueError(f"StockData.org: no data for {symbol}")
@@ -715,19 +615,16 @@ def auto_fetch_and_cache(
         f"Last error: {last_error}"
     )
 
-    cache.save(df, vendor, symbol.upper(), timeframe, start_s, end_s)
-    return df
 
-
-def get_cached_dataset(
-    vendor: str,
-    symbol: str,
-    timeframe: str,
-    start: str,
-    end: str,
-) -> Optional[pd.DataFrame]:
-    """Load from cache only; does not fetch."""
-    return DataCache().load(vendor, symbol.upper(), timeframe, start, end)
+def load_metadata(vendor: str, symbol: str, timeframe: str, start, end) -> Optional[Dict[str, Any]]:
+    mp = get_meta_path(vendor, symbol, timeframe, start, end)
+    if not mp.exists():
+        return None
+    try:
+        with open(mp) as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 
 def list_cached_datasets() -> List[Dict[str, Any]]:

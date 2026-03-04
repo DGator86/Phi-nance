@@ -19,19 +19,6 @@ python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budg
 
 ---
 
-
-## Docker
-
-```bash
-docker compose up --build
-```
-
-This starts the Streamlit workbench at `http://localhost:8501`.
-
-VPS scripts were moved to `deploy/` and are optional for manual hosting.
-
----
-
 ## Live Backtest Workbench
 
 1. **Dataset Builder** — Fetch & cache OHLCV (Alpha Vantage, yfinance, Binance Public)

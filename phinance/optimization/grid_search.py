@@ -112,12 +112,20 @@ def search(
     param_grid: Dict[str, List[Any]],
     method: str = "random",
     max_iter: int = 50,
+    **kwargs: Any,
 ) -> Tuple[Dict[str, Any], float]:
     """Unified search dispatcher.
 
     Parameters
     ----------
-    method : ``"grid"`` | ``"random"``
+    method : ``"grid"`` | ``"random"`` | ``"bayesian"`` | ``"genetic"``
+        Optimisation strategy.
+    max_iter : int
+        Maximum number of evaluations (all methods).
+    **kwargs
+        Extra keyword arguments forwarded to the selected method:
+        * bayesian: n_trials, seed, storage, study_name
+        * genetic:  population_size, n_generations, mutation_rate, …
 
     Returns
     -------
@@ -125,4 +133,21 @@ def search(
     """
     if method == "grid":
         return grid_search(ohlcv, objective_fn, param_grid, max_iter)
+    if method == "bayesian":
+        from phinance.optimization.bayesian import bayesian_search
+        n_trials = kwargs.pop("n_trials", max_iter)
+        return bayesian_search(ohlcv, objective_fn, param_grid,
+                               n_trials=n_trials, **kwargs)
+    if method == "genetic":
+        from phinance.optimization.genetic import genetic_search
+        population_size = kwargs.pop("population_size", 20)
+        n_generations   = kwargs.pop("n_generations",   max(1, max_iter // population_size))
+        return genetic_search(ohlcv, objective_fn, param_grid,
+                              population_size=population_size,
+                              n_generations=n_generations, **kwargs)
+    # Default: random search
     return random_search(ohlcv, objective_fn, param_grid, max_iter)
+
+
+# ── Convenience aliases ───────────────────────────────────────────────────────
+SEARCH_METHODS = ("grid", "random", "bayesian", "genetic")

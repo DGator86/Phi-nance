@@ -1580,6 +1580,31 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
             "Click **Run Backtest** to see the updated results."
         )
 
+        st.markdown("**Evaluation Metric**")
+        eval_metric = st.selectbox(
+            "Primary Metric",
+            ["sharpe", "total_return", "cagr", "sortino", "max_drawdown",
+             "direction_accuracy", "profit_factor", "win_rate"],
+            format_func=_metric_label,
+            key="wb_eval_metric",
+        )
+
+        st.markdown("**Run Description** (optional)")
+        run_desc = st.text_input("Notes / tag this run", value="", key="wb_run_desc",
+                                  placeholder="e.g. SPY daily RSI+MACD blend")
+
+    st.divider()
+
+    # ── Run / Stop buttons ────────────────────────────────────────────────────
+    btn_col1, btn_col2, btn_col3 = st.columns([2, 1, 3])
+    run_clicked  = btn_col1.button("▶ Run Backtest", type="primary", use_container_width=True)
+    stop_clicked = btn_col2.button("■ Stop", use_container_width=True)
+
+    if stop_clicked:
+        _set("wb_running", False)
+        st.warning("Backtest stopped.")
+        return
+
     if not run_clicked:
         return
 
@@ -1721,17 +1746,56 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
             sc = _compute_accuracy(strat) if hasattr(strat, "prediction_log") else {}
             _display_results(config, results, strat, indicators_to_use, blend_method, blend_weights, sc)
         else:
-            progress.empty()
-            st.error("Backtest returned no results.")
+            engine = BacktestEngine(backtest_cfg)
+            result_obj = engine.run(ohlcv, blended_signal, progress_callback=_bt_progress)
 
-        if phiai_full and phiai_explanation:
-            with st.expander("PhiAI Changes"):
-                st.markdown(f"""
-                <div style="background:rgba(168,85,247,0.04);border:1px solid rgba(168,85,247,0.12);
-                            border-radius:12px;padding:1.2rem;font-size:0.88rem;color:#b0b0c0;">
-                    {phiai_explanation.replace(chr(10), '<br>')}
-                </div>
-                """, unsafe_allow_html=True)
+        for line in result_obj.run_log if hasattr(result_obj, "run_log") else []:
+            _log(line)
+
+        # ── 6. Compute metrics ────────────────────────────────────────────────
+        _status("Step 6/6 — Computing metrics...", 0.85)
+        metrics = result_obj.metrics
+
+        end_cap   = result_obj.end_capital
+        start_cap = cfg.initial_capital
+        net_pnl   = end_cap - start_cap
+
+        _log(f"Trades: {metrics.get('n_trades', 0):,}  |  "
+             f"Win rate: {metrics.get('win_rate', 0):.1%}  |  "
+             f"Sharpe: {metrics.get('sharpe', 0):.2f}")
+        _log(f"End capital: ${end_cap:,.2f}  (net P/L: ${net_pnl:+,.2f})")
+
+        # ── Save run ─────────────────────────────────────────────────────────
+        _status("Saving run to history...", 0.95)
+        run_data = {
+            "metrics":     metrics,
+            "end_capital": end_cap,
+            "start_capital": start_cap,
+            "equity_curve": result_obj.equity_curve,
+            "signals":      blended_signal,
+        }
+        try:
+            save_run(cfg, run_data, result_obj.trades)
+            _log(f"Run saved: runs/{cfg.run_id}/", "info")
+        except Exception as e:
+            _log(f"Save failed: {e}", "warn")
+
+        _set("wb_last_result", {
+            "run_id":      cfg.run_id,
+            "config":      cfg,
+            "result":      result_obj,
+            "signals_df":  signals_df,
+            "blended":     blended_signal,
+            "metrics":     metrics,
+            "end_capital": end_cap,
+        })
+
+        _status("✓ Backtest complete!", 1.0)
+        time.sleep(0.3)
+        progress_bar.empty()
+        status_area.empty()
+        log_area.empty()
+        st.rerun()
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         progress.empty()
@@ -1739,44 +1803,412 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
         st.exception(e)
 
 
-# ---------------------------------------------------------------------------
-# AI Agents
-# ---------------------------------------------------------------------------
+def _wrap_options_result(opt_result):
+    """Wrap OptionsBacktestResult into a duck-typed object matching BacktestResult interface."""
+    class _Wrapper:
+        pass
+    w = _Wrapper()
+    w.equity_curve  = opt_result.equity_curve
+    w.trades        = opt_result.trades
+    w.metrics       = opt_result.metrics
+    w.start_capital = opt_result.start_capital
+    w.end_capital   = opt_result.end_capital
+    w.signals       = pd.Series(dtype=float)
+    w.positions     = pd.Series(dtype=float)
+    w.run_log       = []
+    return w
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RESULTS SECTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render_results():
+    last = _ss("wb_last_result")
+    if last is None:
+        return
+
+    result     = last["result"]
+    metrics    = last["metrics"]
+    cfg        = last["config"]
+    signals_df = last.get("signals_df", pd.DataFrame())
+    blended    = last.get("blended", pd.Series(dtype=float))
+    run_id     = last["run_id"]
+    end_cap    = last["end_capital"]
+    start_cap  = cfg.initial_capital
+    net_pnl    = end_cap - start_cap
+    net_pnl_pct = net_pnl / (start_cap + 1e-10)
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("## Results")
+
+    # Eval metric value
+    em   = cfg.evaluation_metric
+    em_v = metrics.get(em, metrics.get("total_return", 0))
+    em_lbl = _metric_label(em)
+    if em in ("total_return", "cagr", "win_rate", "direction_accuracy", "max_drawdown"):
+        em_str = f"{float(em_v):.2%}" if em_v is not None else "—"
+    else:
+        em_str = f"{float(em_v):.3f}" if em_v is not None else "—"
+
+    st.markdown(
+        result_ribbon_html(start_cap, end_cap, net_pnl, net_pnl_pct, em_lbl, em_str),
+        unsafe_allow_html=True,
+    )
+
+    # ── Tabs ─────────────────────────────────────────────────────────────────
+    tabs = st.tabs(["Summary", "Equity Curve", "Trades", "Metrics", "Diagnostics"])
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    with tabs[0]:
+        rc1, rc2, rc3, rc4 = st.columns(4)
+        rc1.metric("Total Return",  _fmt_pct(metrics.get("total_return")))
+        rc2.metric("CAGR",          _fmt_pct(metrics.get("cagr")))
+        rc3.metric("Sharpe",        _fmt_num(metrics.get("sharpe"), 2))
+        rc4.metric("Max Drawdown",  _fmt_pct(metrics.get("max_drawdown")))
+
+        rc5, rc6, rc7, rc8 = st.columns(4)
+        rc5.metric("Win Rate",      _fmt_pct(metrics.get("win_rate")))
+        rc6.metric("Profit Factor", _fmt_num(metrics.get("profit_factor"), 2))
+        rc7.metric("Trades",        f"{metrics.get('n_trades', 0):,}")
+        rc8.metric("Dir. Accuracy", _fmt_pct(metrics.get("direction_accuracy")))
+
+        st.markdown(f"**Run ID:** `{run_id}`  |  **Symbol:** {cfg.symbol}  |  "
+                    f"**Timeframe:** {cfg.timeframe}  |  **Mode:** {cfg.trading_mode.title()}")
+        st.caption(
+            f"Indicators: {', '.join(i.display_name for i in cfg.indicators)}  |  "
+            f"Blend: {cfg.blend_mode}  |  "
+            f"PhiAI: {'on' if cfg.phiai_enabled else 'off'}"
+        )
+
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            if st.button("Export Config (JSON)", key="exp_cfg", use_container_width=True):
+                st.download_button(
+                    "Download config.json",
+                    data=cfg.to_json(),
+                    file_name=f"run_{run_id}_config.json",
+                    mime="application/json",
+                )
+        with ec2:
+            if not result.trades.empty and st.button("Export Trades (CSV)",
+                                                      key="exp_trades", use_container_width=True):
+                st.download_button(
+                    "Download trades.csv",
+                    data=result.trades.to_csv(index=False),
+                    file_name=f"run_{run_id}_trades.csv",
+                    mime="text/csv",
+                )
+
+    # ── Equity Curve ──────────────────────────────────────────────────────────
+    with tabs[1]:
+        eq = result.equity_curve.to_frame("Portfolio Value ($)")
+        if not blended.empty:
+            # Normalize blended to overlay on equity chart
+            pass
+        st.line_chart(eq, use_container_width=True)
+
+        # Drawdown chart
+        if len(result.equity_curve) > 1:
+            dd_series = (result.equity_curve - result.equity_curve.cummax()) / \
+                        result.equity_curve.cummax()
+            st.markdown("**Drawdown**")
+            st.area_chart(dd_series.to_frame("Drawdown"), use_container_width=True)
+
+    # ── Trades ────────────────────────────────────────────────────────────────
+    with tabs[2]:
+        if result.trades.empty:
+            st.warning("No trades executed. Try lowering the signal threshold.")
+        else:
+            st.dataframe(result.trades, use_container_width=True, hide_index=True)
+
+            if "pnl" in result.trades.columns:
+                t1, t2 = st.columns(2)
+                with t1:
+                    pnl_hist = result.trades["pnl"]
+                    pnl_df = pnl_hist.to_frame("Trade P&L ($)")
+                    st.bar_chart(pnl_df, use_container_width=True)
+                with t2:
+                    cum_pnl = result.trades["pnl"].cumsum()
+                    st.line_chart(cum_pnl.to_frame("Cumulative P&L ($)"),
+                                  use_container_width=True)
+
+    # ── Metrics ───────────────────────────────────────────────────────────────
+    with tabs[3]:
+        metric_groups = [
+            ("Returns", ["total_return", "cagr", "net_pnl", "net_pnl_pct"]),
+            ("Risk",    ["max_drawdown", "volatility_annual", "sharpe", "sortino", "calmar"]),
+            ("Trades",  ["n_trades", "win_rate", "profit_factor", "avg_win",
+                         "avg_loss", "largest_win", "largest_loss", "avg_hold_bars"]),
+            ("Accuracy", ["direction_accuracy"]),
+            ("Capital", ["initial_capital", "end_capital"]),
+        ]
+        for group_name, keys in metric_groups:
+            st.markdown(f"**{group_name}**")
+            cols = st.columns(len(keys))
+            for col, k in zip(cols, keys):
+                v = metrics.get(k)
+                if v is None:
+                    col.metric(k.replace("_", " ").title(), "—")
+                elif k in ("total_return", "cagr", "win_rate", "max_drawdown",
+                           "volatility_annual", "direction_accuracy", "net_pnl_pct"):
+                    col.metric(k.replace("_", " ").title(), _fmt_pct(v))
+                elif k in ("initial_capital", "end_capital", "net_pnl",
+                           "avg_win", "avg_loss", "largest_win", "largest_loss"):
+                    col.metric(k.replace("_", " ").title(), _fmt_usd(v))
+                elif k in ("n_trades",):
+                    col.metric(k.replace("_", " ").title(), f"{int(v):,}")
+                else:
+                    col.metric(k.replace("_", " ").title(), _fmt_num(v, 3))
+            st.markdown("")
+
+    # ── Diagnostics ───────────────────────────────────────────────────────────
+    with tabs[4]:
+        if not signals_df.empty:
+            st.markdown("**Individual Indicator Signals**")
+            st.line_chart(signals_df.tail(300), use_container_width=True)
+
+        if not blended.empty:
+            st.markdown("**Blended Signal**")
+            st.line_chart(blended.tail(300).to_frame("Blended Signal"),
+                          use_container_width=True)
+
+        if hasattr(result, "positions") and not result.positions.empty:
+            st.markdown("**Position Series (+1=long, -1=short, 0=flat)**")
+            st.line_chart(result.positions.tail(300).to_frame("Position"),
+                          use_container_width=True)
+
+        # PhiAI explanation
+        phiai_res = _ss("wb_phiai_result")
+        if phiai_res and phiai_res.get("explanation"):
+            with st.expander("PhiAI Explanation", expanded=True):
+                st.code(phiai_res["explanation"], language="text")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RUN HISTORY TAB
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render_run_history():
+    st.markdown("## Run History")
+
+    runs = list_runs(limit=50)
+
+    if not runs:
+        st.info("No runs stored yet. Complete a backtest to see history.")
+        return
+
+    # Summary table
+    display_cols = ["run_id", "created_at", "symbol", "timeframe", "trading_mode",
+                    "indicators", "blend_mode", "phiai", "initial_capital",
+                    "end_capital", "total_return", "sharpe", "max_drawdown",
+                    "win_rate", "n_trades"]
+    df_runs = pd.DataFrame(runs)
+    avail_cols = [c for c in display_cols if c in df_runs.columns]
+    st.dataframe(df_runs[avail_cols], use_container_width=True, hide_index=True)
+
+    # Compare multiple runs
+    run_ids = [r["run_id"] for r in runs]
+    selected_ids = st.multiselect("Select runs to compare", run_ids, default=run_ids[:min(3, len(run_ids))],
+                                   key="wb_compare_ids")
+
+    if selected_ids and st.button("Compare Selected Runs", use_container_width=True):
+        cmp_df = compare_runs(selected_ids)
+        if not cmp_df.empty:
+            st.dataframe(cmp_df, use_container_width=True, hide_index=True)
+
+            # Equity curve comparison
+            st.markdown("**Equity Curves**")
+            eq_data: Dict[str, pd.Series] = {}
+            for rid in selected_ids:
+                run = load_run(rid)
+                if run and run.get("results"):
+                    eq = run["results"].get("equity_curve")
+                    if isinstance(eq, (pd.Series, pd.DataFrame)):
+                        lbl = f"{run['results'].get('symbol', rid)} ({rid})"
+                        eq_data[lbl] = eq if isinstance(eq, pd.Series) else eq.iloc[:, 0]
+                    elif isinstance(eq, dict):
+                        # Stored as dict
+                        vals = list(eq.values())
+                        if vals and isinstance(vals[0], list):
+                            eq_data[rid] = pd.Series(vals[0])
+            if eq_data:
+                eq_df = pd.DataFrame(eq_data)
+                st.line_chart(eq_df, use_container_width=True)
+
+    # Delete
+    with st.expander("Manage Runs", expanded=False):
+        del_id = st.selectbox("Delete run", ["— select —"] + run_ids, key="wb_del_run")
+        if del_id != "— select —":
+            if st.button(f"Delete run {del_id}", key="wb_del_btn"):
+                delete_run(del_id)
+                st.success(f"Deleted run {del_id}")
+                st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CACHE MANAGER TAB
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render_cache_manager():
+    st.markdown("## Cache Manager")
+
+    cached = list_cached_datasets()
+
+    if not cached:
+        st.info("No cached datasets. Use Step 1 to fetch and cache data.")
+        return
+
+    display = []
+    for c in cached:
+        display.append({
+            "dataset_id": c.get("dataset_id", ""),
+            "symbol":     c.get("symbol", ""),
+            "timeframe":  c.get("timeframe", ""),
+            "vendor":     c.get("vendor", ""),
+            "start":      c.get("start", ""),
+            "end":        c.get("end", ""),
+            "rows":       c.get("rows", 0),
+            "cached_at":  c.get("cached_at", "")[:19],
+        })
+
+    df_cache = pd.DataFrame(display)
+    st.dataframe(df_cache, use_container_width=True, hide_index=True)
+
+    if st.button("Clear All Cache", key="wb_clear_cache"):
+        n = clear_all_cache()
+        st.success(f"Cleared {n} cached datasets.")
+        st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def main():
+    render_banner()
+
+    # Top-level navigation tabs
+    tab_wb, tab_hist, tab_cache = st.tabs([
+        "⚗ Workbench",
+        "📋 Run History",
+        "💾 Cache Manager",
+    ])
+
+    with tab_wb:
+        # ── Step 1 ────────────────────────────────────────────────────────────
+        dataset = render_step1()
+
+        if dataset is None:
+            st.info("Complete Step 1 to continue.")
+            # Show last result even if dataset not loaded
+            render_results()
+            return
+
+        st.divider()
+
+        # ── Step 2 ────────────────────────────────────────────────────────────
+        indicators = render_step2(dataset)
+
+        st.divider()
+
+        # ── Step 3 (if 2+ indicators) ─────────────────────────────────────────
+        active_inds = [i for i in indicators if i.get("enabled", True)]
+        if len(active_inds) >= 2:
+            blend_cfg = render_step3(indicators)
+            st.divider()
+        else:
+            blend_cfg = {"mode": "weighted_sum", "weights": {}, "regime_weights": {}}
+
+        # ── Step 4 ────────────────────────────────────────────────────────────
+        phiai_cfg = render_step4(indicators)
+
+        st.divider()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI Agents (Ollama)
+# ─────────────────────────────────────────────────────────────────────────────
 def render_ai_agents():
-    st.markdown(_render_section_header("", "AI AGENTS", "OLLAMA"), unsafe_allow_html=True)
-    st.caption("Free local models via Ollama. Install: ollama.com/download")
+    """Ollama-powered free AI agents for regime/strategy Q&A."""
+    st.markdown("### AI Agents (Ollama)")
+    st.caption(
+        "Free local models via [Ollama](https://ollama.com). "
+        "Install: [ollama.com/download](https://ollama.com/download) · "
+        "Then: `ollama pull llama3.2` or `ollama pull 0xroyce/plutus`"
+    )
 
-    host = st.text_input("Ollama Host", value=os.getenv("OLLAMA_HOST", "http://localhost:11434"), key="ollama_host")
+    host = st.text_input(
+        "Ollama Host",
+        value=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
+        key="ollama_host",
+        help="Default: http://localhost:11434",
+    )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Check connection", use_container_width=True):
+    col_check, col_list = st.columns(2)
+    with col_check:
+        if st.button("Check connection"):
+            # pylint: disable=import-outside-toplevel
             from phi.agents import check_ollama_ready
-            if check_ollama_ready(host):
+            ok = check_ollama_ready(host)
+            if ok:
                 st.success("Ollama is running")
             else:
-                st.error("Ollama not reachable")
-    with c2:
-        if st.button("List models", use_container_width=True):
+                st.error(
+                    "Ollama not reachable. Install from ollama.com and run it."
+                )
+    with col_list:
+        if st.button("List models"):
+            # pylint: disable=import-outside-toplevel
             from phi.agents import list_ollama_models
             models = list_ollama_models(host)
             if models:
-                names = [m.get("name", "").split(":")[0] for m in models if m.get("name")]
+                names = [
+                    m.get("name", "").split(":")[0]
+                    for m in models if m.get("name")
+                ]
                 st.session_state["ollama_models"] = list(dict.fromkeys(names))
-                st.success(f"Found {len(st.session_state['ollama_models'])} model(s)")
+                st.success(
+                    f"Found {len(st.session_state['ollama_models'])} model(s)"
+                )
             else:
-                st.warning("No models found")
+                msg = (
+                    "No models or Ollama not running. "
+                    "Run: ollama pull llama3.2"
+                )
+                st.warning(msg)
 
-    model = st.selectbox("Model", options=st.session_state.get("ollama_models", ["llama3.2", "0xroyce/plutus"]),
-                          key="ollama_model")
-    prompt = st.text_area("Ask AI", placeholder="e.g. What does RSI oversold mean?", key="ollama_prompt", height=80)
+    m_def = ["llama3.2", "0xroyce/plutus"]
+    model_list = st.session_state.get("ollama_models", m_def)
+    model = st.selectbox(
+        "Model",
+        options=model_list,
+        index=0 if model_list else 0,
+        key="ollama_model",
+        help="Pull with: ollama pull <model>",
+    )
 
-    if st.button("Send", key="ollama_send", type="primary") and prompt:
+    prompt = st.text_area(
+        "Ask AI (regime, strategy, indicators, etc.)",
+        placeholder=(
+            "e.g. What does RSI oversold mean? "
+            "When to use regime-weighted blending?"
+        ),
+        key="ollama_prompt",
+        height=80,
+    )
+    if st.button("Send", key="ollama_send") and prompt:
         with st.spinner("Thinking..."):
             try:
                 from phi.agents import OllamaAgent
                 agent = OllamaAgent(model=model, host=host)
-                reply = agent.chat(prompt, system="You are a quantitative trading assistant. Be concise.")
+                reply = agent.chat(
+                    prompt,
+                    system=(
+                        "You are a quantitative trading assistant. "
+                        "Be concise."
+                    ),
+                )
                 st.markdown("**Reply:**")
                 st.markdown(reply)
             except Exception as e:
@@ -1787,22 +2219,29 @@ def render_ai_agents():
 # Run History & Cache
 # ---------------------------------------------------------------------------
 def render_run_history():
+    """Render the history of previous backtest runs."""
+    # pylint: disable=import-outside-toplevel
     from phi.run_config import RunHistory
     hist = RunHistory()
     runs = hist.list_runs()
     if not runs:
         st.caption("No runs yet.")
         return
-    st.markdown(_render_section_header("", "RUN HISTORY", f"{len(runs)} RUNS"), unsafe_allow_html=True)
+    st.markdown("### Run History")
     for r in runs[:10]:
         with st.expander(r["run_id"]):
             st.json(r.get("results", {}))
 
+        # ── Results ───────────────────────────────────────────────────────────
+        render_results()
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache Manager
+# ─────────────────────────────────────────────────────────────────────────────
 def render_cache_manager():
     from phi.data import list_cached_datasets
     datasets = list_cached_datasets()
-    st.markdown(_render_section_header("", "CACHE MANAGER", ""), unsafe_allow_html=True)
+    st.markdown("### Cache Manager")
     if not datasets:
         st.caption("No cached datasets.")
         return
@@ -1811,14 +2250,9 @@ def render_cache_manager():
 
 # ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 def main():
-    st.set_page_config(
-        page_title="Phi-nance Live Workbench",
-        page_icon="📊",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
+    st.set_page_config(page_title="Phi-nance Live Workbench", page_icon="📊", layout="wide")
 
     _inject_css()
     _sidebar()
@@ -2011,25 +2445,6 @@ def main():
 
     with tab_cache:
         render_cache_manager()
-    with tab_agents:
-        render_ai_agents()
-    st.markdown("---")
-    tab_hist, tab_cache, tab_agents = st.tabs(["Run History", "Cache Manager", "AI Agents"])
-    with tab_hist: render_run_history()
-    with tab_cache: render_cache_manager()
-    with tab_agents: render_ai_agents()
-
-    # Footer
-    extra_pad = "padding-bottom:4rem;" if dev.is_mobile else ""
-    st.markdown(f"""
-    <div class="phi-footer" style="{extra_pad}">
-        PHI-NANCE &middot; LIVE BACKTEST WORKBENCH &middot; v3.1 PREMIUM
-        <br>QUANTITATIVE RESEARCH PLATFORM &middot; {datetime.now().strftime("%Y")}
-        <br><span style="font-size:0.55rem;opacity:0.5;">
-            {dev.device_type.value.upper()} MODE &middot; {dev.screen_width}px
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
