@@ -1,171 +1,170 @@
 # Phi-nance — Live Backtest Workbench
 
-Quantitative trading research platform with regime-aware MFT (Market Field Theory) and a premium Live Backtest Workbench.
+> Premium quant SaaS-grade backtesting platform.
+> Dark mode · Purple/Orange · Regime-aware · PhiAI auto-tuning · Run history.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Run the Live Backtest Workbench (recommended)
-python -m streamlit run app_streamlit/live_workbench.py
+# Install dependencies
+python3.12 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 
-# Or the legacy MFT Dashboard
-python -m streamlit run dashboard.py
+# Launch the Live Backtest Workbench
+streamlit run app_streamlit/live_workbench.py
 
-# CLI backtest
-python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budget 100000
+# Launch the legacy dashboard (preserved)
+streamlit run dashboard.py
 ```
 
 ---
 
 ## Live Backtest Workbench
 
-1. **Dataset Builder** — Fetch & cache OHLCV (Alpha Vantage, yfinance, Binance Public)
-2. **Indicator Selection** — RSI, MACD, Bollinger, Dual SMA, Mean Reversion, Breakout, Buy & Hold
-3. **Blending Panel** — Weighted Sum, Regime-Weighted, Voting, PhiAI Chooses
-4. **PhiAI Panel** — Full auto mode for indicator/param/blend optimization
-5. **Backtest Controls** — Equities/Options, position sizing, exit rules
-6. **Run & Results** — Live progress, metrics, Run History, Cache Manager
+The workbench lives at `app_streamlit/live_workbench.py`.
 
-**Initial Capital** is required and validated. All runs are stored under `runs/{run_id}/` with config, results, and trades.
+### Workflow (5 steps)
 
----
+| Step | Panel | What happens |
+|---|---|---|
+| 1 | **Dataset Builder** | Fetch OHLCV from yfinance/Alpha Vantage. Cache as parquet. Never re-fetch. |
+| 2 | **Indicator Selection** | Choose from 14+ indicators. Set params manually or enable PhiAI auto-tune. |
+| 3 | **Blending Panel** | Weighted sum / voting / regime-weighted / PhiAI blend mode. |
+| 4 | **PhiAI Panel** | Full-auto: indicator selection + parameter optimization + blend weights. |
+| 5 | **Backtest Controls** | Equities or options mode. SL/TP/trailing stop. Run live with progress bar. |
 
-## What Was Added (Master Prompt)
+### Results
 
-| Area | Original | Added |
-|------|----------|-------|
-| **Data** | Alpha Vantage, dashboard cache | `phi.data` — `/data_cache/{vendor}/{symbol}/{timeframe}/` parquet + metadata |
-| **Runs** | None | `phi.run_config` — RunConfig schema, RunHistory at `/runs/` |
-| **UI** | 6-tab dashboard | `app_streamlit/live_workbench.py` — step-by-step Workbench |
-| **Blending** | MFT blender in dashboard | `phi.blending` — Weighted Sum, Voting, Regime-Weighted |
-| **PhiAI** | None | `phi.phiai` — auto_tune_params, PhiAI orchestrator |
-| **Options** | None | `phi.options` — delta backtest + optional MarketDataApp snapshot |
-| **Theme** | Default | Dark only, purple (#a855f7) + orange (#f97316) |
+- **Summary tab** — start/end capital, net P&L $/%,  primary metric highlighted
+- **Equity Curve** — portfolio value + drawdown chart
+- **Trades** — per-trade log with entry/exit/P&L + bar charts
+- **Metrics** — full metric table (Sharpe, Sortino, Calmar, Profit Factor, Win Rate, Direction Accuracy...)
+- **Diagnostics** — individual signals, blended signal, position series, PhiAI explanation
 
----
+### Export
 
-## Module Map
-
-| Module | Location |
-|--------|----------|
-| Data cache | `phi/data/cache.py` |
-| RunConfig + RunHistory | `phi/run_config.py` |
-| Blending | `phi/blending/blender.py` |
-| PhiAI | `phi/phiai/auto_tune.py` |
-| Options (stub) | `phi/options/` |
-| Live Workbench | `app_streamlit/live_workbench.py` |
-| Architecture | `Architecture.md` |
-
-
-## External Ecosystem Notes
-
-A curated landscape of external options/data projects (with recommended integration order for Phi-nance) is maintained in:
-
-- `docs/external-options-data-landscape.md`
+- `config.json` — full RunConfig for reproducibility
+- `trades.csv` — trade-level data
 
 ---
 
-## Dependencies
+## Architecture
 
-See `requirements.txt`. Key: lumibot, streamlit, pandas, yfinance, scikit-learn, lightgbm.
+See [Architecture.md](Architecture.md) for full module breakdown.
 
-
-## Optional API keys
-
-- `MARKETDATAAPP_API_TOKEN`: enables real options-chain snapshots in options mode to tune delta assumptions when available.
-
----
-
-## Usage
-
-### Data Fetching
-
-```python
-from phi.data.cache import fetch_and_cache
-
-# Fetch and cache daily SPY data from yfinance
-df = fetch_and_cache(
-    vendor="yfinance",
-    symbol="SPY",
-    timeframe="1D",
-    start="2022-01-01",
-    end="2024-01-01",
-)
-print(df.tail())
 ```
+phi/
+  data/        — Dataset fetch + cache
+  indicators/  — 14+ indicators → normalized [-1,+1] signals
+  blending/    — Signal blending engine
+  backtest/    — Vectorized engine + RunConfig + RunHistory
+  options/     — Black-Scholes options simulator
+  phiai/       — Random-search auto-tuner
 
-### Building a Blended Strategy
+app_streamlit/
+  live_workbench.py  — Main workbench UI
+  styles.py          — Dark theme CSS
 
-```python
-import pandas as pd
-from phi.blending.blender import blend_signals
-
-# signals is a DataFrame where each column is an indicator signal series
-signals = pd.DataFrame({
-    "RSI": rsi_signal,    # values in [-1, 1]
-    "MACD": macd_signal,
-})
-composite = blend_signals(signals, method="weighted_sum", weights={"RSI": 0.6, "MACD": 0.4})
-```
-
-### Running PhiAI Auto-Tuning
-
-```python
-from phi.phiai.auto_tune import run_phiai_optimization
-
-indicators = {
-    "RSI": {"enabled": True, "auto_tune": True, "params": {}},
-    "MACD": {"enabled": True, "auto_tune": True, "params": {}},
-}
-optimized, explanation = run_phiai_optimization(ohlcv, indicators, max_iter_per_indicator=20)
-print(explanation)
+data_cache/    — Cached parquet files + metadata JSON
+runs/          — Reproducible run storage (config + results + trades)
 ```
 
 ---
 
-## RunConfig Schema
+## Indicators Available
 
-All backtest runs are described by a `RunConfig` object and saved to `runs/{run_id}/`.
+| Name | Display | Type |
+|---|---|---|
+| `rsi` | RSI | Bounded Oscillator |
+| `macd` | MACD | Momentum |
+| `bollinger` | Bollinger Bands | Bounded Oscillator |
+| `stochastic` | Stochastic | Bounded Oscillator |
+| `dual_sma` | Dual SMA Crossover | Momentum |
+| `ema_crossover` | EMA Crossover | Momentum |
+| `momentum` | Momentum | Momentum |
+| `roc` | Rate of Change | Momentum |
+| `atr_ratio` | ATR Ratio | Momentum |
+| `vwap_dev` | VWAP Deviation | Price Level |
+| `cmf` | Chaikin Money Flow | Bounded Oscillator |
+| `adx` | ADX / DI | Momentum |
+| `wyckoff` | Wyckoff | Discrete State |
+| `range_pos` | Range Position | Bounded Oscillator |
+| `phi_mft` | Phi-Bot (MFT) | Full MFT composite |
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `dataset_id` | str | `""` | Identifier for the dataset used |
-| `symbols` | list[str] | `["SPY"]` | List of ticker symbols |
-| `start_date` | str | `""` | ISO date string `YYYY-MM-DD` |
-| `end_date` | str | `""` | ISO date string `YYYY-MM-DD` |
-| `timeframe` | str | `"1D"` | Bar timeframe: `1D`, `1H`, `15m`, etc. |
-| `vendor` | str | `"alphavantage"` | Data vendor key |
-| `initial_capital` | float | `100000.0` | Starting portfolio capital |
-| `trading_mode` | str | `"equities"` | `"equities"` or `"options"` |
-| `indicators` | dict | `{}` | Indicator configs `{name: {enabled, params}}` |
-| `blend_method` | str | `"weighted_sum"` | Signal blend method |
-| `blend_weights` | dict | `{}` | Per-indicator blend weights |
-| `phiai_enabled` | bool | `False` | Enable PhiAI auto-tuning |
-| `evaluation_metric` | str | `"roi"` | Optimization metric |
+---
 
-**Saved run structure:**
+## Blend Modes
+
+| Mode | Description |
+|---|---|
+| `weighted_sum` | Linear combination with user-defined weights |
+| `voting` | Weighted majority vote of signal directions |
+| `regime_weighted` | Per-regime weight matrix × MFT regime probabilities |
+| `phiai` | PhiAI assigns weights based on individual indicator scores |
+
+---
+
+## PhiAI
+
+PhiAI (`phi/phiai/tuner.py`) uses random search to:
+1. Score each indicator individually on the chosen metric
+2. Select the best N indicators (respecting drawdown cap)
+3. Tune each indicator's parameters via random search
+4. Output blend weights proportional to scores
+
+Constraints: max indicators, drawdown cap, no-short flag.
+
+---
+
+## Data Storage
+
 ```
+data_cache/{vendor}/{symbol}/{timeframe}/{YYYYMMDD}_{YYYYMMDD}.parquet
+data_cache/{vendor}/{symbol}/{timeframe}/{YYYYMMDD}_{YYYYMMDD}_metadata.json
+
 runs/{run_id}/
-  config.json    ← RunConfig serialized
-  results.json   ← Metrics: total_return, cagr, sharpe, max_drawdown
-  trades.csv     ← Trade log (if available)
+  config.json    — full RunConfig
+  results.json   — metrics + equity curve
+  trades.csv     — per-trade log
 ```
 
 ---
 
-## Customization
+## Theme
 
-### Adding a New Indicator
+All UI enforces dark mode:
+- Background: `#0a0a12` (near-black)
+- Primary: `#a855f7` (purple) + glow effects on active elements
+- Accent: `#f97316` (orange) for highlights
+- Cards with `#16162a` + subtle `#2d2d50` borders
 
-1. Create `strategies/my_indicator.py` with a Lumibot `Strategy` subclass.
-2. Register it in `app_streamlit/live_workbench.py` in `INDICATOR_CATALOG`.
-3. Add a parameter grid entry in `phi/phiai/auto_tune.py` (`param_grids`).
-4. Add a `REGIME_INDICATOR_BOOST` entry in `phi/blending/blender.py`.
+---
 
-### Adding a New Blender
+## Legacy (preserved)
 
-1. Add a new method name to `BLEND_METHODS` in `phi/blending/blender.py`.
-2. Implement the logic as an `if method == "my_method":` branch in `blend_signals()`.
-3. Return a `pd.Series` with the same index as `signals`.
+The original Lumibot-backed strategies and dashboard are fully preserved:
+
+```bash
+python run_backtest.py --strategy rsi --start 2022-01-01 --end 2024-01-01 --budget 50000
+streamlit run dashboard.py
+```
+
+Strategies: `buy_and_hold`, `momentum`, `mean_reversion`, `rsi`, `bollinger`, `macd`, `dual_sma`, `breakout`, `wyckoff`, `liquidity_pools`
+
+---
+
+## VPS Deployment
+
+See [STEP_BY_STEP.md](STEP_BY_STEP.md) for VPS setup.
+
+The workbench runs on port `8501` (same as before):
+
+```bash
+screen -S workbench
+source venv/bin/activate
+streamlit run app_streamlit/live_workbench.py
+# Ctrl+A, D to detach
+```

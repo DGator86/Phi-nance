@@ -1,1768 +1,1313 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Phi-nance Live Backtest Workbench -- Premium Edition v3.1
-==========================================================
-SaaS-grade step-by-step quant workbench:
-  - AUTO WEB/MOBILE DETECTION with adaptive layout
-  - Animated step wizard with progress tracking
-  - Fetch & cache historical data with premium previews
-  - Select & tune indicators with visual cards
-  - Blend multiple indicators with weight visualization
-  - PhiAI auto-tuning with progress animation
-  - Equities + Options backtests with rich result displays
-  - Premium dark glassmorphism theme
+Phi-nance Live Backtest Workbench
+===================================
+Premium quant SaaS-grade backtesting platform.
+Dark mode • Purple/Orange theme • Card-based layout • Step-by-step flow
 
-Run:
-    python -m streamlit run app_streamlit/live_workbench.py
+Entry point:
+    streamlit run app_streamlit/live_workbench.py
 """
 
+from __future__ import annotations
+
+import json
 import os
 import sys
 import time
-import threading
-import importlib
-import warnings
+import uuid
+from copy import deepcopy
+from datetime import date, timedelta
 from pathlib import Path
-from datetime import date, datetime
+from typing import Any, Dict, List, Optional, Tuple
 
-# Suppress Lumibot pandas FutureWarning (Series.__getitem__)
-warnings.filterwarnings("ignore", category=FutureWarning, module="lumibot.entities.bars")
-
-import pandas as pd
-import streamlit as st
-import plotly.graph_objects as go
-
-_ROOT = Path(__file__).resolve().parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+# ── Bootstrap path so phi/ and regime_engine/ are importable ─────────────────
+_ROOT = str(Path(__file__).parents[1])
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 os.environ.setdefault("IS_BACKTESTING", "True")
 
-from app_streamlit.device_detect import detect_device, get_device, inject_responsive_meta, _JS_DETECT
+import numpy as np
+import pandas as pd
+import streamlit as st
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Indicator catalog (maps to strategies)
-# ─────────────────────────────────────────────────────────────────────────────
-try:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-except (BrokenPipeError, OSError):
-    pass
-
-
-# ---------------------------------------------------------------------------
-# Premium CSS + HTML Components
-# ---------------------------------------------------------------------------
-_CSS_PATH = _ROOT / ".streamlit" / "styles.css"
-
-
-def _inject_css():
-    """Inject premium CSS + JS/fonts via proper channels.
-    
-    st.markdown handles <style> fine but strips <script>/<link>.
-    Use components.html (zero-height iframe) for JS and font loading.
-    """
-    import streamlit.components.v1 as components
-    css = _CSS_PATH.read_text(encoding='utf-8') if _CSS_PATH.exists() else ''
-    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
-    components.html(_JS_DETECT, height=0)
-
-
-def _render_kpi_row(kpis):
-    cards = ""
-    for label, value, delta, dtype in kpis:
-        delta_html = f'<div class="phi-kpi-delta {dtype}">{delta}</div>' if delta else ""
-        cards += f'''
-        <div class="phi-kpi-card">
-            <div class="phi-kpi-label">{label}</div>
-            <div class="phi-kpi-value">{value}</div>
-            {delta_html}
-        </div>'''
-    return f'<div class="phi-kpi-row">{cards}</div>'
-
-
-def _render_section_header(icon, title, badge=""):
-    badge_html = f'<span class="phi-section-badge">{badge}</span>' if badge else ""
-    return f'''
-    <div class="phi-section-header">
-        <span class="phi-section-icon">{icon}</span>
-        <span class="phi-section-title">{title}</span>
-        {badge_html}
-    </div>'''
-
-
-def _render_signal_badge(signal):
-    cls = {"BUY": "phi-signal-buy", "SELL": "phi-signal-sell"}.get(signal, "phi-signal-hold")
-    return f'<span class="phi-signal {cls}">{signal}</span>'
-
-
-def _render_status_dot(status):
-    return f'<span class="phi-status-dot {status}"></span>'
-
-
-def _render_step_indicator(steps):
-    """Render a visual step progress indicator."""
-    html = '<div class="phi-steps">'
-    for i, (label, status) in enumerate(steps):
-        num = i + 1
-        html += f'''
-        <div class="phi-step {status}">
-            <span class="phi-step-number">{num}</span>
-            <span>{label}</span>
-        </div>'''
-        if i < len(steps) - 1:
-            html += '<div class="phi-step-connector"></div>'
-    html += '</div>'
-    return html
-
-
-# ---------------------------------------------------------------------------
-# Plotly Premium Theme
-# ---------------------------------------------------------------------------
-PHI_LAYOUT = dict(
-    template="plotly_dark",
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(18,18,26,0.3)",
-    font=dict(color="#eeeef2", family="Inter, system-ui, sans-serif", size=12),
-    margin=dict(l=50, r=30, t=50, b=40),
-    xaxis=dict(gridcolor="rgba(168,85,247,0.05)", showgrid=True),
-    yaxis=dict(gridcolor="rgba(168,85,247,0.05)", showgrid=True),
-    legend=dict(bgcolor="rgba(18,18,26,0.7)", bordercolor="rgba(168,85,247,0.12)", borderwidth=1),
-    hoverlabel=dict(bgcolor="#1a1a26", bordercolor="#a855f7", font=dict(color="#eeeef2")),
+from app_streamlit.styles import (
+    WORKBENCH_CSS,
+    PALETTE,
+    step_header,
+    result_ribbon_html,
 )
-CHART_COLORS = ["#a855f7", "#f97316", "#22c55e", "#06b6d4", "#eab308", "#ec4899", "#8b5cf6", "#14b8a6"]
-
-
-def _phi_chart(fig, height=0):
-    """Render a Plotly chart with device-aware height."""
-    dev = get_device()
-    if height <= 0:
-        height = dev.chart_height
-    elif dev.is_phone:
-        height = max(200, int(height * 0.7))
-    elif dev.is_tablet:
-        height = max(240, int(height * 0.85))
-    fig.update_layout(**PHI_LAYOUT, height=height, xaxis_rangeslider_visible=False)
-    st.plotly_chart(fig, use_container_width=True, config={
-        "displayModeBar": dev.is_desktop, "displaylogo": False,
-        "scrollZoom": not dev.is_mobile,
-    })
-
-
-# ---------------------------------------------------------------------------
-# Indicator Catalog
-# ---------------------------------------------------------------------------
-INDICATOR_CATALOG = {
-    "RSI": {
-        "description": "Relative Strength Index -- oversold/overbought signals.",
-        "params": {"rsi_period": (2, 50, 14), "oversold": (10, 50, 30), "overbought": (50, 95, 70)},
-        "strategy": "strategies.rsi.RSIStrategy",
-        "icon": "&#x1F4C8;",
-    },
-    "MACD": {
-        "description": "MACD crossover -- bullish/bearish momentum.",
-        "params": {"fast_period": (2, 50, 12), "slow_period": (10, 100, 26), "signal_period": (2, 30, 9)},
-        "strategy": "strategies.macd.MACDStrategy",
-        "icon": "&#x26A1;",
-    },
-    "Bollinger": {
-        "description": "Bollinger Bands -- buy below lower, sell above upper.",
-        "params": {"bb_period": (5, 100, 20), "num_std": (1, 4, 2)},
-        "strategy": "strategies.bollinger.BollingerBands",
-        "icon": "&#x1F4CA;",
-    },
-    "Dual SMA": {
-        "description": "Golden cross / death cross dual moving average.",
-        "params": {"fast_period": (2, 100, 10), "slow_period": (10, 300, 50)},
-        "strategy": "strategies.dual_sma.DualSMACrossover",
-        "icon": "&#x2194;",
-    },
-    "Mean Reversion": {
-        "description": "Buy below SMA, sell above -- classic mean reversion.",
-        "params": {"sma_period": (5, 200, 20)},
-        "strategy": "strategies.mean_reversion.MeanReversion",
-        "icon": "&#x1F504;",
-    },
-    "Breakout": {
-        "description": "Donchian channel breakout/breakdown.",
-        "params": {"channel_period": (5, 100, 20)},
-        "strategy": "strategies.breakout.ChannelBreakout",
-        "icon": "&#x1F680;",
-    },
-    "Buy & Hold": {
-        "description": "Naive long-only baseline.",
-        "params": {},
-        "strategy": "strategies.buy_and_hold.BuyAndHold",
-        "icon": "&#x1F4B5;",
-    },
-    "VWAP": {
-        "description": "Session VWAP deviation — intraday mean-reversion. Best on 1m–1H bars.",
-        "params": {"band_pct": (0.1, 2.0, 0.5)},
-        "strategy": None,  # direct backtest only; no Lumibot strategy wrapper
-        "icon": "&#x23F1;",
-    },
-}
-
-BLEND_METHODS = ["Weighted Sum", "Regime-Weighted", "Voting", "PhiAI Chooses"]
-METRICS = ["ROI", "CAGR", "Sharpe", "Max Drawdown", "Direction Accuracy", "Profit Factor"]
-EXIT_STRATEGIES = ["Signal exit", "SL/TP", "Trailing stop", "Time exit"]
-POSITION_SIZING = ["Fixed %", "Fixed shares"]
-
-
-
-def _inject_css():
-    """Inject custom CSS from styles.css file."""
-    _CSS_PATH = _ROOT / ".streamlit" / "styles.css"
-    if _CSS_PATH.exists():
-        with open(_CSS_PATH, encoding="utf-8") as f:
-            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-
-
-def _sidebar():
-    """Render the branded sidebar with navigation info."""
-    with st.sidebar:
-        st.markdown(
-            """
-            <div style="text-align:center; padding: 0.5rem 0 1.5rem;">
-                <div style="font-size:2rem; margin-bottom:0.3rem;">📊</div>
-                <div style="font-size:1.3rem; font-weight:700;
-                            background:linear-gradient(135deg,#a855f7,#f97316);
-                            -webkit-background-clip:text;
-                            -webkit-text-fill-color:transparent;
-                            background-clip:text;">
-                    Phi-nance
-                </div>
-                <div style="color:#71717a; font-size:0.75rem;
-                            letter-spacing:0.08em; text-transform:uppercase;
-                            margin-top:0.2rem;">
-                    Live Backtest Workbench
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.markdown(
-            """
-            <div style="color:#52525b; font-size:0.72rem;
-                        text-transform:uppercase; letter-spacing:0.1em;
-                        font-weight:600; margin-bottom:0.6rem; padding:0 0.2rem;">
-                Workflow
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        steps = [
-            ("1", "Dataset Builder", "Fetch & cache OHLCV"),
-            ("2", "Indicators", "Select & tune signals"),
-            ("3", "Blending", "Combine multiple signals"),
-            ("4", "PhiAI", "Auto-optimize everything"),
-            ("5", "Backtest", "Run & review results"),
-        ]
-        for num, name, desc in steps:
-            st.markdown(
-                f"""
-                <div style="display:flex; align-items:center; gap:0.7rem;
-                            padding:0.55rem 0.6rem; border-radius:8px;
-                            margin-bottom:0.3rem;
-                            border:1px solid rgba(168,85,247,0.08);
-                            background:rgba(168,85,247,0.04);">
-                    <div style="min-width:22px; height:22px;
-                                background:linear-gradient(135deg,#a855f7,#7c3aed);
-                                border-radius:50%; display:flex;
-                                align-items:center; justify-content:center;
-                                color:#fff; font-size:0.7rem; font-weight:700;
-                                box-shadow:0 2px 6px rgba(168,85,247,0.4);">
-                        {num}
-                    </div>
-                    <div>
-                        <div style="color:#e4e4e7; font-size:0.82rem;
-                                    font-weight:600; line-height:1.2;">{name}</div>
-                        <div style="color:#71717a; font-size:0.72rem;">{desc}</div>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown(
-            """
-            <div style="border-top:1px solid rgba(168,85,247,0.12);
-                        padding-top:1rem; color:#52525b; font-size:0.72rem;
-                        text-align:center; line-height:1.6;">
-                Regime-aware &bull; Cached &bull; Reproducible<br>
-                <span style="color:rgba(168,85,247,0.5);">&#9632;</span>
-                Purple = signals &nbsp;
-                <span style="color:rgba(249,115,22,0.5);">&#9632;</span>
-                Orange = caution
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-
-def _section_header(num: str, title: str, subtitle: str = ""):
-    """Render a styled step section header."""
-    sub_html = (
-        f'<div style="color:#71717a; font-size:0.82rem; '
-        f'margin-top:0.2rem;">{subtitle}</div>'
-        if subtitle else ""
-    )
-    st.markdown(
-        f"""
-        <div style="display:flex; align-items:center; gap:0.75rem;
-                    margin: 1.8rem 0 0.8rem;">
-            <div style="min-width:32px; height:32px;
-                        background:linear-gradient(135deg,#a855f7,#7c3aed);
-                        border-radius:50%; display:flex; align-items:center;
-                        justify-content:center; color:#fff; font-size:0.85rem;
-                        font-weight:700;
-                        box-shadow:0 2px 10px rgba(168,85,247,0.45);">
-                {num}
-            </div>
-            <div>
-                <div style="color:#e4e4e7; font-size:1.1rem; font-weight:700;
-                            letter-spacing:-0.01em;">{title}</div>
-                {sub_html}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def _load_strategy(module_cls: str):
-    """
-    Dynamically load a strategy class from a string.
-    """
-def _load_strategy(module_cls):
-    module_path, cls_name = module_cls.rsplit(".", 1)
-    mod = importlib.import_module(module_path)
-    return getattr(mod, cls_name)
-
-
-def _av_datasource():
-    from strategies.alpha_vantage_fixed import AlphaVantageFixedDataSource
-    return AlphaVantageFixedDataSource
-
-
-def _run_backtest(strategy_class, params, config):
-    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
-    tf = config.get("timeframe", "1D")
-    timestep = "day" if tf == "1D" else "minute"
-    results, strat = strategy_class.run_backtest(
-        datasource_class=_av_datasource(),
-        backtesting_start=config["start"], backtesting_end=config["end"],
-        budget=config["initial_capital"], benchmark_asset=config.get("benchmark", "SPY"),
-        parameters=params, api_key=av_api_key, timestep=timestep,
-        show_plot=False, show_tearsheet=False, save_tearsheet=False,
-        show_indicators=False, show_progress_bar=False, quiet_logs=True,
-    )
-    return results, strat
-
-
-def _compute_accuracy(strat):
-    from strategies.prediction_tracker import compute_prediction_accuracy
-    return compute_prediction_accuracy(strat)
-
-
-def _extract_scalar(val):
-    if isinstance(val, dict):
-        for key in ("drawdown", "value", "max_drawdown", "return"):
-            if key in val: return val[key]
-        for v in val.values():
-            if isinstance(v, (int, float)): return v
-        return None
-    return val
-
-
-def _run_fully_automated(symbol, start_date, end_date, capital, use_ollama, ollama_host):
-    progress = st.progress(0, text="Fully automated: initializing pipeline...")
-    result_holder, exc_holder = [None], [None]
-
-    def run():
-        try:
-            from phi.phiai.auto_pipeline import run_fully_automated as run_pipeline
-            cfg, indicators, blend_method, explanation, ohlcv = run_pipeline(
-                symbol=symbol, start_date=start_date, end_date=end_date,
-                initial_capital=capital, ollama_host=ollama_host, use_ollama=use_ollama,
-            )
-            blend_weights = {k: 1.0 / len(indicators) for k in indicators}
-            from phi.backtest import run_direct_backtest
-            results, strat = run_direct_backtest(
-                ohlcv=ohlcv, symbol=symbol, indicators=indicators,
-                blend_weights=blend_weights, blend_method=blend_method,
-                signal_threshold=0.15, initial_capital=capital,
-            )
-            sc = _compute_accuracy(strat) if hasattr(strat, "prediction_log") else {}
-            result_holder[0] = (cfg, results, strat, indicators, blend_method, sc, explanation)
-        except Exception as e:
-            exc_holder[0] = e
-
-    th = threading.Thread(target=run)
-    th.start()
-    pct, start_t = 10, time.time()
-    stages = ["Fetching data...", "Analyzing features...", "AI optimization...",
-              "Building strategy...", "Running backtest...", "Finalizing..."]
-    while th.is_alive():
-        time.sleep(0.4)
-        elapsed = time.time() - start_t
-        pct = min(95, 10 + int(elapsed * 1.2))
-        stage_idx = min(len(stages) - 1, int(elapsed / 5))
-        progress.progress(pct / 100, text=f"{stages[stage_idx]} {pct}%")
-
-    if exc_holder[0]:
-        progress.empty()
-        st.error(str(exc_holder[0]))
-        st.exception(exc_holder[0])
-        return
-
-    progress.progress(1.0, text="Complete!")
-    time.sleep(0.5)
-    progress.empty()
-
-    cfg, results, strat, indicators, blend_method, sc, explanation = result_holder[0]
-    blend_weights = {k: 1.0 / len(indicators) for k in indicators}
-
-    with st.expander("AI Decisions", expanded=True):
-        st.markdown(f"""
-        <div style="background:rgba(168,85,247,0.04);border:1px solid rgba(168,85,247,0.12);
-                    border-radius:12px;padding:1.2rem;font-size:0.88rem;line-height:1.6;
-                    color:#b0b0c0;font-family:Inter,sans-serif;">
-            {explanation.replace(chr(10), '<br>')}
-        </div>
-        """, unsafe_allow_html=True)
-
-    _display_results(cfg, results, strat, indicators, blend_method, blend_weights, sc)
-
-
-# ---------------------------------------------------------------------------
-# Step 1 -- Dataset Builder
-# ---------------------------------------------------------------------------
-def render_dataset_builder():
-    """Render Step 1: Data fetching and caching UI."""
-    _section_header("1", "Dataset Builder", "Fetch & cache OHLCV data from your chosen vendor")
-    dev = get_device()
-    st.markdown(_render_section_header("", "STEP 1 -- DATASET BUILDER", "DATA"), unsafe_allow_html=True)
-
-    if dev.is_phone:
-        trading_mode = st.selectbox("Trading Mode", ["Equities", "Options"], key="ds_mode")
-        symbols_raw = st.text_input("Symbol(s)", value="SPY", key="ds_symbols",
-                                    help="Comma-separated: SPY, QQQ, AAPL")
-    with col_range:
-        start_d = st.date_input(
-            "Start", value=date(2020, 1, 1), key="ds_start"
-        )
-        end_d = st.date_input(
-            "End", value=date(2024, 12, 31), key="ds_end"
-        )
-
-    if start_d >= end_d:
-        st.error("Start date must be before end date.")
-        return None
-
-    col_tf, col_vendor, col_cap = st.columns(3)
-    with col_tf:
-        timeframe = st.selectbox(
-            "Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf"
-        )
-    with col_vendor:
-        vendor = st.selectbox(
-            "Data Vendor",
-            ["Alpha Vantage", "yfinance", "Binance Public"],
-            key="ds_vendor"
-        )
-    with col_cap:
-        initial_capital = st.number_input(
-            "Initial Capital ($)",
-            value=100_000,
-            min_value=1_000,
-            step=10_000,
-            key="ds_cap",
-            help="Starting capital for backtest",
-        )
-                                     help="Comma-separated: SPY, QQQ, AAPL")
-        start_d = st.date_input("Start", value=date(2020, 1, 1), key="ds_start")
-        end_d = st.date_input("End", value=date(2024, 12, 31), key="ds_end")
-        timeframe = st.selectbox("Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf")
-        vendor = st.selectbox("Data Vendor", ["Alpha Vantage", "yfinance", "Binance Public"], key="ds_vendor")
-        initial_capital = st.number_input("Initial Capital ($)", value=100_000, min_value=1_000,
-                                           step=10_000, key="ds_cap")
-    else:
-        col_mode, col_sym, col_range = st.columns([1, 2, 2])
-        with col_mode:
-            trading_mode = st.selectbox("Trading Mode", ["Equities", "Options"], key="ds_mode")
-        with col_sym:
-            symbols_raw = st.text_input("Symbol(s)", value="SPY", key="ds_symbols",
-                                         help="Comma-separated: SPY, QQQ, AAPL")
-        with col_range:
-            start_d = st.date_input("Start", value=date(2020, 1, 1), key="ds_start")
-            end_d = st.date_input("End", value=date(2024, 12, 31), key="ds_end")
-
-        col_tf, col_vendor, col_cap = st.columns(3)
-        with col_tf:
-            timeframe = st.selectbox("Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf")
-        with col_vendor:
-            vendor = st.selectbox("Data Vendor", ["Alpha Vantage", "yfinance", "Binance Public"], key="ds_vendor")
-        with col_cap:
-            initial_capital = st.number_input("Initial Capital ($)", value=100_000, min_value=1_000,
-                                               step=10_000, key="ds_cap")
-
-    if initial_capital <= 0:
-        st.error("Initial capital must be > 0")
-        return None
-
-    c1, c2 = st.columns(2)
-    fetch_clicked = c1.button("Fetch & Cache", type="primary", key="ds_fetch", use_container_width=True)
-    use_cached = c2.button("Use Cached", key="ds_use", use_container_width=True)
-
-    vendor_map = {"Alpha Vantage": "alphavantage", "yfinance": "yfinance", "Binance Public": "binance_public"}
-    vendor_key = vendor_map.get(vendor, "alphavantage")
-    symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
-    if not symbols:
-        st.error("Enter at least one symbol.")
-        return None
-
-    dfs = {}
-
-    date_range_years = (end_d - start_d).days / 365.25
-    if date_range_years > 5:
-        st.warning(
-            "⚠️ Date range > 5 years selected — this may take longer to process. "
-            "Consider reducing the date range for faster results."
-        )
-
-    if fetch_clicked or use_cached:
-        from phi.data import fetch_and_cache, get_cached_dataset
-        with st.status("Loading data...", expanded=True) as s:
-            for sym in symbols:
-                try:
-                    df = fetch_and_cache(vendor_key, sym, timeframe, str(start_d), str(end_d)) if fetch_clicked \
-                         else get_cached_dataset(vendor_key, sym, timeframe, str(start_d), str(end_d))
-                    if df is not None and not df.empty:
-                        dfs[sym] = df
-                except Exception as e:
-                    st.error(f"{sym}: {e}")
-            if dfs:
-                st.session_state["workbench_dataset"] = dfs
-                st.session_state["workbench_config"] = {
-                    "trading_mode": trading_mode.lower(), "symbols": symbols,
-                    "start": datetime.combine(start_d, datetime.min.time()),
-                    "end": datetime.combine(end_d, datetime.min.time()),
-                    "timeframe": timeframe, "vendor": vendor_key,
-                    "initial_capital": float(initial_capital), "benchmark": symbols[0],
-                }
-                bars_count = sum(len(d) for d in dfs.values())
-                s.update(
-                    label=f"Cached {bars_count:,} bars",
-                    state="complete"
-                )
-                s.update(label=f"Loaded {sum(len(d) for d in dfs.values()):,} bars", state="complete")
-            else:
-                s.update(label="No data", state="error")
-
-    if st.session_state.get("workbench_dataset"):
-        dfs = st.session_state["workbench_dataset"]
-        cfg = st.session_state.get("workbench_config", {})
-
-        kpis = [
-            ("Symbols", ", ".join(dfs.keys()), "", "neutral"),
-            ("Total Bars", f"{sum(len(d) for d in dfs.values()):,}", "", "neutral"),
-            ("Capital", f"${cfg.get('initial_capital', 0):,.0f}", "", "neutral"),
-            ("Mode", cfg.get("trading_mode", "equities").title(), "", "neutral"),
-        ]
-        st.markdown(_render_kpi_row(kpis), unsafe_allow_html=True)
-
-        for sym, df in list(dfs.items())[:3]:
-            with st.expander(f"{sym} -- {len(df):,} rows"):
-                # Mini chart
-                if "close" in df.columns and len(df) > 10:
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=df.index, y=df["close"], mode="lines",
-                        line=dict(color="#a855f7", width=1.8, shape="spline", smoothing=0.6),
-                        fill="tozeroy", fillcolor="rgba(168,85,247,0.04)",
-                        hovertemplate="$%{y:.2f}<extra></extra>",
-                    ))
-                    fig.update_layout(
-                        title=dict(text=f"{sym} PREVIEW", font=dict(size=12, color="#7a7a90")),
-                        yaxis_tickformat="$,.2f", height=200,
-                        margin=dict(l=40, r=20, t=35, b=25),
-                    )
-                    _phi_chart(fig, height=200)
-                st.dataframe(df.tail(10), use_container_width=True)
-        return cfg
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Step 2 -- Indicator Selection
-# ---------------------------------------------------------------------------
-def render_indicator_selection():
-    """Render Step 2: Strategy indicator selection and manual tuning."""
-    _section_header("2", "Indicator Selection", "Choose and tune trading signals")
-
-    dev = get_device()
-    st.markdown(_render_section_header("", "STEP 2 -- INDICATORS", "SELECTION"), unsafe_allow_html=True)
-    selected = st.session_state.get("workbench_indicators", {})
-
-    search = st.text_input("Search indicators", key="ind_search", placeholder="RSI, MACD...")
-    available = [k for k in INDICATOR_CATALOG if not search or search.lower() in k.lower()]
-
-    n_ind_cols = dev.cols_strategy
-    cols = st.columns(min(n_ind_cols, len(available)) if available else 1)
-    for idx, name in enumerate(available):
-        info = INDICATOR_CATALOG[name]
-        with cols[idx % len(cols)]:
-            with st.container(border=True):
-                enabled = st.checkbox(f"**{name}**", value=name in selected, key=f"ind_{name}")
-                st.caption(info["description"][:60])
-                if enabled:
-                    if name not in selected:
-                        selected[name] = {"enabled": True, "auto_tune": False, "params": {}}
-                    selected[name]["enabled"] = True
-                    selected[name]["auto_tune"] = st.toggle("PhiAI Auto-tune",
-                        value=selected[name].get("auto_tune", False), key=f"at_{name}")
-                    with st.expander("Params"):
-                        for pname, (lo, hi, default) in info["params"].items():
-                            selected[name]["params"][pname] = st.slider(
-                                pname, lo, hi, default, key=f"param_{name}_{pname}")
-                else:
-                    if name in selected:
-                        del selected[name]
-
-    st.session_state["workbench_indicators"] = selected
-    if len(selected) > 4:
-        st.warning(
-            "⚠️ More than 4 indicators selected — this may slow down results significantly. "
-            "Consider reducing scope for faster performance."
-        )
-
-    if selected:
-        names = ', '.join(selected.keys())
-        st.markdown(f"""
-        <div class="phi-info-bar">
-            <span class="phi-info-bar-label">Selected:</span>
-            <span class="phi-info-bar-value">{names}</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-    return selected
-
-
-# ---------------------------------------------------------------------------
-# Step 3 -- Blending
-# ---------------------------------------------------------------------------
-def render_blending(indicators):
-    dev = get_device()
-    if len(indicators) < 2:
-        st.caption("Select 2+ indicators to enable blending.")
-        return "weighted_sum", {}
-
-    _section_header("3", "Blending Panel", "Combine multiple signal streams")
-    st.markdown(_render_section_header("", "STEP 3 -- BLENDING", "MULTI-SIGNAL"), unsafe_allow_html=True)
-
-    method = st.selectbox("Blend Mode", BLEND_METHODS, key="blend_method")
-    method_map = {"Weighted Sum": "weighted_sum", "Regime-Weighted": "regime_weighted",
-                  "Voting": "voting", "PhiAI Chooses": "phiai_chooses"}
-    method_key = method_map.get(method, "weighted_sum")
-
-    weights = {}
-    blend_n_cols = 2 if dev.is_phone else min(len(indicators), 4)
-    cols = st.columns(blend_n_cols)
-    for idx, name in enumerate(indicators):
-        with cols[idx % blend_n_cols]:
-            weights[name] = st.slider(f"{name}", 0.0, 1.0, round(1.0 / len(indicators), 2), 0.05, key=f"wt_{name}")
-
-    # Blend weight visualization
-    if weights:
-        total = sum(weights.values())
-        if total > 0:
-            fig = go.Figure(data=[go.Pie(
-                labels=list(weights.keys()),
-                values=list(weights.values()),
-                hole=0.55,
-                marker=dict(colors=CHART_COLORS[:len(weights)],
-                            line=dict(color='#12121a', width=2)),
-                textinfo="label+percent",
-                textfont=dict(size=11, color="#eeeef2"),
-                hovertemplate="%{label}: %{value:.2f} (%{percent})<extra></extra>",
-            )])
-            fig.update_layout(
-                title=dict(text="BLEND WEIGHTS", font=dict(size=12, color="#7a7a90")),
-                showlegend=False, height=250,
-                margin=dict(l=20, r=20, t=40, b=20),
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#eeeef2"),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-    return method_key, weights
-
-
-# ---------------------------------------------------------------------------
-# Step 4 -- PhiAI
-# ---------------------------------------------------------------------------
-def render_phiai():
-    """
-    Render the PhiAI panel for automated optimization.
-    """
-    _section_header("4", "PhiAI Panel", "Regime-aware automated optimization")
-    phiai_full = st.toggle(
-        "PhiAI Full Auto", value=False, key="phiai_full",
-        help="Auto-enable/disable indicators, tune params, select blend"
-    )
-    st.markdown(_render_section_header("", "STEP 4 -- PHI-AI", "AUTO-OPTIMIZE"), unsafe_allow_html=True)
-    phiai_full = st.toggle("PhiAI Full Auto", value=False, key="phiai_full",
-                            help="Auto-enable/disable indicators, tune params, select blend")
-    if phiai_full:
-        st.markdown("""
-        <div class="phi-info-bar" style="border-color:rgba(168,85,247,0.25);">
-            <span style="color:#c084fc;font-size:0.85rem;">
-                PhiAI will optimize indicators, parameters, and blend with regime-aware adjustments.
-            </span>
-        </div>
-        """, unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        c1.number_input("Max indicators", 1, 10, 5, key="phiai_max")
-        c2.checkbox("No shorting", value=True, key="phiai_noshort")
-    return phiai_full
+from phi.data.cache import (
+    is_cached,
+    load_dataset,
+    save_dataset,
+    list_cached_datasets,
+    delete_dataset,
+    dataset_id,
+    clear_all_cache,
+)
+from phi.data.fetchers import fetch, TIMEFRAMES, dataset_summary, VENDORS
+from phi.indicators.registry import (
+    INDICATOR_REGISTRY,
+    list_indicators,
+    compute_signal,
+    compute_all_signals,
+)
+from phi.blending.blender import Blender, BLEND_MODES, BLEND_LABELS, default_regime_weights
+from phi.backtest.run_config import (
+    RunConfig,
+    IndicatorConfig,
+    ExitRules,
+    PositionSizing,
+    OptionsConfig,
+)
+from phi.backtest.run_history import save_run, list_runs, load_run, compare_runs, delete_run
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 5 — Backtest Controls
+# Page config (must be first Streamlit call)
 # ─────────────────────────────────────────────────────────────────────────────
-def render_backtest_controls(config: dict):
-    """
-    Render the backtest control panel based on trading mode.
-    """
-    if not config:
-        return {}
-
-    _section_header("5", "Backtest Controls", "Position sizing and exit rules")
-# ---------------------------------------------------------------------------
-# Step 5 -- Backtest Controls
-# ---------------------------------------------------------------------------
-def render_backtest_controls(config):
-    dev = get_device()
-    if not config: return {}
-    st.markdown(_render_section_header("", "STEP 5 -- CONTROLS",
-                config.get("trading_mode", "equities").upper()), unsafe_allow_html=True)
-    mode = config.get("trading_mode", "equities")
-
-    if mode == "equities":
-        if dev.is_phone:
-            allow_short = st.checkbox("Allow shorting", value=False, key="bt_short")
-            pos_sizing = st.selectbox("Position sizing", POSITION_SIZING, key="bt_pos")
-            exit_strat = st.selectbox("Exit strategy", EXIT_STRATEGIES, key="bt_exit")
-            return {"allow_short": allow_short, "position_sizing": pos_sizing, "exit_strategy": exit_strat}
-        c1, c2, c3 = st.columns(3)
-        allow_short = c1.checkbox("Allow shorting", value=False, key="bt_short")
-        pos_sizing = c2.selectbox("Position sizing", POSITION_SIZING, key="bt_pos")
-        exit_strat = c3.selectbox("Exit strategy", EXIT_STRATEGIES, key="bt_exit")
-        return {"allow_short": allow_short, "position_sizing": pos_sizing, "exit_strategy": exit_strat}
-    else:
-        st.caption("Options mode: Long Call/Put with delta-based simulation.")
-        c1, c2, c3 = st.columns(3)
-        strat_type = c1.selectbox("Strategy", ["long_call", "long_put"], key="opt_strat")
-        exit_profit = c2.slider("Exit profit %", 0.2, 1.0, 0.5, 0.1, key="opt_exit_profit")
-        exit_stop = c3.slider("Exit stop %", -0.5, -0.1, -0.3, 0.05, key="opt_exit_stop")
-        opts = {"strategy_type": strat_type, "exit_profit_pct": exit_profit, "exit_stop_pct": exit_stop}
-        st.session_state["bt_options_controls"] = opts
-        return opts
+st.set_page_config(
+    page_title="Phi-nance Workbench",
+    page_icon="⚗",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+st.markdown(WORKBENCH_CSS, unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------------------
-# Phibot Review helpers
-# ---------------------------------------------------------------------------
-_VERDICT_COLORS = {
-    "strong":   "#22c55e",
-    "moderate": "#f59e0b",
-    "weak":     "#f97316",
-    "neutral":  "#6b7280",
-}
-_CONFIDENCE_COLORS = {
-    "high":   "#22c55e",
-    "medium": "#f59e0b",
-    "low":    "#6b7280",
-}
-_CATEGORY_LABELS = {
-    "blend_weight":      "Blend Weight",
-    "signal_threshold":  "Signal Threshold",
-    "blend_method":      "Blend Method",
-    "add_indicator":     "Add Indicator",
-    "position_sizing":   "Position Sizing",
-}
+# ─────────────────────────────────────────────────────────────────────────────
+# Session-state helpers
+# ─────────────────────────────────────────────────────────────────────────────
+def _ss(key: str, default=None):
+    if key not in st.session_state:
+        st.session_state[key] = default
+    return st.session_state[key]
 
 
-def _apply_phibot_tweaks(tweaks) -> int:
-    """
-    Apply adopted tweaks to session state so sliders / selectors update
-    when Streamlit reruns. Returns count of tweaks applied.
-    """
-    applied = 0
-    for tweak in tweaks:
-        if not st.session_state.get(f"phibot_adopt_{tweak.id}", False):
-            continue
-        cat = tweak.category
-        if cat == "blend_weight":
-            st.session_state[tweak.param_key] = tweak.suggested_value
-        elif cat == "blend_method":
-            st.session_state["blend_method"] = tweak.suggested_value
-        elif cat == "signal_threshold":
-            st.session_state["phibot_signal_threshold"] = tweak.suggested_value
-        elif cat == "add_indicator":
-            ind_dict = dict(st.session_state.get("workbench_indicators", {}))
-            if tweak.suggested_value and tweak.suggested_value not in ind_dict:
-                ind_dict[tweak.suggested_value] = {"params": {}}
-                st.session_state["workbench_indicators"] = ind_dict
-        elif cat == "position_sizing":
-            st.session_state["phibot_position_size"] = tweak.suggested_value
-        # Reset the checkbox
-        st.session_state[f"phibot_adopt_{tweak.id}"] = False
-        applied += 1
-    return applied
+def _set(key: str, val):
+    st.session_state[key] = val
 
 
-def _render_phibot_review(config, results, strat, indicators, blend_method, blend_weights):
-    """Render the Phibot post-backtest review tab."""
+# ─────────────────────────────────────────────────────────────────────────────
+# Formatting helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fmt_pct(v, precision=2):
+    if v is None:
+        return "—"
     try:
-        from phi.phibot.reviewer import review_backtest
-    except Exception as exc:
-        st.error(f"Phibot reviewer unavailable: {exc}")
-        return
-
-    # OHLCV from session state
-    ohlcv = None
-    try:
-        sym  = (config.get("symbols") or ["SPY"])[0]
-        dfs  = st.session_state.get("workbench_dataset", {})
-        ohlcv = dfs.get(sym)
+        return f"{float(v):+.{precision}%}"
     except Exception:
-        pass
+        return "—"
 
-    prediction_log = []
-    if strat and hasattr(strat, "prediction_log"):
-        prediction_log = strat.prediction_log or []
 
+def _fmt_num(v, precision=4):
+    if v is None:
+        return "—"
     try:
-        review = review_backtest(
-            ohlcv=ohlcv,
-            results=results if isinstance(results, dict) else {},
-            prediction_log=prediction_log,
-            indicators=indicators or {},
-            blend_weights=blend_weights or {},
-            blend_method=blend_method or "weighted_sum",
-            config=config or {},
+        return f"{float(v):.{precision}f}"
+    except Exception:
+        return "—"
+
+
+def _fmt_usd(v):
+    if v is None:
+        return "—"
+    try:
+        return f"${float(v):,.2f}"
+    except Exception:
+        return "—"
+
+
+def _metric_label(key: str) -> str:
+    return {
+        "roi":            "Total Return",
+        "total_return":   "Total Return",
+        "cagr":           "CAGR",
+        "sharpe":         "Sharpe",
+        "sortino":        "Sortino",
+        "max_drawdown":   "Max Drawdown",
+        "direction_accuracy": "Dir. Accuracy",
+        "profit_factor":  "Profit Factor",
+        "win_rate":       "Win Rate",
+    }.get(key, key.title())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Banner
+# ─────────────────────────────────────────────────────────────────────────────
+def render_banner():
+    st.markdown("""
+<div class="wb-banner">
+  <h1>⚗ Phi-nance Live Backtest Workbench</h1>
+  <p>Fetch · Indicator Blend · PhiAI Tune · Simulate · Analyze · Compare · Export</p>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 1 — Dataset Builder
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render_step1() -> Optional[Dict[str, Any]]:
+    """Returns dataset dict {ohlcv, meta, symbol, timeframe, vendor, initial_capital} or None."""
+
+    st.markdown(step_header(1, "Dataset Builder",
+                             "Fetch & cache historical OHLCV data"), unsafe_allow_html=True)
+
+    # ── Main row ──────────────────────────────────────────────────────────────
+    c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1])
+    with c1:
+        mode = st.radio(
+            "Trading Mode",
+            ["Equities", "Options"],
+            horizontal=True,
+            key="wb_mode",
+            help="Equities = direct stock trades.  Options = synthetic options simulation.",
         )
-    except Exception as exc:
-        st.error(f"Phibot analysis failed: {exc}")
-        return
-
-    # Persist tweaks in session state so _apply_phibot_tweaks can read them
-    st.session_state["phibot_current_tweaks"] = review.tweaks
-
-    # ── Header card ──────────────────────────────────────────────────────────
-    verdict_color = _VERDICT_COLORS.get(review.verdict, "#6b7280")
-    st.markdown(
-        f"""
-        <div style="display:flex;align-items:center;gap:0.9rem;padding:1.1rem 1.4rem;
-                    background:rgba(168,85,247,0.07);border-radius:12px;
-                    border:1px solid rgba(168,85,247,0.2);margin-bottom:1.4rem;">
-            <div style="font-size:1.8rem;line-height:1;">&#129302;</div>
-            <div style="flex:1;">
-                <div style="color:#c084fc;font-size:0.62rem;text-transform:uppercase;
-                            letter-spacing:0.14em;font-weight:700;">Phibot Analysis</div>
-                <div style="color:#e4e4e7;font-size:0.92rem;font-weight:500;
-                            margin-top:0.25rem;line-height:1.45;">{review.summary}</div>
-            </div>
-            <div style="flex-shrink:0;">
-                <span style="background:{verdict_color};color:#fff;font-size:0.62rem;
-                             font-weight:700;text-transform:uppercase;letter-spacing:0.1em;
-                             padding:0.35rem 0.85rem;border-radius:20px;">
-                    {review.verdict}
-                </span>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # ── Regime performance table ──────────────────────────────────────────────
-    qualified = {r: s for r, s in review.regime_stats.items() if s.get("count", 0) >= 1}
-    if qualified:
-        st.markdown(
-            "<div style='color:#7a7a90;font-size:0.68rem;text-transform:uppercase;"
-            "letter-spacing:0.1em;font-weight:600;margin-bottom:0.6rem;'>"
-            "Regime Performance</div>",
-            unsafe_allow_html=True,
+    with c2:
+        symbol = st.text_input("Symbol", value=_ss("wb_symbol", "SPY"),
+                                key="wb_symbol_inp", placeholder="SPY").upper().strip()
+    with c3:
+        timeframe = st.selectbox("Timeframe", TIMEFRAMES, index=0, key="wb_tf")
+    with c4:
+        vendor = st.selectbox("Data Vendor", VENDORS, index=0, key="wb_vendor")
+    with c5:
+        initial_cap = st.number_input(
+            "Initial Capital ($)",
+            value=_ss("wb_initial_cap", 100_000),
+            min_value=1_000,
+            step=5_000,
+            key="wb_capital_inp",
+            format="%d",
         )
-        regime_rows = []
-        for reg, s in sorted(qualified.items(), key=lambda x: -x[1]["count"]):
-            from phi.phibot.reviewer import _REGIME_DESCRIPTIONS
-            regime_rows.append(
-                {
-                    "Regime":     reg,
-                    "Description": _REGIME_DESCRIPTIONS.get(reg, ""),
-                    "Trades":     s["count"],
-                    "Win Rate":   f"{s['win_rate']:.0%}",
-                    "Avg P&L":    f"{s['avg_pl']:+.1%}",
-                }
-            )
-        st.dataframe(
-            pd.DataFrame(regime_rows),
-            use_container_width=True,
-            hide_index=True,
-        )
+        if initial_cap <= 0:
+            st.error("Capital must be > 0")
+            initial_cap = 100_000
 
-    # ── Observations ─────────────────────────────────────────────────────────
-    if review.observations:
-        st.markdown(
-            "<div style='color:#7a7a90;font-size:0.68rem;text-transform:uppercase;"
-            "letter-spacing:0.1em;font-weight:600;margin:1.2rem 0 0.5rem;'>"
-            "Key Observations</div>",
-            unsafe_allow_html=True,
-        )
-        for obs in review.observations:
-            st.markdown(f"- {obs}")
+    # ── Date range ────────────────────────────────────────────────────────────
+    d1, d2 = st.columns(2)
+    today = date.today()
+    with d1:
+        start_dt = st.date_input("Start Date", value=date(2021, 1, 1),
+                                  max_value=today - timedelta(days=2), key="wb_start")
+    with d2:
+        end_dt = st.date_input("End Date", value=today - timedelta(days=1),
+                                max_value=today, min_value=start_dt + timedelta(days=10),
+                                key="wb_end")
 
-    # ── Tweaks ───────────────────────────────────────────────────────────────
-    if not review.tweaks:
-        st.markdown(
-            "<div style='color:#a1a1aa;font-size:0.85rem;margin-top:1rem;'>"
-            "No specific tweaks recommended — the strategy is well-configured for "
-            "current market conditions.</div>",
-            unsafe_allow_html=True,
-        )
-        return
+    cached = is_cached(vendor, symbol, timeframe, start_dt, end_dt)
 
-    st.markdown(
-        "<div style='color:#7a7a90;font-size:0.68rem;text-transform:uppercase;"
-        "letter-spacing:0.1em;font-weight:600;margin:1.4rem 0 0.8rem;'>"
-        "Suggested Tweaks</div>",
-        unsafe_allow_html=True,
-    )
+    # ── Action buttons ────────────────────────────────────────────────────────
+    b1, b2, b3 = st.columns([1, 1, 2])
+    fetch_clicked  = b1.button("⬇ Fetch & Cache Data", type="primary", use_container_width=True)
+    cached_clicked = b2.button("📁 Use Cached Data",   use_container_width=True, disabled=not cached)
 
-    adopted_any = False
-    for tweak in review.tweaks:
-        conf_color = _CONFIDENCE_COLORS.get(tweak.confidence, "#6b7280")
-        cat_label  = _CATEGORY_LABELS.get(tweak.category, tweak.category.replace("_", " ").title())
-
-        # Format the change arrow
-        if tweak.current_value is not None:
-            change_txt = f"{tweak.current_value} &rarr; {tweak.suggested_value}"
-        else:
-            change_txt = f"Add: {tweak.suggested_value}"
-
-        st.markdown(
-            f"""
-            <div style="background:rgba(249,115,22,0.05);border:1px solid rgba(249,115,22,0.18);
-                        border-radius:10px;padding:0.9rem 1.1rem;margin-bottom:0.6rem;">
-                <div style="display:flex;justify-content:space-between;align-items:center;
-                            margin-bottom:0.35rem;">
-                    <span style="color:#fb923c;font-size:0.62rem;text-transform:uppercase;
-                                 letter-spacing:0.1em;font-weight:700;">{cat_label}</span>
-                    <span style="background:{conf_color}22;color:{conf_color};font-size:0.6rem;
-                                 font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
-                                 padding:0.2rem 0.55rem;border-radius:10px;">
-                        {tweak.confidence} confidence
-                    </span>
-                </div>
-                <div style="color:#e4e4e7;font-size:0.9rem;font-weight:600;
-                            margin-bottom:0.3rem;">{tweak.title}</div>
-                <div style="color:#a1a1aa;font-size:0.8rem;line-height:1.5;
-                            margin-bottom:0.4rem;">{tweak.rationale}</div>
-                <div style="color:#6b7280;font-size:0.75rem;
-                            font-family:'JetBrains Mono',monospace;">{change_txt}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        is_adopted = st.checkbox(
-            "Adopt this tweak",
-            key=f"phibot_adopt_{tweak.id}",
-            value=st.session_state.get(f"phibot_adopt_{tweak.id}", False),
-        )
-        if is_adopted:
-            adopted_any = True
-
-    # ── Apply button ─────────────────────────────────────────────────────────
-    st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
-    if adopted_any:
-        if st.button(
-            "Apply Adopted Tweaks & Re-run",
-            key="phibot_apply_tweaks",
-            type="primary",
-            use_container_width=True,
-        ):
-            n = _apply_phibot_tweaks(review.tweaks)
-            st.session_state["phibot_tweaks_applied"] = n
-            st.rerun()
+    if cached:
+        b3.success(f"✓ Cached: {symbol}/{timeframe} {start_dt}→{end_dt}")
     else:
-        st.caption("Check one or more tweaks above to enable the Apply button.")
+        b3.info("No cache for this dataset — click Fetch to download.")
 
+    # ── Fetch ────────────────────────────────────────────────────────────────
+    if fetch_clicked:
+        with st.status(f"Fetching {symbol} {timeframe} from {vendor}...", expanded=True) as s:
+            try:
+                st.write(f"Downloading {symbol} ({start_dt} → {end_dt}) at {timeframe}...")
+                df = fetch(symbol, start_dt, end_dt, timeframe, vendor)
+                if df is None or df.empty:
+                    s.update(label="No data returned — try a different vendor or date range.",
+                             state="error")
+                    return _ss("wb_dataset")
+                p = save_dataset(df, vendor, symbol, timeframe, start_dt, end_dt)
+                _set("wb_dataset", {
+                    "ohlcv": df, "symbol": symbol, "timeframe": timeframe,
+                    "vendor": vendor, "initial_capital": float(initial_cap),
+                    "start": str(start_dt), "end": str(end_dt),
+                    "dataset_id": dataset_id(vendor, symbol, timeframe, start_dt, end_dt),
+                })
+                _set("wb_symbol", symbol)
+                _set("wb_initial_cap", initial_cap)
+                rows = len(df)
+                s.update(label=f"Cached {rows:,} bars → {p.name}", state="complete")
+            except Exception as e:
+                s.update(label=f"Failed: {e}", state="error")
+                st.exception(e)
 
-# ---------------------------------------------------------------------------
-# Results Display
-# ---------------------------------------------------------------------------
-def _display_results(config, results, strat, indicators, blend_method, blend_weights, sc=None):
-    sc = sc or {}
-    tr = _extract_scalar(getattr(results, "total_return", None) or results.get("total_return"))
-    cagr = _extract_scalar(getattr(results, "cagr", None) or results.get("cagr"))
-    dd = _extract_scalar(getattr(results, "max_drawdown", None) or results.get("max_drawdown"))
-    sharpe = _extract_scalar(getattr(results, "sharpe", None) or results.get("sharpe"))
-    cap = config.get("initial_capital", 100_000)
-    pv = getattr(results, "portfolio_value", None)
-    if pv is None: pv = results.get("portfolio_value", [])
-    end_cap = pv[-1] if pv and len(pv) else cap
-    net_pl = end_cap - cap
-    net_pct = (net_pl / cap) * 100 if cap else 0
-
-    st.markdown(_render_section_header("", "RESULTS", "BACKTEST"), unsafe_allow_html=True)
-
-    # Profit/Loss hero display
-    pl_color = "#22c55e" if net_pl >= 0 else "#ef4444"
-    st.markdown(f"""
-    <div style="text-align:center;padding:1.8rem;background:rgba(18,18,26,0.7);border-radius:16px;
-                border:1px solid {pl_color}22;margin-bottom:1.5rem;backdrop-filter:blur(16px);">
-        <div style="color:#7a7a90;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;font-weight:600;">
-            Net Profit / Loss
-        </div>
-        <div style="color:{pl_color};font-size:2.5rem;font-weight:800;font-family:'JetBrains Mono',monospace;
-                    letter-spacing:-0.04em;line-height:1.2;margin-top:0.3rem;">
-            ${net_pl:+,.0f}
-        </div>
-        <div style="color:{pl_color};font-size:1rem;font-weight:600;opacity:0.8;font-family:'JetBrains Mono',monospace;">
-            {net_pct:+.1f}%
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    kpis = [
-        ("Start Capital", f"${cap:,.0f}", "", "neutral"),
-        ("End Capital", f"${end_cap:,.0f}", "", "positive" if end_cap > cap else "negative"),
-        ("CAGR", f"{cagr:+.1%}" if isinstance(cagr, (int, float)) else "--", "", "neutral"),
-        ("Sharpe", f"{sharpe:.2f}" if isinstance(sharpe, (int, float)) else "--", "", "neutral"),
-        ("Max Drawdown", f"{dd:.1%}" if isinstance(dd, (int, float)) else "--", "", "negative"),
-    ]
-    st.markdown(_render_kpi_row(kpis), unsafe_allow_html=True)
-
-    tab_curve, tab_summary, tab_trades, tab_metrics, tab_review = st.tabs(
-        ["Equity Curve", "Summary", "Trades", "Metrics", "🤖 Phibot Review"]
-    )
-
-    with tab_curve:
-        if pv and len(pv) > 1:
-            fig = go.Figure()
-            # Color the fill based on performance
-            fill_color = "rgba(34,197,94,0.06)" if pv[-1] > cap else "rgba(239,68,68,0.06)"
-            line_color = "#22c55e" if pv[-1] > cap else "#ef4444"
-            fig.add_trace(go.Scatter(
-                y=pv, mode="lines",
-                line=dict(color=line_color, width=2.5, shape="spline", smoothing=0.8),
-                fill="tozeroy", fillcolor=fill_color,
-                name="Portfolio", hovertemplate="$%{y:,.0f}<extra></extra>",
-            ))
-            fig.add_hline(y=cap, line_dash="dot", line_color="rgba(148,163,184,0.2)",
-                          annotation_text=f"Start: ${cap:,.0f}", annotation_font_color="#7a7a90")
-            fig.update_layout(
-                title=dict(text="EQUITY CURVE", font=dict(size=14, color="#7a7a90")),
-                yaxis_title="Portfolio Value ($)", yaxis_tickformat="$,.0f",
-            )
-            _phi_chart(fig, height=420)
-
-    with tab_summary:
-        c1, c2 = st.columns(2)
-        c1.metric("Max Drawdown", f"{dd:.1%}" if isinstance(dd, (int, float)) else "--")
-        acc = sc.get('accuracy', 0)
-        c2.metric("Direction Accuracy", f"{acc:.1%}" if isinstance(acc, (int, float)) else "--")
-
-    with tab_trades:
-        if strat and hasattr(strat, "prediction_log") and strat.prediction_log:
-            st.dataframe(pd.DataFrame(strat.prediction_log), use_container_width=True)
+    # ── Use cached ───────────────────────────────────────────────────────────
+    if cached_clicked and cached:
+        df = load_dataset(vendor, symbol, timeframe, start_dt, end_dt)
+        if df is not None:
+            _set("wb_dataset", {
+                "ohlcv": df, "symbol": symbol, "timeframe": timeframe,
+                "vendor": vendor, "initial_capital": float(initial_cap),
+                "start": str(start_dt), "end": str(end_dt),
+                "dataset_id": dataset_id(vendor, symbol, timeframe, start_dt, end_dt),
+            })
+            _set("wb_symbol", symbol)
+            _set("wb_initial_cap", initial_cap)
+            st.success(f"Loaded {len(df):,} bars from cache.")
         else:
-            st.caption("No trade log available.")
+            st.error("Cache read failed. Re-fetch the data.")
 
-    with tab_metrics:
-        payload = {"total_return": tr, "cagr": cagr, "max_drawdown": dd,
-                   "sharpe": sharpe, "accuracy": sc.get("accuracy")}
-        if isinstance(results, dict) and results.get("options_snapshot"):
-            payload["options_snapshot"] = results.get("options_snapshot")
-        st.json(payload)
+    # ── Dataset summary ───────────────────────────────────────────────────────
+    ds = _ss("wb_dataset")
+    if ds is not None:
+        df = ds["ohlcv"]
+        sym = ds["symbol"]
+        sm = dataset_summary(df, sym)
 
-    with tab_review:
-        _render_phibot_review(config, results, strat, indicators, blend_method, blend_weights)
+        # Update capital in session if user changed it
+        ds["initial_capital"] = float(initial_cap)
 
-    from phi.run_config import RunConfig, RunHistory
-    run_cfg = RunConfig(
-        symbols=config.get("symbols", ["SPY"]),
-        start_date=str(config["start"].date()) if hasattr(config["start"], "date") else str(config["start"]),
-        end_date=str(config["end"].date()) if hasattr(config["end"], "date") else str(config["end"]),
-        timeframe=config.get("timeframe", "1D"), initial_capital=cap,
-        indicators=indicators, blend_method=blend_method, blend_weights=blend_weights,
+        cols = st.columns(6)
+        cols[0].metric("Symbol",    sym)
+        cols[1].metric("Bars",      f"{sm.get('rows', 0):,}")
+        cols[2].metric("First Bar", sm.get("first_bar", "")[:10])
+        cols[3].metric("Last Bar",  sm.get("last_bar", "")[:10])
+        cols[4].metric("Last Close", f"${sm.get('last_close', 0):,.2f}")
+        ret = sm.get("total_return", 0)
+        cols[5].metric("Buy & Hold", f"{ret:+.1%}", delta=f"{ret:+.1%}")
+
+        with st.expander("Price chart", expanded=False):
+            chart_df = df[["close"]].rename(columns={"close": f"{sym} Close"})
+            st.line_chart(chart_df, use_container_width=True)
+
+    return _ss("wb_dataset")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 2 — Indicator Selection
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render_step2(dataset: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Returns list of selected indicator dicts."""
+
+    st.markdown(step_header(2, "Indicator Selection",
+                             "Choose indicators · tune parameters · enable PhiAI auto-tune"),
+                unsafe_allow_html=True)
+
+    all_inds  = list_indicators()
+    _ss("wb_selected_inds", [])
+    _ss("wb_ind_params",    {})
+    _ss("wb_ind_autotune",  {})
+    _ss("wb_ind_enabled",   {})
+
+    # ── Search / filter ───────────────────────────────────────────────────────
+    search = st.text_input("Search indicators", placeholder="e.g. rsi, macd, bollinger...",
+                           key="wb_ind_search").lower().strip()
+
+    filtered = [
+        n for n in all_inds
+        if not search or
+           search in n or
+           search in INDICATOR_REGISTRY[n]["display_name"].lower() or
+           search in INDICATOR_REGISTRY[n]["description"].lower()
+    ]
+
+    # ── Two-column layout: Available | Selected ───────────────────────────────
+    left_col, right_col = st.columns([1, 1], gap="large")
+
+    with left_col:
+        st.markdown("**Available Indicators**")
+        for name in filtered:
+            info = INDICATOR_REGISTRY[name]
+            is_sel = name in st.session_state.get("wb_selected_inds", [])
+            with st.container():
+                ic1, ic2 = st.columns([4, 1])
+                with ic1:
+                    st.markdown(
+                        f"**{info['display_name']}** "
+                        f"<span class='ind-type-badge'>Type {info['type']}</span>",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(info["description"])
+                with ic2:
+                    lbl = "✓ Added" if is_sel else "＋ Add"
+                    if st.button(lbl, key=f"add_{name}", use_container_width=True,
+                                 type="primary" if not is_sel else "secondary",
+                                 disabled=is_sel):
+                        sel = list(st.session_state.get("wb_selected_inds", []))
+                        if name not in sel:
+                            sel.append(name)
+                            _set("wb_selected_inds", sel)
+                            # Initialize default params
+                            params = st.session_state.get("wb_ind_params", {})
+                            params[name] = {k: v["default"] for k, v in info["params"].items()}
+                            _set("wb_ind_params", params)
+                            enabled = st.session_state.get("wb_ind_enabled", {})
+                            enabled[name] = True
+                            _set("wb_ind_enabled", enabled)
+                            st.rerun()
+                st.divider()
+
+    with right_col:
+        selected_inds: List[str] = st.session_state.get("wb_selected_inds", [])
+        if not selected_inds:
+            st.info("No indicators selected. Add some from the left panel.")
+        else:
+            st.markdown(f"**Selected ({len(selected_inds)})**")
+            remove_queue = []
+
+            for name in selected_inds:
+                info   = INDICATOR_REGISTRY[name]
+                params = st.session_state.get("wb_ind_params", {}).get(name, {})
+                autotune = st.session_state.get("wb_ind_autotune", {}).get(name, False)
+                enabled  = st.session_state.get("wb_ind_enabled",  {}).get(name, True)
+
+                card_cls = "ind-card" + (" auto-tuned" if autotune else " active" if enabled else "")
+                st.markdown(f'<div class="{card_cls}">', unsafe_allow_html=True)
+
+                h1, h2, h3 = st.columns([3, 1, 1])
+                with h1:
+                    st.markdown(
+                        f"**{info['display_name']}** "
+                        f"<span class='ind-type-badge'>Type {info['type']}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with h2:
+                    new_en = st.toggle("Enabled", value=enabled, key=f"en_{name}")
+                    en_map = st.session_state.get("wb_ind_enabled", {})
+                    en_map[name] = new_en
+                    _set("wb_ind_enabled", en_map)
+                with h3:
+                    if st.button("✕", key=f"rm_{name}", help="Remove indicator"):
+                        remove_queue.append(name)
+
+                # Auto-tune toggle
+                at_map = st.session_state.get("wb_ind_autotune", {})
+                new_at = st.toggle(
+                    "Auto-tune (PhiAI)", value=autotune, key=f"at_{name}",
+                    help="PhiAI will optimize this indicator's parameters.",
+                )
+                at_map[name] = new_at
+                _set("wb_ind_autotune", at_map)
+
+                # Manual param tuning (expandable)
+                if info["params"] and not new_at:
+                    with st.expander("Manual Parameters", expanded=False):
+                        p_map = st.session_state.get("wb_ind_params", {})
+                        cur_p = p_map.get(name, {})
+                        new_p = {}
+                        pcols = st.columns(min(len(info["params"]), 3))
+                        for idx, (pk, pspec) in enumerate(info["params"].items()):
+                            with pcols[idx % len(pcols)]:
+                                cur_val = cur_p.get(pk, pspec["default"])
+                                if pspec["type"] == "int":
+                                    new_p[pk] = st.slider(
+                                        pspec["label"],
+                                        min_value=int(pspec["min"]),
+                                        max_value=int(pspec["max"]),
+                                        value=int(cur_val),
+                                        step=int(pspec.get("step", 1)),
+                                        key=f"p_{name}_{pk}",
+                                    )
+                                else:
+                                    new_p[pk] = st.slider(
+                                        pspec["label"],
+                                        min_value=float(pspec["min"]),
+                                        max_value=float(pspec["max"]),
+                                        value=float(cur_val),
+                                        step=float(pspec.get("step", 0.1)),
+                                        key=f"p_{name}_{pk}",
+                                    )
+                        p_map[name] = new_p
+                        _set("wb_ind_params", p_map)
+
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            # Remove dequeued
+            if remove_queue:
+                sel = [n for n in selected_inds if n not in remove_queue]
+                _set("wb_selected_inds", sel)
+                st.rerun()
+
+    # Build result list
+    result = []
+    for name in st.session_state.get("wb_selected_inds", []):
+        info = INDICATOR_REGISTRY[name]
+        enabled   = st.session_state.get("wb_ind_enabled",  {}).get(name, True)
+        autotune  = st.session_state.get("wb_ind_autotune", {}).get(name, False)
+        params    = st.session_state.get("wb_ind_params",   {}).get(name, {})
+        if not params:
+            params = {k: v["default"] for k, v in info["params"].items()}
+        result.append({
+            "name":         name,
+            "display_name": info["display_name"],
+            "params":       params,
+            "auto_tune":    autotune,
+            "enabled":      enabled,
+        })
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 3 — Blending Panel
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render_step3(indicators: List[Dict]) -> Dict[str, Any]:
+    """Returns blend config dict."""
+
+    active = [i for i in indicators if i.get("enabled", True)]
+
+    if len(active) < 2:
+        return {"mode": "weighted_sum", "weights": {}, "regime_weights": {}}
+
+    st.markdown(step_header(3, "Blending Panel",
+                             "Choose how to combine multiple indicator signals"),
+                unsafe_allow_html=True)
+
+    mode = st.selectbox(
+        "Blend Mode",
+        BLEND_MODES,
+        format_func=lambda m: BLEND_LABELS[m],
+        key="wb_blend_mode",
     )
-    hist = RunHistory()
-    run_id = hist.create_run(run_cfg)
-    hist.save_results(run_id, {"total_return": tr, "cagr": cagr, "max_drawdown": dd,
-                                "sharpe": sharpe, "accuracy": sc.get("accuracy"), "net_pl": net_pl})
-    st.caption(f"Run saved: `{run_id}`")
 
+    weights:        Dict[str, float] = {}
+    regime_weights: Dict[str, Dict[str, float]] = {}
 
-# ---------------------------------------------------------------------------
-# Run & Results Orchestration
-# ---------------------------------------------------------------------------
-def render_run_and_results(config, indicators, blend_method, blend_weights):
-    if not config or not indicators:
-        st.info("Complete Steps 1-2 to run a backtest.")
-        return
+    if mode == "weighted_sum":
+        st.markdown("**Indicator Weights**")
+        st.caption("Weights are automatically normalized to sum to 1.")
+        wcols = st.columns(min(len(active), 4))
+        for idx, ind in enumerate(active):
+            with wcols[idx % len(wcols)]:
+                w = st.slider(
+                    ind["display_name"],
+                    0.0, 2.0,
+                    value=float(st.session_state.get(f"wb_w_{ind['name']}", 1.0)),
+                    step=0.05,
+                    key=f"wb_w_{ind['name']}",
+                )
+                weights[ind["name"]] = w
 
-    st.markdown(
-        """
-        <div style="border-top:1px solid rgba(168,85,247,0.15);
-                    margin:2rem 0 1.5rem;"></div>
-        <div style="font-size:1.4rem; font-weight:700; color:#e4e4e7;
-                    letter-spacing:-0.02em; margin-bottom:0.8rem;">
-            Run Backtest
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown("---")
-    st.markdown(_render_section_header("", "RUN BACKTEST", "EXECUTE"), unsafe_allow_html=True)
+    elif mode == "voting":
+        st.caption("Each enabled indicator gets one vote (±). Threshold for action = majority.")
+        st.info("In voting mode, weights are equal. Enable/disable indicators in Step 2.")
+        weights = {ind["name"]: 1.0 for ind in active}
 
-    c1, c2 = st.columns([2, 1])
-    c1.selectbox("Primary metric", METRICS, key="primary_metric")
-    run_clicked = c2.button("Run Backtest", type="primary", key="run_bt", use_container_width=True)
-
-    phiai_full = st.session_state.get("phiai_full", False)
-    trading_mode = config.get("trading_mode", "equities")
-
-    # Show Phibot tweaks-applied confirmation banner (cleared after one render)
-    n_applied = st.session_state.pop("phibot_tweaks_applied", None)
-    if n_applied:
-        st.success(
-            f"Phibot applied {n_applied} tweak(s) to your configuration. "
-            "Click **Run Backtest** to see the updated results."
+    elif mode == "regime_weighted":
+        st.caption(
+            "Regime-aware: different weights per market regime. "
+            "Defaults are auto-populated based on indicator type."
         )
+        regime_weights = default_regime_weights([i["name"] for i in active])
+
+        with st.expander("Regime Weight Matrix (advanced)", expanded=False):
+            regimes = ["TREND_UP", "TREND_DN", "RANGE", "BREAKOUT_UP",
+                       "BREAKOUT_DN", "EXHAUST_REV", "LOWVOL", "HIGHVOL"]
+            for regime in regimes:
+                st.markdown(f"**{regime}**")
+                rcols = st.columns(min(len(active), 4))
+                for idx, ind in enumerate(active):
+                    with rcols[idx % len(rcols)]:
+                        default_w = regime_weights.get(regime, {}).get(ind["name"], 1.0)
+                        rw = st.slider(
+                            ind["display_name"][:12],
+                            0.0, 2.0,
+                            value=float(default_w),
+                            step=0.1,
+                            key=f"wb_rw_{regime}_{ind['name']}",
+                        )
+                        if regime not in regime_weights:
+                            regime_weights[regime] = {}
+                        regime_weights[regime][ind["name"]] = rw
+
+    elif mode == "phiai":
+        st.info(
+            "PhiAI will automatically weight each indicator based on its individual "
+            "backtest performance. Configure PhiAI in Step 4."
+        )
+
+    # ── Preview chart ─────────────────────────────────────────────────────────
+    ds = _ss("wb_dataset")
+    if ds is not None and active:
+        with st.expander("Signal Preview (last 100 bars)", expanded=False):
+            try:
+                ohlcv = ds["ohlcv"]
+                p_map = st.session_state.get("wb_ind_params", {})
+                sigs  = compute_all_signals(
+                    [i["name"] for i in active],
+                    ohlcv.tail(200),
+                    p_map,
+                )
+                blender = Blender(mode=mode, weights=weights if weights else None,
+                                  regime_weights=regime_weights)
+                blended = blender.blend(sigs)
+                preview_df = sigs.copy()
+                preview_df["blended"] = blended
+                st.line_chart(preview_df.tail(100), use_container_width=True)
+                st.caption("Individual signals (faint) + blended (bold)")
+            except Exception as e:
+                st.warning(f"Preview unavailable: {e}")
+
+    return {"mode": mode, "weights": weights, "regime_weights": regime_weights}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 4 — PhiAI Panel
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render_step4(indicators: List[Dict]) -> Dict[str, Any]:
+    """Returns PhiAI config dict."""
+
+    st.markdown(step_header(4, "PhiAI Panel",
+                             "Auto-tune parameters · auto-select indicators · regime-aware"),
+                unsafe_allow_html=True)
+
+    full_auto = st.toggle(
+        "⚡ PhiAI Full Auto",
+        value=_ss("wb_phiai_auto", False),
+        key="wb_phiai_auto_toggle",
+        help="PhiAI will auto-select the best indicators and tune all parameters.",
+    )
+    _set("wb_phiai_auto", full_auto)
+
+    if full_auto:
+        st.markdown('<div class="wb-card-purple">', unsafe_allow_html=True)
+        st.markdown("**PhiAI will:**")
+        st.markdown(
+            "- Score each indicator individually using your chosen metric\n"
+            "- Select the best subset (up to max indicators)\n"
+            "- Run random-search to optimize parameters\n"
+            "- Recommend blend weights based on scores\n"
+            "- Apply drawdown constraint to prevent over-risky configs"
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        cc1, cc2, cc3 = st.columns(3)
+        max_inds  = cc1.number_input("Max Indicators", 1, 8, value=3, key="wb_phiai_max_inds")
+        risk_cap  = cc2.slider("Max Drawdown Cap", -0.80, -0.05, value=-0.30, step=0.05,
+                               key="wb_phiai_dd_cap",
+                               help="Reject configs with drawdown worse than this.")
+        n_trials  = cc3.slider("Trials per Indicator", 10, 100, value=40, step=10,
+                               key="wb_phiai_trials",
+                               help="More trials = better optimization but slower.")
+        no_short  = st.checkbox("No shorting", value=True, key="wb_phiai_no_short")
+
+    else:
+        # Show explanation of what PhiAI changed if it ran previously
+        phiai_result = _ss("wb_phiai_result")
+        if phiai_result:
+            with st.expander("PhiAI Last Run Report", expanded=True):
+                st.code(phiai_result.get("explanation", "No explanation available."),
+                        language="text")
+
+    return {
+        "enabled":       full_auto,
+        "max_indicators": int(_ss("wb_phiai_max_inds") if full_auto else 5),
+        "max_dd_cap":    float(st.session_state.get("wb_phiai_dd_cap", -0.30)),
+        "n_trials":      int(st.session_state.get("wb_phiai_trials", 40)),
+        "no_short":      bool(st.session_state.get("wb_phiai_no_short", True)),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 5 — Backtest Controls + RUN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render_step5(
+    dataset:    Dict[str, Any],
+    indicators: List[Dict],
+    blend_cfg:  Dict[str, Any],
+    phiai_cfg:  Dict[str, Any],
+):
+    st.markdown(step_header(5, "Backtest Controls & Run",
+                             "Configure trading rules · run · watch live progress"),
+                unsafe_allow_html=True)
+
+    trading_mode = st.session_state.get("wb_mode", "Equities").lower()
+
+    left, right = st.columns(2, gap="large")
+
+    # ── Left: position + exit ─────────────────────────────────────────────────
+    with left:
+        if trading_mode == "equities":
+            st.markdown("**Equities Mode**")
+            allow_short = st.checkbox("Allow Short Selling", value=False, key="wb_allow_short")
+            pos_method  = st.selectbox("Position Sizing", ["Fixed % of Cash", "Fixed Shares"],
+                                        key="wb_pos_method")
+            pos_pct     = st.slider("Position Size (% of cash)", 0.10, 1.0, 0.95, 0.05,
+                                     key="wb_pos_pct")
+
+            st.markdown("**Exit Rules**")
+            e1, e2 = st.columns(2)
+            sl  = e1.slider("Stop Loss %",      0.0, 0.20, 0.0, 0.005, key="wb_sl",
+                            help="0 = disabled", format="%.1%%")
+            tp  = e2.slider("Take Profit %",    0.0, 0.30, 0.0, 0.005, key="wb_tp",
+                            help="0 = disabled", format="%.1%%")
+            ts  = e1.slider("Trailing Stop %",  0.0, 0.15, 0.0, 0.005, key="wb_ts",
+                            help="0 = disabled", format="%.1%%")
+            te  = e2.number_input("Time Exit (bars)", 0, 500, 0, key="wb_te",
+                                   help="0 = disabled")
+            sig_exit = st.checkbox("Exit on signal reversal", value=True, key="wb_sig_exit")
+
+        else:
+            st.markdown("**Options Mode**")
+            structure  = st.selectbox(
+                "Options Structure",
+                ["long_call", "long_put", "debit_spread"],
+                format_func=lambda s: {
+                    "long_call":    "Long Call",
+                    "long_put":     "Long Put",
+                    "debit_spread": "Debit Spread",
+                }[s],
+                key="wb_opt_structure",
+            )
+            target_dte = st.slider("Target DTE (days to expiry)", 10, 90, 45, 5, key="wb_opt_dte")
+            profit_pct = st.slider("Profit Exit %", 0.20, 1.00, 0.50, 0.05, key="wb_opt_profit",
+                                    help="Exit when option gains this fraction of premium")
+            stop_pct   = st.slider("Stop Loss % (of premium)", 0.50, 1.00, 1.00, 0.05,
+                                    key="wb_opt_stop")
+            pos_pct    = st.slider("Risk per Trade (% of capital)", 0.01, 0.15, 0.05, 0.01,
+                                    key="wb_opt_pos")
+
+    # ── Right: signal + evaluation ────────────────────────────────────────────
+    with right:
+        st.markdown("**Signal Parameters**")
+        sig_threshold = st.slider(
+            "Signal Threshold",
+            0.01, 0.50, 0.10, 0.01,
+            key="wb_sig_thresh",
+            help="Minimum |signal| to trigger a trade.",
+        )
+
+        st.markdown("**Evaluation Metric**")
+        eval_metric = st.selectbox(
+            "Primary Metric",
+            ["sharpe", "total_return", "cagr", "sortino", "max_drawdown",
+             "direction_accuracy", "profit_factor", "win_rate"],
+            format_func=_metric_label,
+            key="wb_eval_metric",
+        )
+
+        st.markdown("**Run Description** (optional)")
+        run_desc = st.text_input("Notes / tag this run", value="", key="wb_run_desc",
+                                  placeholder="e.g. SPY daily RSI+MACD blend")
+
+    st.divider()
+
+    # ── Run / Stop buttons ────────────────────────────────────────────────────
+    btn_col1, btn_col2, btn_col3 = st.columns([2, 1, 3])
+    run_clicked  = btn_col1.button("▶ Run Backtest", type="primary", use_container_width=True)
+    stop_clicked = btn_col2.button("■ Stop", use_container_width=True)
+
+    if stop_clicked:
+        _set("wb_running", False)
+        st.warning("Backtest stopped.")
+        return
 
     if not run_clicked:
         return
 
-    # Honour any overrides adopted from Phibot review
-    _signal_threshold  = float(st.session_state.get("phibot_signal_threshold", 0.15))
-    _position_size_pct = float(st.session_state.get("phibot_position_size", 0.95))
-
-    indicators_to_use = dict(indicators)
-    phiai_explanation = ""
-    workbench_data = st.session_state.get("workbench_dataset") or {}
-
-    # PhiAI optimization
-    if phiai_full and workbench_data:
-        phiai_progress = st.progress(0, text="PhiAI optimizing indicators and parameters...")
-        phiai_result, phiai_exc = [None], [None]
-        _sym = config["symbols"][0]
-        _ohlcv = workbench_data.get(_sym)
-
-        def run_phiai():
-            try:
-                opt_progress = st.progress(
-                    0, text="Running options backtest... 0%"
-                )
-                opt_result = [None]
-                opt_exc = [None]
-
-                def run_opt():
-                    try:
-                        dfs = st.session_state.get("workbench_dataset", {})
-                        sym = config["symbols"][0]
-                        ohlcv = dfs.get(sym)
-                        if ohlcv is None or ohlcv.empty:
-                            msg = "No data for options backtest. Fetch first."
-                            raise ValueError(msg)
-
-                        bt_opts = st.session_state.get(
-                            "bt_options_controls", {}
-                        )
-                        # pylint: disable=import-outside-toplevel
-                        from phi.options import run_options_backtest
-                        opt_result[0] = run_options_backtest(
-                            ohlcv,
-                            symbol=sym,
-                            strategy_type=bt_opts.get(
-                                "strategy_type", "long_call"
-                            ),
-                            initial_capital=config.get(
-                                "initial_capital", 100_000
-                            ),
-                            position_pct=0.1,
-                            exit_profit_pct=bt_opts.get(
-                                "exit_profit_pct", 0.5
-                            ),
-                            exit_stop_pct=bt_opts.get(
-                                "exit_stop_pct", -0.3
-                            ),
-                        )
-                    except Exception as e:  # pylint: disable=broad-except
-                        opt_exc[0] = e
-
-                th_opt = threading.Thread(target=run_opt)
-                th_opt.start()
-                pct = 0
-                start_t = time.time()
-                while th_opt.is_alive():
-                    time.sleep(0.2)
-                    elapsed = time.time() - start_t
-                    pct = min(95, int(elapsed * 25))  # ramps quickly
-                    opt_progress.progress(
-                        pct / 100,
-                        text=f"Running options backtest... {pct}%"
-                    )
-                if (oe := opt_exc[0]) is not None:
-                    opt_progress.empty()
-                    # pylint: disable=raising-bad-type
-                    raise oe
-                results = opt_result[0]
-                opt_progress.progress(1.0, text="Complete — 100%")
-                time.sleep(0.3)
-                opt_progress.empty()
-                if results:
-                    _display_results(
-                        config, results, None, indicators_to_use,
-                        blend_method, blend_weights
-                    )
-                else:
-                    st.error("Options backtest returned no results.")
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                st.error(str(e))
-                st.exception(e)
-            return
-
-        # Equities: direct vectorized backtest (no Lumibot dependency)
-        progress = st.progress(0, text="Preparing backtest... 0%")
-
-        try:
-            sym = config["symbols"][0]
-            dfs = st.session_state.get("workbench_dataset", {})
-            ohlcv = dfs.get(sym)
-            if ohlcv is None or (hasattr(ohlcv, "empty") and ohlcv.empty):
-                progress.empty()
-                st.error(
-                    "No dataset loaded. Complete Step 1 (Fetch & Cache Data) first."
-                )
-                return
-
-            # Run direct backtest in thread with live progress %
-            result_holder = [None]
-            exc_holder = [None]
-                if _ohlcv is not None and len(_ohlcv) > 100:
-                    from phi.phiai import run_phiai_optimization
-                    phiai_result[0] = run_phiai_optimization(_ohlcv, indicators_to_use, max_iter_per_indicator=15)
-            except Exception as ex:
-                phiai_exc[0] = ex
-
-        th = threading.Thread(target=run_phiai)
-        th.start()
-        start_t = time.time()
-        while th.is_alive():
-            time.sleep(0.3)
-            pct = min(95, int((time.time() - start_t) * 12))
-            phiai_progress.progress(pct / 100, text=f"PhiAI optimizing... {pct}%")
-        if phiai_exc[0]:
-            st.warning(f"PhiAI skipped: {phiai_exc[0]}")
-        elif (r := phiai_result[0]) is not None and isinstance(r, (list, tuple)) and len(r) == 2:
-            indicators_to_use, phiai_explanation = r
-        phiai_progress.progress(1.0, text="PhiAI complete!")
-        time.sleep(0.3)
-        phiai_progress.empty()
-
-    # Options backtest
-    if trading_mode == "options":
-        try:
-            opt_progress = st.progress(0, text="Running options backtest...")
-            opt_result, opt_exc = [None], [None]
-
-            def run_opt():
-                try:
-                    # pylint: disable=import-outside-toplevel
-                    from phi.backtest import run_direct_backtest
-                    result_holder[0] = run_direct_backtest(
-                        ohlcv=ohlcv,
-                        symbol=sym,
-                        indicators=indicators_to_use,
-                        blend_weights=blend_weights,
-                        blend_method=blend_method,
-                        signal_threshold=_signal_threshold,
-                        initial_capital=config["initial_capital"],
-                        position_size_pct=_position_size_pct,
-                    )
-                except Exception as e:  # pylint: disable=broad-except
-                    exc_holder[0] = e
-                    dfs = st.session_state.get("workbench_dataset", {})
-                    sym = config["symbols"][0]
-                    ohlcv = dfs.get(sym)
-                    if ohlcv is None or ohlcv.empty:
-                        raise ValueError("No data")
-                    bt_opts = st.session_state.get("bt_options_controls", {})
-                    from phi.options import run_options_backtest
-                    opt_result[0] = run_options_backtest(
-                        ohlcv, symbol=sym,
-                        strategy_type=bt_opts.get("strategy_type", "long_call"),
-                        initial_capital=config.get("initial_capital", 100_000),
-                        position_pct=0.1,
-                        exit_profit_pct=bt_opts.get("exit_profit_pct", 0.5),
-                        exit_stop_pct=bt_opts.get("exit_stop_pct", -0.3),
-                    )
-                except Exception as e:
-                    opt_exc[0] = e
-
-            th = threading.Thread(target=run_opt)
-            th.start()
-            start_t = time.time()
-            while th.is_alive():
-                time.sleep(0.3)
-                elapsed = time.time() - start_t
-                pct = min(95, 5 + int(elapsed * 8))
-                progress.progress(
-                    pct / 100, text=f"Running backtest... {pct}%"
-                )
-
-            if (eh := exc_holder[0]) is not None:
-                # pylint: disable=raising-bad-type
-                raise eh
-
-            if (res_h := result_holder[0]) is not None:
-                results, strat = res_h
-                progress.progress(1.0, text="Complete — 100%")
-                time.sleep(0.3)
-                progress.empty()
-
-                has_log = hasattr(strat, "prediction_log")
-                sc = _compute_accuracy(strat) if has_log else {}
-                _display_results(
-                    config, results, strat, indicators_to_use,
-                    blend_method, blend_weights, sc
-                )
-                time.sleep(0.2)
-                pct = min(95, int((time.time() - start_t) * 25))
-                opt_progress.progress(pct / 100, text=f"Options backtest... {pct}%")
-            if opt_exc[0]: raise opt_exc[0]
-            results = opt_result[0]
-            opt_progress.progress(1.0, text="Complete!")
-            time.sleep(0.3)
-            opt_progress.empty()
-            if results:
-                _display_results(config, results, None, indicators_to_use, blend_method, blend_weights)
-            else:
-                st.error("No results returned.")
-        except Exception as e:
-            st.error(str(e))
+    # ── Validate ─────────────────────────────────────────────────────────────
+    active_inds = [i for i in indicators if i.get("enabled", True)]
+    if not active_inds:
+        st.error("Enable at least one indicator in Step 2.")
         return
 
-    # Equities backtest
-    use_blended = len(indicators_to_use) >= 2
-    progress = st.progress(0, text="Preparing backtest...")
+    ohlcv = dataset.get("ohlcv")
+    if ohlcv is None or ohlcv.empty:
+        st.error("No dataset loaded. Complete Step 1 first.")
+        return
+
+    _set("wb_running", True)
+
+    # ── Build RunConfig ───────────────────────────────────────────────────────
+    run_id = str(uuid.uuid4())[:8]
+    cfg = RunConfig(
+        run_id         = run_id,
+        dataset_id     = dataset.get("dataset_id", ""),
+        symbol         = dataset.get("symbol", ""),
+        timeframe      = dataset.get("timeframe", "1D"),
+        start_date     = dataset.get("start", ""),
+        end_date       = dataset.get("end", ""),
+        vendor         = dataset.get("vendor", "yfinance"),
+        initial_capital = dataset.get("initial_capital", 100_000.0),
+        trading_mode   = trading_mode,
+        indicators     = [
+            IndicatorConfig(
+                name=i["name"], display_name=i["display_name"],
+                params=i["params"], auto_tuned=i.get("auto_tune", False),
+                enabled=True,
+            )
+            for i in active_inds
+        ],
+        blend_mode    = blend_cfg.get("mode", "weighted_sum"),
+        blend_weights = blend_cfg.get("weights", {}),
+        regime_weights = blend_cfg.get("regime_weights", {}),
+        phiai_enabled = phiai_cfg.get("enabled", False),
+        phiai_max_inds = phiai_cfg.get("max_indicators", 3),
+        phiai_risk_cap = abs(float(phiai_cfg.get("max_dd_cap", -0.30))),
+        exit_rules     = ExitRules(
+            stop_loss_pct     = float(st.session_state.get("wb_sl", 0)) or None,
+            take_profit_pct   = float(st.session_state.get("wb_tp", 0)) or None,
+            trailing_stop_pct = float(st.session_state.get("wb_ts", 0)) or None,
+            time_exit_bars    = int(st.session_state.get("wb_te", 0)) or None,
+            signal_exit       = bool(st.session_state.get("wb_sig_exit", True)),
+        ),
+        position_sizing = PositionSizing(
+            method      = "fixed_pct",
+            pct_of_cash = float(st.session_state.get("wb_pos_pct", 0.95)),
+            allow_short = bool(st.session_state.get("wb_allow_short", False)),
+        ),
+        options_config = OptionsConfig(
+            structure       = str(st.session_state.get("wb_opt_structure", "long_call")),
+            target_dte      = int(st.session_state.get("wb_opt_dte", 45)),
+            profit_exit_pct = float(st.session_state.get("wb_opt_profit", 0.50)),
+            stop_exit_pct   = float(st.session_state.get("wb_opt_stop", 1.00)),
+        ),
+        evaluation_metric = str(eval_metric),
+        signal_threshold  = float(sig_threshold),
+        description       = str(run_desc),
+    )
+
+    # ── Live backtest runner ──────────────────────────────────────────────────
+    _run_live_backtest(cfg, ohlcv, active_inds, blend_cfg, phiai_cfg)
+    _set("wb_running", False)
+
+
+def _run_live_backtest(
+    cfg:        RunConfig,
+    ohlcv:      pd.DataFrame,
+    active_inds: List[Dict],
+    blend_cfg:  Dict[str, Any],
+    phiai_cfg:  Dict[str, Any],
+):
+    """Execute backtest with live progress updates."""
+
+    from phi.backtest.engine import BacktestEngine
+    from phi.options.simulator import OptionsSimulator
+
+    progress_bar = st.progress(0.0)
+    status_area  = st.empty()
+    log_area     = st.empty()
+    logs: List[str] = []
+
+    def _status(msg: str, pct: float):
+        progress_bar.progress(min(pct, 1.0))
+        status_area.markdown(
+            f'<div class="wb-card"><b>{msg}</b></div>',
+            unsafe_allow_html=True,
+        )
+
+    def _log(msg: str, kind: str = ""):
+        ts = time.strftime("%H:%M:%S")
+        logs.append(f'<p class="log-line {kind}">[{ts}] {msg}</p>')
+        log_html = '<div class="log-console">' + "\n".join(logs[-30:]) + "</div>"
+        log_area.markdown(log_html, unsafe_allow_html=True)
 
     try:
-        if use_blended:
-            strat_cls = _load_strategy("strategies.blended_workbench_strategy.BlendedWorkbenchStrategy")
-            params = {"symbol": config["symbols"][0], "indicators": indicators_to_use,
-                      "blend_method": blend_method, "blend_weights": blend_weights,
-                      "signal_threshold": _signal_threshold, "lookback_bars": 200}
-        else:
-            first_name = list(indicators_to_use.keys())[0]
-            info = INDICATOR_CATALOG[first_name]
-            strat_cls = _load_strategy(str(info["strategy"]))
-            p_defaults = {k: default for k, (_, _, default) in info["params"].items()}
-            p_user = {k: int(v) if isinstance(v, float) and v == int(v) else v
-                      for k, v in indicators_to_use[first_name].get("params", {}).items()}
-            params = {**p_defaults, **p_user, "symbol": config["symbols"][0]}
+        # ── 1. Load data ──────────────────────────────────────────────────────
+        _status("Step 1/6 — Loading data...", 0.0)
+        _log(f"Dataset: {cfg.symbol} {cfg.timeframe}  |  {len(ohlcv):,} bars")
+        _log(f"Initial capital: ${cfg.initial_capital:,.0f}")
 
-    st.markdown(
-        """
-        <div style="font-size:1.15rem; font-weight:700; color:#e4e4e7;
-                    letter-spacing:-0.01em; margin:1.5rem 0 0.8rem;">
-            Results
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        # ── 2. PhiAI (if enabled) ─────────────────────────────────────────────
+        params_map = {i["name"]: i["params"] for i in active_inds}
+        ind_names  = [i["name"] for i in active_inds]
 
-    r1, r2, r3, r4, r5 = st.columns(5)
-    r1.metric("Start Capital", f"${cap:,.0f}")
-    r2.metric("End Capital", f"${end_cap:,.0f}")
-    r3.metric("Net P/L", f"${net_pl:+,.0f}", f"{net_pct:+.1f}%")
-    r4.metric(
-        "CAGR", f"{cagr:+.1%}" if isinstance(cagr, (int, float)) else "—"
-    )
-    r5.metric(
-        "Sharpe", f"{sharpe:.2f}" if isinstance(sharpe, (int, float)) else "—"
-    )
-
-    tab_sum, tab_curve, tab_trades, tab_metrics = st.tabs(
-        ["Summary", "Equity Curve", "Trades", "Metrics"]
-    )
-    with tab_sum:
-        st.metric(
-            "Max Drawdown",
-            f"{dd:.1%}" if isinstance(dd, (int, float)) else "—"
-        )
-        acc = sc.get('accuracy', 0)
-        acc_text = (
-            f"{acc:.1%}" if sc and isinstance(acc, (int, float)) else "—"
-        )
-        st.metric("Direction Accuracy", acc_text)
-    with tab_curve:
-        if pv and len(pv) > 1:
-            fig = go.Figure()
-            fig.add_trace(
-                go.Scatter(
-                    y=pv, mode="lines",
-                    line=dict(color=CHART_COLORS[0], width=2),
-                    fill="tozeroy",
-                    fillcolor="rgba(168,85,247,0.07)",
-                )
-            )
-            fig.update_layout(
-                template="plotly_dark",
-                paper_bgcolor="#0f0f12",
-                plot_bgcolor="#1a1a1f",
-                font_color="#e4e4e7",
-                margin=dict(l=40, r=40, t=40, b=40),
-                xaxis=dict(gridcolor="rgba(168,85,247,0.08)", showgrid=True),
-                yaxis=dict(gridcolor="rgba(168,85,247,0.08)", showgrid=True),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    with tab_trades:
-        if strat and hasattr(strat, "prediction_log") and strat.prediction_log:
-            st.dataframe(pd.DataFrame(strat.prediction_log), width="stretch")
-        result_holder, exc_holder = [None], [None]
-
-        def run_bt():
+        if phiai_cfg.get("enabled", False):
+            _status("Step 2/6 — PhiAI auto-selecting & tuning...", 0.10)
+            _log("PhiAI full auto mode enabled.", "info")
             try:
-                result_holder[0] = _run_backtest(strat_cls, params, config)
+                from phi.phiai.tuner import phiai_full_auto
+                from phi.indicators.registry import INDICATOR_REGISTRY as IND_REG
+
+                tune_ranges_map = {n: IND_REG[n].get("tune_ranges", {}) for n in ind_names}
+                bt_cfg_for_tuner = {
+                    "initial_capital":  cfg.initial_capital,
+                    "signal_threshold": cfg.signal_threshold,
+                    "allow_short":      cfg.position_sizing.allow_short,
+                    "position_pct":     cfg.position_sizing.pct_of_cash,
+                    "timeframe":        cfg.timeframe,
+                }
+
+                def _phiai_prog(step, pct):
+                    _status(f"Step 2/6 — PhiAI: {step}", 0.10 + 0.20 * pct)
+                    _log(f"PhiAI: {step}", "info")
+
+                result = phiai_full_auto(
+                    ohlcv, ind_names, params_map, tune_ranges_map,
+                    bt_cfg_for_tuner,
+                    constraints={
+                        "max_drawdown_cap": phiai_cfg.get("max_dd_cap", -0.30),
+                        "no_short":         phiai_cfg.get("no_short", True),
+                        "max_indicators":   phiai_cfg.get("max_indicators", 3),
+                    },
+                    metric     = cfg.evaluation_metric,
+                    n_trials   = phiai_cfg.get("n_trials", 40),
+                    progress_callback=_phiai_prog,
+                )
+
+                ind_names  = result["selected_indicators"]
+                params_map = result["best_params"]
+                blend_cfg  = {
+                    **blend_cfg,
+                    "mode":    "phiai",
+                    "weights": result["blend_weights"],
+                }
+                _set("wb_phiai_result", result)
+                _log(f"PhiAI selected: {', '.join(ind_names)}", "info")
             except Exception as e:
-                exc_holder[0] = e
+                _log(f"PhiAI failed ({e}), continuing with manual config.", "warn")
 
-        th = threading.Thread(target=run_bt)
-        th.start()
-        start_t = time.time()
-        while th.is_alive():
-            time.sleep(0.4)
-            pct = min(95, 5 + int((time.time() - start_t) * 1.5))
-            progress.progress(pct / 100, text=f"Running backtest... {pct}%")
+        # ── 3. Compute indicators ─────────────────────────────────────────────
+        _status("Step 3/6 — Computing indicators...", 0.35)
+        _log(f"Computing {len(ind_names)} indicator(s): {', '.join(ind_names)}")
 
-        if exc_holder[0]: raise exc_holder[0]
-        if result_holder[0] and isinstance(result_holder[0], (list, tuple)) and len(result_holder[0]) == 2:
-            results, strat = result_holder[0]
-            progress.progress(1.0, text="Complete!")
-            time.sleep(0.5)
-            progress.empty()
-            sc = _compute_accuracy(strat) if hasattr(strat, "prediction_log") else {}
-            _display_results(config, results, strat, indicators_to_use, blend_method, blend_weights, sc)
+        signals_df = compute_all_signals(ind_names, ohlcv, params_map)
+        _log(f"Signals shape: {signals_df.shape}  |  NaN rows: {signals_df.isna().any(axis=1).sum()}")
+
+        # ── 4. Blend signals ──────────────────────────────────────────────────
+        _status("Step 4/6 — Blending signals...", 0.50)
+        _log(f"Blend mode: {blend_cfg.get('mode', 'weighted_sum')}")
+
+        blender = Blender(
+            mode           = blend_cfg.get("mode", "weighted_sum"),
+            weights        = blend_cfg.get("weights") or None,
+            regime_weights = blend_cfg.get("regime_weights") or {},
+        )
+
+        # For phiai mode: inject metric scores if available
+        if blend_cfg.get("mode") == "phiai":
+            phiai_res = _ss("wb_phiai_result")
+            if phiai_res:
+                blender.metric_scores = phiai_res.get("metric_scores", {})
+
+        blended_signal = blender.blend(signals_df)
+        _log(f"Blended signal range: [{blended_signal.min():.3f}, {blended_signal.max():.3f}]")
+
+        # ── 5. Run backtest ───────────────────────────────────────────────────
+        _status("Step 5/6 — Simulating trades...", 0.60)
+
+        backtest_cfg = {
+            "initial_capital":   cfg.initial_capital,
+            "signal_threshold":  cfg.signal_threshold,
+            "allow_short":       cfg.position_sizing.allow_short,
+            "position_pct":      cfg.position_sizing.pct_of_cash,
+            "stop_loss_pct":     cfg.exit_rules.stop_loss_pct,
+            "take_profit_pct":   cfg.exit_rules.take_profit_pct,
+            "trailing_stop_pct": cfg.exit_rules.trailing_stop_pct,
+            "time_exit_bars":    cfg.exit_rules.time_exit_bars,
+            "signal_exit":       cfg.exit_rules.signal_exit,
+            "timeframe":         cfg.timeframe,
+        }
+
+        prog_placeholder = [0.0]
+
+        def _bt_progress(step: str, pct: float):
+            _status(f"Step 5/6 — {step}", 0.60 + 0.20 * pct)
+
+        if cfg.trading_mode == "options":
+            sim = OptionsSimulator({
+                **backtest_cfg,
+                "structure":       cfg.options_config.structure,
+                "target_dte":      cfg.options_config.target_dte,
+                "profit_exit_pct": cfg.options_config.profit_exit_pct,
+                "stop_exit_pct":   cfg.options_config.stop_exit_pct,
+                "position_pct":    st.session_state.get("wb_opt_pos", 0.05),
+            })
+            opt_result = sim.run(ohlcv, blended_signal)
+            # Wrap into a compatible BacktestResult-like object
+            result_obj = _wrap_options_result(opt_result)
         else:
-            progress.empty()
-            st.error("Backtest returned no results.")
+            engine = BacktestEngine(backtest_cfg)
+            result_obj = engine.run(ohlcv, blended_signal, progress_callback=_bt_progress)
 
-        if phiai_full and phiai_explanation:
-            with st.expander("PhiAI Changes"):
-                st.markdown(f"""
-                <div style="background:rgba(168,85,247,0.04);border:1px solid rgba(168,85,247,0.12);
-                            border-radius:12px;padding:1.2rem;font-size:0.88rem;color:#b0b0c0;">
-                    {phiai_explanation.replace(chr(10), '<br>')}
-                </div>
-                """, unsafe_allow_html=True)
+        for line in result_obj.run_log if hasattr(result_obj, "run_log") else []:
+            _log(line)
+
+        # ── 6. Compute metrics ────────────────────────────────────────────────
+        _status("Step 6/6 — Computing metrics...", 0.85)
+        metrics = result_obj.metrics
+
+        end_cap   = result_obj.end_capital
+        start_cap = cfg.initial_capital
+        net_pnl   = end_cap - start_cap
+
+        _log(f"Trades: {metrics.get('n_trades', 0):,}  |  "
+             f"Win rate: {metrics.get('win_rate', 0):.1%}  |  "
+             f"Sharpe: {metrics.get('sharpe', 0):.2f}")
+        _log(f"End capital: ${end_cap:,.2f}  (net P/L: ${net_pnl:+,.2f})")
+
+        # ── Save run ─────────────────────────────────────────────────────────
+        _status("Saving run to history...", 0.95)
+        run_data = {
+            "metrics":     metrics,
+            "end_capital": end_cap,
+            "start_capital": start_cap,
+            "equity_curve": result_obj.equity_curve,
+            "signals":      blended_signal,
+        }
+        try:
+            save_run(cfg, run_data, result_obj.trades)
+            _log(f"Run saved: runs/{cfg.run_id}/", "info")
+        except Exception as e:
+            _log(f"Save failed: {e}", "warn")
+
+        _set("wb_last_result", {
+            "run_id":      cfg.run_id,
+            "config":      cfg,
+            "result":      result_obj,
+            "signals_df":  signals_df,
+            "blended":     blended_signal,
+            "metrics":     metrics,
+            "end_capital": end_cap,
+        })
+
+        _status("✓ Backtest complete!", 1.0)
+        time.sleep(0.3)
+        progress_bar.empty()
+        status_area.empty()
+        log_area.empty()
+        st.rerun()
 
     except Exception as e:
-        progress.empty()
-        st.error(str(e))
+        _status(f"Error: {e}", 1.0)
+        _log(f"FATAL: {e}", "error")
+        import traceback
         st.exception(e)
 
 
-# ---------------------------------------------------------------------------
-# AI Agents
-# ---------------------------------------------------------------------------
-def render_ai_agents():
-    st.markdown(_render_section_header("", "AI AGENTS", "OLLAMA"), unsafe_allow_html=True)
-    st.caption("Free local models via Ollama. Install: ollama.com/download")
-
-    host = st.text_input("Ollama Host", value=os.getenv("OLLAMA_HOST", "http://localhost:11434"), key="ollama_host")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Check connection", use_container_width=True):
-            from phi.agents import check_ollama_ready
-            if check_ollama_ready(host):
-                st.success("Ollama is running")
-            else:
-                st.error("Ollama not reachable")
-    with c2:
-        if st.button("List models", use_container_width=True):
-            from phi.agents import list_ollama_models
-            models = list_ollama_models(host)
-            if models:
-                names = [m.get("name", "").split(":")[0] for m in models if m.get("name")]
-                st.session_state["ollama_models"] = list(dict.fromkeys(names))
-                st.success(f"Found {len(st.session_state['ollama_models'])} model(s)")
-            else:
-                st.warning("No models found")
-
-    model = st.selectbox("Model", options=st.session_state.get("ollama_models", ["llama3.2", "0xroyce/plutus"]),
-                          key="ollama_model")
-    prompt = st.text_area("Ask AI", placeholder="e.g. What does RSI oversold mean?", key="ollama_prompt", height=80)
-
-    if st.button("Send", key="ollama_send", type="primary") and prompt:
-        with st.spinner("Thinking..."):
-            try:
-                from phi.agents import OllamaAgent
-                agent = OllamaAgent(model=model, host=host)
-                reply = agent.chat(prompt, system="You are a quantitative trading assistant. Be concise.")
-                st.markdown("**Reply:**")
-                st.markdown(reply)
-            except Exception as e:
-                st.error(str(e))
+def _wrap_options_result(opt_result):
+    """Wrap OptionsBacktestResult into a duck-typed object matching BacktestResult interface."""
+    class _Wrapper:
+        pass
+    w = _Wrapper()
+    w.equity_curve  = opt_result.equity_curve
+    w.trades        = opt_result.trades
+    w.metrics       = opt_result.metrics
+    w.start_capital = opt_result.start_capital
+    w.end_capital   = opt_result.end_capital
+    w.signals       = pd.Series(dtype=float)
+    w.positions     = pd.Series(dtype=float)
+    w.run_log       = []
+    return w
 
 
-# ---------------------------------------------------------------------------
-# Run History & Cache
-# ---------------------------------------------------------------------------
-def render_run_history():
-    from phi.run_config import RunHistory
-    hist = RunHistory()
-    runs = hist.list_runs()
-    if not runs:
-        st.caption("No runs yet.")
+# ═══════════════════════════════════════════════════════════════════════════════
+# RESULTS SECTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render_results():
+    last = _ss("wb_last_result")
+    if last is None:
         return
-    st.markdown(_render_section_header("", "RUN HISTORY", f"{len(runs)} RUNS"), unsafe_allow_html=True)
-    for r in runs[:10]:
-        with st.expander(r["run_id"]):
-            st.json(r.get("results", {}))
 
+    result     = last["result"]
+    metrics    = last["metrics"]
+    cfg        = last["config"]
+    signals_df = last.get("signals_df", pd.DataFrame())
+    blended    = last.get("blended", pd.Series(dtype=float))
+    run_id     = last["run_id"]
+    end_cap    = last["end_capital"]
+    start_cap  = cfg.initial_capital
+    net_pnl    = end_cap - start_cap
+    net_pnl_pct = net_pnl / (start_cap + 1e-10)
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("## Results")
+
+    # Eval metric value
+    em   = cfg.evaluation_metric
+    em_v = metrics.get(em, metrics.get("total_return", 0))
+    em_lbl = _metric_label(em)
+    if em in ("total_return", "cagr", "win_rate", "direction_accuracy", "max_drawdown"):
+        em_str = f"{float(em_v):.2%}" if em_v is not None else "—"
+    else:
+        em_str = f"{float(em_v):.3f}" if em_v is not None else "—"
+
+    st.markdown(
+        result_ribbon_html(start_cap, end_cap, net_pnl, net_pnl_pct, em_lbl, em_str),
+        unsafe_allow_html=True,
+    )
+
+    # ── Tabs ─────────────────────────────────────────────────────────────────
+    tabs = st.tabs(["Summary", "Equity Curve", "Trades", "Metrics", "Diagnostics"])
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    with tabs[0]:
+        rc1, rc2, rc3, rc4 = st.columns(4)
+        rc1.metric("Total Return",  _fmt_pct(metrics.get("total_return")))
+        rc2.metric("CAGR",          _fmt_pct(metrics.get("cagr")))
+        rc3.metric("Sharpe",        _fmt_num(metrics.get("sharpe"), 2))
+        rc4.metric("Max Drawdown",  _fmt_pct(metrics.get("max_drawdown")))
+
+        rc5, rc6, rc7, rc8 = st.columns(4)
+        rc5.metric("Win Rate",      _fmt_pct(metrics.get("win_rate")))
+        rc6.metric("Profit Factor", _fmt_num(metrics.get("profit_factor"), 2))
+        rc7.metric("Trades",        f"{metrics.get('n_trades', 0):,}")
+        rc8.metric("Dir. Accuracy", _fmt_pct(metrics.get("direction_accuracy")))
+
+        st.markdown(f"**Run ID:** `{run_id}`  |  **Symbol:** {cfg.symbol}  |  "
+                    f"**Timeframe:** {cfg.timeframe}  |  **Mode:** {cfg.trading_mode.title()}")
+        st.caption(
+            f"Indicators: {', '.join(i.display_name for i in cfg.indicators)}  |  "
+            f"Blend: {cfg.blend_mode}  |  "
+            f"PhiAI: {'on' if cfg.phiai_enabled else 'off'}"
+        )
+
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            if st.button("Export Config (JSON)", key="exp_cfg", use_container_width=True):
+                st.download_button(
+                    "Download config.json",
+                    data=cfg.to_json(),
+                    file_name=f"run_{run_id}_config.json",
+                    mime="application/json",
+                )
+        with ec2:
+            if not result.trades.empty and st.button("Export Trades (CSV)",
+                                                      key="exp_trades", use_container_width=True):
+                st.download_button(
+                    "Download trades.csv",
+                    data=result.trades.to_csv(index=False),
+                    file_name=f"run_{run_id}_trades.csv",
+                    mime="text/csv",
+                )
+
+    # ── Equity Curve ──────────────────────────────────────────────────────────
+    with tabs[1]:
+        eq = result.equity_curve.to_frame("Portfolio Value ($)")
+        if not blended.empty:
+            # Normalize blended to overlay on equity chart
+            pass
+        st.line_chart(eq, use_container_width=True)
+
+        # Drawdown chart
+        if len(result.equity_curve) > 1:
+            dd_series = (result.equity_curve - result.equity_curve.cummax()) / \
+                        result.equity_curve.cummax()
+            st.markdown("**Drawdown**")
+            st.area_chart(dd_series.to_frame("Drawdown"), use_container_width=True)
+
+    # ── Trades ────────────────────────────────────────────────────────────────
+    with tabs[2]:
+        if result.trades.empty:
+            st.warning("No trades executed. Try lowering the signal threshold.")
+        else:
+            st.dataframe(result.trades, use_container_width=True, hide_index=True)
+
+            if "pnl" in result.trades.columns:
+                t1, t2 = st.columns(2)
+                with t1:
+                    pnl_hist = result.trades["pnl"]
+                    pnl_df = pnl_hist.to_frame("Trade P&L ($)")
+                    st.bar_chart(pnl_df, use_container_width=True)
+                with t2:
+                    cum_pnl = result.trades["pnl"].cumsum()
+                    st.line_chart(cum_pnl.to_frame("Cumulative P&L ($)"),
+                                  use_container_width=True)
+
+    # ── Metrics ───────────────────────────────────────────────────────────────
+    with tabs[3]:
+        metric_groups = [
+            ("Returns", ["total_return", "cagr", "net_pnl", "net_pnl_pct"]),
+            ("Risk",    ["max_drawdown", "volatility_annual", "sharpe", "sortino", "calmar"]),
+            ("Trades",  ["n_trades", "win_rate", "profit_factor", "avg_win",
+                         "avg_loss", "largest_win", "largest_loss", "avg_hold_bars"]),
+            ("Accuracy", ["direction_accuracy"]),
+            ("Capital", ["initial_capital", "end_capital"]),
+        ]
+        for group_name, keys in metric_groups:
+            st.markdown(f"**{group_name}**")
+            cols = st.columns(len(keys))
+            for col, k in zip(cols, keys):
+                v = metrics.get(k)
+                if v is None:
+                    col.metric(k.replace("_", " ").title(), "—")
+                elif k in ("total_return", "cagr", "win_rate", "max_drawdown",
+                           "volatility_annual", "direction_accuracy", "net_pnl_pct"):
+                    col.metric(k.replace("_", " ").title(), _fmt_pct(v))
+                elif k in ("initial_capital", "end_capital", "net_pnl",
+                           "avg_win", "avg_loss", "largest_win", "largest_loss"):
+                    col.metric(k.replace("_", " ").title(), _fmt_usd(v))
+                elif k in ("n_trades",):
+                    col.metric(k.replace("_", " ").title(), f"{int(v):,}")
+                else:
+                    col.metric(k.replace("_", " ").title(), _fmt_num(v, 3))
+            st.markdown("")
+
+    # ── Diagnostics ───────────────────────────────────────────────────────────
+    with tabs[4]:
+        if not signals_df.empty:
+            st.markdown("**Individual Indicator Signals**")
+            st.line_chart(signals_df.tail(300), use_container_width=True)
+
+        if not blended.empty:
+            st.markdown("**Blended Signal**")
+            st.line_chart(blended.tail(300).to_frame("Blended Signal"),
+                          use_container_width=True)
+
+        if hasattr(result, "positions") and not result.positions.empty:
+            st.markdown("**Position Series (+1=long, -1=short, 0=flat)**")
+            st.line_chart(result.positions.tail(300).to_frame("Position"),
+                          use_container_width=True)
+
+        # PhiAI explanation
+        phiai_res = _ss("wb_phiai_result")
+        if phiai_res and phiai_res.get("explanation"):
+            with st.expander("PhiAI Explanation", expanded=True):
+                st.code(phiai_res["explanation"], language="text")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RUN HISTORY TAB
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render_run_history():
+    st.markdown("## Run History")
+
+    runs = list_runs(limit=50)
+
+    if not runs:
+        st.info("No runs stored yet. Complete a backtest to see history.")
+        return
+
+    # Summary table
+    display_cols = ["run_id", "created_at", "symbol", "timeframe", "trading_mode",
+                    "indicators", "blend_mode", "phiai", "initial_capital",
+                    "end_capital", "total_return", "sharpe", "max_drawdown",
+                    "win_rate", "n_trades"]
+    df_runs = pd.DataFrame(runs)
+    avail_cols = [c for c in display_cols if c in df_runs.columns]
+    st.dataframe(df_runs[avail_cols], use_container_width=True, hide_index=True)
+
+    # Compare multiple runs
+    run_ids = [r["run_id"] for r in runs]
+    selected_ids = st.multiselect("Select runs to compare", run_ids, default=run_ids[:min(3, len(run_ids))],
+                                   key="wb_compare_ids")
+
+    if selected_ids and st.button("Compare Selected Runs", use_container_width=True):
+        cmp_df = compare_runs(selected_ids)
+        if not cmp_df.empty:
+            st.dataframe(cmp_df, use_container_width=True, hide_index=True)
+
+            # Equity curve comparison
+            st.markdown("**Equity Curves**")
+            eq_data: Dict[str, pd.Series] = {}
+            for rid in selected_ids:
+                run = load_run(rid)
+                if run and run.get("results"):
+                    eq = run["results"].get("equity_curve")
+                    if isinstance(eq, (pd.Series, pd.DataFrame)):
+                        lbl = f"{run['results'].get('symbol', rid)} ({rid})"
+                        eq_data[lbl] = eq if isinstance(eq, pd.Series) else eq.iloc[:, 0]
+                    elif isinstance(eq, dict):
+                        # Stored as dict
+                        vals = list(eq.values())
+                        if vals and isinstance(vals[0], list):
+                            eq_data[rid] = pd.Series(vals[0])
+            if eq_data:
+                eq_df = pd.DataFrame(eq_data)
+                st.line_chart(eq_df, use_container_width=True)
+
+    # Delete
+    with st.expander("Manage Runs", expanded=False):
+        del_id = st.selectbox("Delete run", ["— select —"] + run_ids, key="wb_del_run")
+        if del_id != "— select —":
+            if st.button(f"Delete run {del_id}", key="wb_del_btn"):
+                delete_run(del_id)
+                st.success(f"Deleted run {del_id}")
+                st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CACHE MANAGER TAB
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def render_cache_manager():
-    from phi.data import list_cached_datasets
-    datasets = list_cached_datasets()
-    st.markdown(_render_section_header("", "CACHE MANAGER", ""), unsafe_allow_html=True)
-    if not datasets:
-        st.caption("No cached datasets.")
+    st.markdown("## Cache Manager")
+
+    cached = list_cached_datasets()
+
+    if not cached:
+        st.info("No cached datasets. Use Step 1 to fetch and cache data.")
         return
-    st.dataframe(pd.DataFrame(datasets), use_container_width=True)
+
+    display = []
+    for c in cached:
+        display.append({
+            "dataset_id": c.get("dataset_id", ""),
+            "symbol":     c.get("symbol", ""),
+            "timeframe":  c.get("timeframe", ""),
+            "vendor":     c.get("vendor", ""),
+            "start":      c.get("start", ""),
+            "end":        c.get("end", ""),
+            "rows":       c.get("rows", 0),
+            "cached_at":  c.get("cached_at", "")[:19],
+        })
+
+    df_cache = pd.DataFrame(display)
+    st.dataframe(df_cache, use_container_width=True, hide_index=True)
+
+    if st.button("Clear All Cache", key="wb_clear_cache"):
+        n = clear_all_cache()
+        st.success(f"Cleared {n} cached datasets.")
+        st.rerun()
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════════════════════
+
 def main():
-    st.set_page_config(
-        page_title="Phi-nance Live Workbench",
-        page_icon="📊",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
+    render_banner()
 
-    _inject_css()
-    _sidebar()
+    # Top-level navigation tabs
+    tab_wb, tab_hist, tab_cache = st.tabs([
+        "⚗ Workbench",
+        "📋 Run History",
+        "💾 Cache Manager",
+    ])
 
-    # ── Hero header ─────────────────────────────────────────────────────────
-    st.markdown(
-        """
-        <div style="
-            background: linear-gradient(135deg,
-                rgba(168,85,247,0.1) 0%,
-                rgba(124,58,237,0.06) 50%,
-                rgba(249,115,22,0.05) 100%);
-            border: 1px solid rgba(168,85,247,0.2);
-            border-radius: 16px;
-            padding: 1.8rem 2.2rem;
-            margin-bottom: 1.5rem;
-            position: relative;
-            overflow: hidden;
-        ">
-            <div style="
-                position:absolute; top:-60%; left:-10%; width:50%; height:220%;
-                background: radial-gradient(ellipse,
-                    rgba(168,85,247,0.06) 0%, transparent 70%);
-                pointer-events:none;
-            "></div>
-            <div style="display:flex; align-items:center; gap:1.2rem; flex-wrap:wrap;">
-                <div style="font-size:2.5rem; line-height:1;">📊</div>
-                <div style="flex:1; min-width:200px;">
-                    <div style="
-                        font-size:1.7rem; font-weight:800;
-                        background:linear-gradient(135deg,#a855f7 0%,#c084fc 45%,#f97316 100%);
-                        -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-                        background-clip:text; letter-spacing:-0.03em; line-height:1.1;
-                    ">Phi-nance Live Workbench</div>
-                    <div style="color:#71717a; font-size:0.9rem; margin-top:0.3rem;">
-                        Regime-aware quant research &nbsp;&bull;&nbsp;
-                        Fetch &rarr; Select &rarr; Blend &rarr; PhiAI &rarr; Run
-                    </div>
-                </div>
-                <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:center;">
-                    <span style="
-                        background:rgba(168,85,247,0.12); color:#c084fc;
-                        border:1px solid rgba(168,85,247,0.25);
-                        border-radius:20px; padding:0.25rem 0.75rem;
-                        font-size:0.75rem; font-weight:600; letter-spacing:0.04em;
-                    ">DARK THEME</span>
-                    <span style="
-                        background:rgba(249,115,22,0.1); color:#fb923c;
-                        border:1px solid rgba(249,115,22,0.25);
-                        border-radius:20px; padding:0.25rem 0.75rem;
-                        font-size:0.75rem; font-weight:600; letter-spacing:0.04em;
-                    ">CACHED</span>
-                    <span style="
-                        background:rgba(34,197,94,0.08); color:#4ade80;
-                        border:1px solid rgba(34,197,94,0.2);
-                        border-radius:20px; padding:0.25rem 0.75rem;
-                        font-size:0.75rem; font-weight:600; letter-spacing:0.04em;
-                    ">REPRODUCIBLE</span>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with tab_wb:
+        # ── Step 1 ────────────────────────────────────────────────────────────
+        dataset = render_step1()
 
-    # ── Fully Automated (one-click) ─────────────────────────────────────────
-    with st.expander("⚡ Run Fully Automated — one click to results", expanded=True):
-        st.caption(
-            "Fetch data → AI picks indicators → tune params → run backtest. "
-            "Uses Ollama when available for smarter selection."
-        )
-        fa_col1, fa_col2, fa_col3 = st.columns(3)
-        with fa_col1:
-        page_title="Phi-nance | Live Workbench",
-        page_icon="📈",
-        layout="wide",
-        initial_sidebar_state="collapsed",
-    )
-    _inject_css()
+        if dataset is None:
+            st.info("Complete Step 1 to continue.")
+            # Show last result even if dataset not loaded
+            render_results()
+            return
 
-    # Device detection (JS already injected by _inject_css)
-    dev = detect_device(skip_js=True)
+        st.divider()
 
-    # Premium header with animated gradient
-    if dev.is_phone:
-        st.markdown("""
-        <div class="phi-hero" style="padding:1.2rem 1rem;">
-            <div class="phi-hero-badge">WORKBENCH</div>
-            <div class="phi-hero-title" style="font-size:1.6rem;">Phi-nance</div>
-            <div class="phi-hero-subtitle" style="font-size:0.8rem;">
-                Fetch &rarr; Select &rarr; Blend &rarr; Run
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="phi-hero" style="padding:2rem 2rem 1.5rem;">
-            <div class="phi-hero-badge">LIVE BACKTEST WORKBENCH</div>
-            <div class="phi-hero-title" style="font-size:2.4rem;">Phi-nance Workbench</div>
-            <div class="phi-hero-subtitle" style="font-size:0.92rem;">
-                Fetch &rarr; Select &rarr; Blend &rarr; PhiAI &rarr; Run &mdash; Reproducible. Cached. Premium.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # ── Step 2 ────────────────────────────────────────────────────────────
+        indicators = render_step2(dataset)
 
-    # Step progress indicator
-    has_data = bool(st.session_state.get("workbench_dataset"))
-    has_indicators = bool(st.session_state.get("workbench_indicators"))
-    steps = [
-        ("Data", "completed" if has_data else "active"),
-        ("Indicators", "completed" if has_indicators else ("active" if has_data else "pending")),
-        ("Blend", "active" if has_indicators and has_data else "pending"),
-        ("PhiAI", "pending"),
-        ("Run", "pending"),
-    ]
-    st.markdown(_render_step_indicator(steps), unsafe_allow_html=True)
+        st.divider()
 
-    st.markdown('<div class="phi-gradient-bar"></div>', unsafe_allow_html=True)
+        # ── Step 3 (if 2+ indicators) ─────────────────────────────────────────
+        active_inds = [i for i in indicators if i.get("enabled", True)]
+        if len(active_inds) >= 2:
+            blend_cfg = render_step3(indicators)
+            st.divider()
+        else:
+            blend_cfg = {"mode": "weighted_sum", "weights": {}, "regime_weights": {}}
 
-    # Fully Automated section
-    with st.expander("Run Fully Automated", expanded=False):
-        st.caption("One click: fetch data -> AI picks indicators -> tune params -> backtest.")
-        fa1, fa2, fa3 = st.columns(3)
-        with fa1:
-            fa_sym = st.text_input("Symbol", value="SPY", key="fa_sym")
-            fa_start = st.date_input("Start", value=date(2020, 1, 1), key="fa_start")
-        with fa2:
-            fa_end = st.date_input("End", value=date(2024, 12, 31), key="fa_end")
-            fa_cap = st.number_input("Capital ($)", value=100_000, min_value=1000, key="fa_cap")
-        with fa3:
-            fa_ollama = st.checkbox("Use Ollama", value=True, key="fa_ollama")
-            fa_host = st.text_input("Host", value="http://localhost:11434", key="fa_host")
+        # ── Step 4 ────────────────────────────────────────────────────────────
+        phiai_cfg = render_step4(indicators)
 
-        if st.button("Run Fully Automated", type="primary", key="fa_run", use_container_width=True):
-            _run_fully_automated(fa_sym or "SPY", str(fa_start), str(fa_end), fa_cap, fa_ollama, fa_host)
+        st.divider()
 
-    # ── Divider ─────────────────────────────────────────────────────────────
-    st.markdown(
-        """
-        <div style="
-            display:flex; align-items:center; gap:1rem;
-            margin:1.5rem 0 0.5rem; color:#52525b;
-        ">
-            <div style="flex:1; border-top:1px solid rgba(168,85,247,0.12);"></div>
-            <div style="font-size:0.8rem; font-weight:600; letter-spacing:0.06em;
-                        text-transform:uppercase; white-space:nowrap;">
-                Or configure step-by-step
-            </div>
-            <div style="flex:1; border-top:1px solid rgba(168,85,247,0.12);"></div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        # ── Step 5 ────────────────────────────────────────────────────────────
+        render_step5(dataset, indicators, blend_cfg, phiai_cfg)
 
-    st.markdown("---")
+        # ── Results ───────────────────────────────────────────────────────────
+        render_results()
 
-    # Step-by-step workflow
-    config = render_dataset_builder()
-    indicators = render_indicator_selection()
-    blend_method, blend_weights = "weighted_sum", {}
-    if len(indicators) >= 2:
-        blend_method, blend_weights = render_blending(indicators)
-    render_phiai()
-    if config:
-        render_backtest_controls(config)
-    render_run_and_results(config, indicators, blend_method, blend_weights)
-
-    st.markdown(
-        """
-        <div style="border-top:1px solid rgba(168,85,247,0.12);
-                    margin:2.5rem 0 1rem;"></div>
-        """,
-        unsafe_allow_html=True,
-    )
-    tab_hist, tab_cache, tab_agents = st.tabs(
-        ["Run History", "Cache Manager", "AI Agents"]
-    )
     with tab_hist:
         render_run_history()
+
     with tab_cache:
         render_cache_manager()
-    with tab_agents:
-        render_ai_agents()
-    st.markdown("---")
-    tab_hist, tab_cache, tab_agents = st.tabs(["Run History", "Cache Manager", "AI Agents"])
-    with tab_hist: render_run_history()
-    with tab_cache: render_cache_manager()
-    with tab_agents: render_ai_agents()
-
-    # Footer
-    extra_pad = "padding-bottom:4rem;" if dev.is_mobile else ""
-    st.markdown(f"""
-    <div class="phi-footer" style="{extra_pad}">
-        PHI-NANCE &middot; LIVE BACKTEST WORKBENCH &middot; v3.1 PREMIUM
-        <br>QUANTITATIVE RESEARCH PLATFORM &middot; {datetime.now().strftime("%Y")}
-        <br><span style="font-size:0.55rem;opacity:0.5;">
-            {dev.device_type.value.upper()} MODE &middot; {dev.screen_width}px
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
