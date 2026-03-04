@@ -25,7 +25,7 @@ except ImportError:
 import streamlit as st
 import pandas as pd
 
-from phinence.gui.runner import run_backtest_for_strategy, STRATEGY_CHOICES
+from phinence.gui.runner import run_backtest_for_strategy, run_combined_backtest, STRATEGY_CHOICES
 
 st.set_page_config(
     page_title="Phi-nance Strategy Lab",
@@ -54,7 +54,24 @@ for choice in STRATEGY_CHOICES:
 if not selected:
     st.sidebar.info("👆 Check at least one strategy above.")
 
-st.sidebar.subheader("2. Symbol & dates")
+st.sidebar.subheader("2. Run mode")
+run_mode = st.sidebar.radio(
+    "How to run strategies:",
+    ["Compare individually", "Combine strategies"],
+    help="Compare: Run each separately and compare results. Combine: Run as one combined strategy using voting."
+)
+
+voting_mode = "majority"
+if run_mode == "Combine strategies" and len(selected) > 1:
+    from phinence.gui.runner import VOTING_MODES
+    voting_mode = st.sidebar.selectbox(
+        "Voting mode:",
+        options=[vm["id"] for vm in VOTING_MODES],
+        format_func=lambda x: next((vm["name"] for vm in VOTING_MODES if vm["id"] == x), x),
+        help="How to combine signals from multiple strategies"
+    )
+
+st.sidebar.subheader("3. Symbol & dates")
 ticker = st.sidebar.text_input("Symbol", value="SPY", help="e.g. SPY, QQQ, AAPL").strip() or "SPY"
 start = st.sidebar.text_input("Start date", value="2024-01-01", help="YYYY-MM-DD")
 end = st.sidebar.text_input("End date", value="2024-06-30", help="YYYY-MM-DD")
@@ -73,10 +90,23 @@ if run_button:
     else:
         results = []
         progress = st.progress(0, text="Running backtests...")
-        for i, strategy_id in enumerate(selected):
-            progress.progress((i + 1) / len(selected), text=f"Running {strategy_id}...")
-            r = run_backtest_for_strategy(strategy_id, ticker, start, end, data_root=REPO_ROOT / "data" / "bars")
+        
+        if run_mode == "Combine strategies" and len(selected) > 1:
+            # Run combined strategy
+            progress.progress(0.5, text=f"Running combined strategy ({len(selected)} strategies)...")
+            r = run_combined_backtest(
+                selected, ticker, start, end, 
+                voting_mode=voting_mode,
+                data_root=REPO_ROOT / "data" / "bars"
+            )
             results.append(r)
+        else:
+            # Run each strategy individually
+            for i, strategy_id in enumerate(selected):
+                progress.progress((i + 1) / len(selected), text=f"Running {strategy_id}...")
+                r = run_backtest_for_strategy(strategy_id, ticker, start, end, data_root=REPO_ROOT / "data" / "bars")
+                results.append(r)
+        
         progress.empty()
         st.session_state.backtest_results = results
         if hasattr(st, "rerun"):

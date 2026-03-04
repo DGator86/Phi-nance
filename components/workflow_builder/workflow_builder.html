@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(180deg, #0f0614 0%, #1a0a1f 50%, #160d14 100%);
+            color: #e8e0f0;
+            overflow: hidden;
+        }
+        #workspace {
+            width: 100%;
+            height: 600px;
+            position: relative;
+            background: rgba(26,15,36,0.6);
+            border: 2px solid rgba(168,85,247,0.3);
+            border-radius: 8px;
+            overflow: hidden;
+            background-image: 
+                linear-gradient(rgba(168,85,247,0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(168,85,247,0.1) 1px, transparent 1px);
+            background-size: 50px 50px;
+        }
+        .block {
+            position: absolute;
+            min-width: 120px;
+            min-height: 80px;
+            background: rgba(58,32,80,0.8);
+            border: 2px solid rgba(168,85,247,0.5);
+            border-radius: 8px;
+            padding: 0.75rem;
+            cursor: move;
+            user-select: none;
+            transition: all 0.2s;
+            z-index: 10;
+        }
+        .block:hover {
+            border-color: #e8792a;
+            box-shadow: 0 0 12px rgba(232,121,42,0.4);
+            transform: scale(1.02);
+        }
+        .block.composer {
+            background: rgba(232,121,42,0.2);
+            border-color: #e8792a;
+        }
+        .block-header {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: #c4b5fd;
+            margin-bottom: 0.25rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .block-type {
+            font-size: 0.75rem;
+            color: #b8a9d4;
+        }
+        .block-params {
+            font-size: 0.7rem;
+            color: #a78bfa;
+            margin-top: 0.5rem;
+            display: none;
+        }
+        .block.expanded .block-params {
+            display: block;
+        }
+        .param-input {
+            width: 100%;
+            margin: 0.25rem 0;
+            padding: 0.25rem;
+            background: rgba(26,15,36,0.9);
+            border: 1px solid rgba(168,85,247,0.3);
+            border-radius: 4px;
+            color: #e8e0f0;
+            font-size: 0.7rem;
+        }
+        .connection-point {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #e8792a;
+            border: 2px solid #0f0614;
+            border-radius: 50%;
+            cursor: crosshair;
+            z-index: 20;
+        }
+        .connection-point.output { right: -6px; top: 50%; transform: translateY(-50%); }
+        .connection-point.input { left: -6px; top: 50%; transform: translateY(-50%); }
+        .connection-point:hover {
+            background: #f59e0b;
+            transform: translateY(-50%) scale(1.3);
+        }
+        svg.connections {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+        .connection-line {
+            stroke: #e8792a;
+            stroke-width: 2;
+            fill: none;
+            marker-end: url(#arrowhead);
+        }
+        .connection-line.temp {
+            stroke-dasharray: 5,5;
+            opacity: 0.6;
+        }
+        .delete-btn {
+            background: rgba(239,68,68,0.3);
+            border: 1px solid #ef4444;
+            color: #fee;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.7rem;
+        }
+        .delete-btn:hover {
+            background: rgba(239,68,68,0.5);
+        }
+        .expand-btn {
+            background: transparent;
+            border: none;
+            color: #c4b5fd;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="workspace">
+        <svg class="connections" id="connections-svg">
+            <defs>
+                <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                    <polygon points="0 0, 10 3, 0 6" fill="#e8792a" />
+                </marker>
+            </defs>
+        </svg>
+    </div>
+
+    <script>
+        const workspace = document.getElementById('workspace');
+        const svg = document.getElementById('connections-svg');
+        let blocks = [];
+        let connections = [];
+        let draggedBlock = null;
+        let connectingFrom = null;
+        let tempLine = null;
+        let blockIdCounter = 0;
+
+        // Initialize strategies data
+        window.strategies = [];
+        
+        // Initialize from parent (Streamlit)
+        function init(data) {
+            if (data && data.blocks) {
+                blocks = data.blocks;
+                connections = data.connections || [];
+                render();
+            }
+        }
+
+        function createBlock(type, x, y, id = null, params = {}) {
+            const blockId = id || `block_${blockIdCounter++}`;
+            const block = document.createElement('div');
+            block.className = 'block';
+            block.id = blockId;
+            block.dataset.type = type;
+            block.style.left = x + 'px';
+            block.style.top = y + 'px';
+            
+            const strategy = window.strategies?.find(s => s.id === type) || { name: type, category: 'Strategy', params: {} };
+            const isComposer = type === 'composer';
+            
+            if (isComposer) {
+                block.classList.add('composer');
+            }
+            
+            block.innerHTML = `
+                <div class="block-header">
+                    <span>${isComposer ? '🎼 Composer' : strategy.name}</span>
+                    <div>
+                        <button class="expand-btn" onclick="toggleExpand('${blockId}')">⚙️</button>
+                        <button class="delete-btn" onclick="deleteBlock('${blockId}')">×</button>
+                    </div>
+                </div>
+                <div class="block-type">${isComposer ? 'Combine strategies' : strategy.category}</div>
+                <div class="block-params" id="params_${blockId}">
+                    ${renderParams(type, blockId, params)}
+                </div>
+                <div class="connection-point output" data-block="${blockId}" data-type="output" onclick="startConnection('${blockId}', 'output')"></div>
+                <div class="connection-point input" data-block="${blockId}" data-type="input" onclick="startConnection('${blockId}', 'input')"></div>
+            `;
+            
+            workspace.appendChild(block);
+            
+            // Make draggable
+            block.addEventListener('mousedown', (e) => {
+                if (e.target.classList.contains('connection-point') || e.target.closest('button')) return;
+                draggedBlock = block;
+                const rect = block.getBoundingClientRect();
+                const offsetX = e.clientX - rect.left;
+                const offsetY = e.clientY - rect.top;
+                
+                function onMove(e) {
+                    const workspaceRect = workspace.getBoundingClientRect();
+                    const x = e.clientX - workspaceRect.left - offsetX;
+                    const y = e.clientY - workspaceRect.top - offsetY;
+                    block.style.left = Math.max(0, Math.min(x, workspaceRect.width - rect.width)) + 'px';
+                    block.style.top = Math.max(0, Math.min(y, workspaceRect.height - rect.height)) + 'px';
+                    updateConnections();
+                }
+                
+                function onUp() {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    if (draggedBlock) {
+                        saveState();
+                        draggedBlock = null;
+                    }
+                }
+                
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+            
+            return blockId;
+        }
+
+        function renderParams(type, blockId, savedParams = {}) {
+            if (type === 'composer') {
+                const method = savedParams.method || 'majority';
+                return `
+                    <label>Method:</label>
+                    <select class="param-input" onchange="updateParam('${blockId}', 'method', this.value)">
+                        <option value="majority" ${method === 'majority' ? 'selected' : ''}>Majority Vote</option>
+                        <option value="weighted" ${method === 'weighted' ? 'selected' : ''}>Weighted</option>
+                        <option value="unanimous" ${method === 'unanimous' ? 'selected' : ''}>Unanimous</option>
+                    </select>
+                `;
+            }
+            const strategy = window.strategies?.find(s => s.id === type);
+            if (!strategy || !strategy.params) return '';
+            
+            return Object.entries(strategy.params).map(([key, param]) => {
+                const value = savedParams[key] !== undefined ? savedParams[key] : param.default;
+                if (param.type === 'int' || param.type === 'float') {
+                    return `
+                        <label>${param.label}:</label>
+                        <input type="number" class="param-input" value="${value}" 
+                               min="${param.min || 0}" max="${param.max || 1000}" step="${param.type === 'float' ? 0.1 : 1}"
+                               onchange="updateParam('${blockId}', '${key}', this.value)">
+                    `;
+                } else if (param.type === 'bool') {
+                    return `
+                        <label>
+                            <input type="checkbox" ${value ? 'checked' : ''} 
+                                   onchange="updateParam('${blockId}', '${key}', this.checked)">
+                            ${param.label}
+                        </label>
+                    `;
+                }
+                return '';
+            }).join('');
+        }
+        
+        function updateParam(blockId, key, value) {
+            const block = blocks.find(b => b.id === blockId);
+            if (block) {
+                block.params = block.params || {};
+                block.params[key] = value;
+                saveState();
+            }
+        }
+
+        function toggleExpand(blockId) {
+            const block = document.getElementById(blockId);
+            block.classList.toggle('expanded');
+        }
+
+        function deleteBlock(blockId) {
+            document.getElementById(blockId).remove();
+            blocks = blocks.filter(b => b.id !== blockId);
+            connections = connections.filter(c => c.from_id !== blockId && c.to_id !== blockId);
+            render();
+            saveState();
+        }
+
+        function startConnection(blockId, type) {
+            if (type === 'output') {
+                connectingFrom = { blockId, type };
+                workspace.addEventListener('mousemove', drawTempConnection);
+                workspace.addEventListener('click', finishConnection);
+            }
+        }
+
+        function drawTempConnection(e) {
+            if (!connectingFrom) return;
+            const fromBlock = document.getElementById(connectingFrom.blockId);
+            const fromRect = fromBlock.getBoundingClientRect();
+            const workspaceRect = workspace.getBoundingClientRect();
+            const fromX = fromRect.right - workspaceRect.left;
+            const fromY = fromRect.top + fromRect.height / 2 - workspaceRect.top;
+            const toX = e.clientX - workspaceRect.left;
+            const toY = e.clientY - workspaceRect.top;
+            
+            if (!tempLine) {
+                tempLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                tempLine.classList.add('connection-line', 'temp');
+                svg.appendChild(tempLine);
+            }
+            tempLine.setAttribute('x1', fromX);
+            tempLine.setAttribute('y1', fromY);
+            tempLine.setAttribute('x2', toX);
+            tempLine.setAttribute('y2', toY);
+        }
+
+        function finishConnection(e) {
+            if (!connectingFrom) return;
+            const target = e.target.closest('.connection-point');
+            if (target && target.dataset.type === 'input' && target.dataset.block !== connectingFrom.blockId) {
+                const toId = target.dataset.block;
+                const fromId = connectingFrom.blockId;
+                
+                // Check if connection already exists
+                if (!connections.find(c => c.from_id === fromId && c.to_id === toId)) {
+                    connections.push({ from_id: fromId, to_id: toId });
+                    updateConnections();
+                    saveState();
+                }
+            }
+            
+            if (tempLine) {
+                tempLine.remove();
+                tempLine = null;
+            }
+            workspace.removeEventListener('mousemove', drawTempConnection);
+            workspace.removeEventListener('click', finishConnection);
+            connectingFrom = null;
+        }
+
+        function updateConnections() {
+            // Clear existing lines
+            svg.querySelectorAll('.connection-line:not(.temp)').forEach(line => line.remove());
+            
+            connections.forEach(conn => {
+                const fromBlock = document.getElementById(conn.from_id);
+                const toBlock = document.getElementById(conn.to_id);
+                if (!fromBlock || !toBlock) return;
+                
+                const fromRect = fromBlock.getBoundingClientRect();
+                const toRect = toBlock.getBoundingClientRect();
+                const workspaceRect = workspace.getBoundingClientRect();
+                
+                const fromX = fromRect.right - workspaceRect.left;
+                const fromY = fromRect.top + fromRect.height / 2 - workspaceRect.top;
+                const toX = toRect.left - workspaceRect.left;
+                const toY = toRect.top + toRect.height / 2 - workspaceRect.top;
+                
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.classList.add('connection-line');
+                line.setAttribute('x1', fromX);
+                line.setAttribute('y1', fromY);
+                line.setAttribute('x2', toX);
+                line.setAttribute('y2', toY);
+                line.onclick = () => {
+                    connections = connections.filter(c => !(c.from_id === conn.from_id && c.to_id === conn.to_id));
+                    updateConnections();
+                    saveState();
+                };
+                svg.appendChild(line);
+            });
+        }
+
+        function render() {
+            workspace.querySelectorAll('.block').forEach(b => b.remove());
+            blocks.forEach(block => {
+                createBlock(block.type, block.x, block.y, block.id, block.params || {});
+            });
+            updateConnections();
+        }
+
+        function saveState() {
+            const blockElements = workspace.querySelectorAll('.block');
+            blocks = Array.from(blockElements).map(block => {
+                const rect = block.getBoundingClientRect();
+                const workspaceRect = workspace.getBoundingClientRect();
+                return {
+                    id: block.id,
+                    type: block.dataset.type || block.querySelector('.block-header span').textContent.includes('Composer') ? 'composer' : 'unknown',
+                    x: rect.left - workspaceRect.left,
+                    y: rect.top - workspaceRect.top,
+                    params: {} // TODO: extract from inputs
+                };
+            });
+            
+            // Send to Streamlit
+            if (window.parent) {
+                window.parent.postMessage({
+                    type: 'workflow_update',
+                    workflow: { blocks, connections }
+                }, '*');
+            }
+        }
+
+        // Listen for drag from sidebar (simplified - would need proper drag events)
+        window.addEventListener('message', (e) => {
+            if (e.data.type === 'add_block') {
+                const blockId = createBlock(e.data.strategy_type, 100, 100);
+                blocks.push({ id: blockId, type: e.data.strategy_type, x: 100, y: 100, params: {} });
+                saveState();
+            }
+        });
+
+        // Initialize
+        if (window.parent) {
+            window.parent.postMessage({ type: 'ready' }, '*');
+        }
+    </script>
+</body>
+</html>

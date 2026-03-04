@@ -20,6 +20,13 @@ STRATEGY_CHOICES = [
     {"id": "sma_cross", "name": "SMA Crossover", "description": "Buy when short average crosses above long; sell when it crosses below."},
 ]
 
+# Voting modes for combining strategies
+VOTING_MODES = [
+    {"id": "majority", "name": "Majority Vote", "description": "Buy/sell when most strategies agree"},
+    {"id": "unanimous", "name": "Unanimous", "description": "Buy/sell only when all strategies agree"},
+    {"id": "weighted", "name": "Weighted Average", "description": "Weight signals by strategy performance"},
+]
+
 def make_synthetic_data(ticker: str, start: str, end: str) -> pd.DataFrame:
     """Generate synthetic daily OHLCV data."""
     dr = pd.date_range(start=start, end=end, freq="B")
@@ -37,6 +44,37 @@ def make_synthetic_data(ticker: str, start: str, end: str) -> pd.DataFrame:
     df = pd.DataFrame(rows, index=dr)
     df.index.name = "datetime"
     return df
+
+def _get_strategy_signal(strategy_id: str, bt_df: pd.DataFrame, idx: int) -> int:
+    """Get signal from a strategy at a given index. Returns: 1 = buy, -1 = sell, 0 = hold/neutral"""
+    if strategy_id == "buy_and_hold":
+        return 1 if idx == 0 else 0
+    
+    elif strategy_id == "sma_cross":
+        try:
+            from backtesting.test import SMA
+        except ImportError:
+            def SMA(values, n):
+                return pd.Series(values).rolling(n).mean()
+        
+        if idx < 20:
+            return 0
+        
+        closes = bt_df["Close"].iloc[:idx+1]
+        ma1 = SMA(closes, 10)
+        ma2 = SMA(closes, 20)
+        
+        if len(ma1) < 2 or len(ma2) < 2:
+            return 0
+        
+        if ma1.iloc[-2] <= ma2.iloc[-2] and ma1.iloc[-1] > ma2.iloc[-1]:
+            return 1  # Golden cross
+        elif ma1.iloc[-2] >= ma2.iloc[-2] and ma1.iloc[-1] < ma2.iloc[-1]:
+            return -1  # Death cross
+        return 0
+    
+    return 0
+
 
 def run_backtest_for_strategy(strategy_id: str, ticker: str, start: str, end: str) -> dict[str, Any]:
     """Run one backtest and return metrics."""
@@ -129,7 +167,23 @@ for choice in STRATEGY_CHOICES:
 if not selected:
     st.sidebar.info("👆 Check at least one strategy above.")
 
-st.sidebar.subheader("2. Symbol & dates")
+st.sidebar.subheader("2. Run mode")
+run_mode = st.sidebar.radio(
+    "How to run strategies:",
+    ["Compare individually", "Combine strategies"],
+    help="Compare: Run each separately and compare results. Combine: Run as one combined strategy using voting."
+)
+
+voting_mode = "majority"
+if run_mode == "Combine strategies" and len(selected) > 1:
+    voting_mode = st.sidebar.selectbox(
+        "Voting mode:",
+        options=[vm["id"] for vm in VOTING_MODES],
+        format_func=lambda x: next((vm["name"] for vm in VOTING_MODES if vm["id"] == x), x),
+        help="How to combine signals from multiple strategies"
+    )
+
+st.sidebar.subheader("3. Symbol & dates")
 ticker = st.sidebar.text_input("Symbol", value="SPY", help="e.g. SPY, QQQ, AAPL").strip() or "SPY"
 start = st.sidebar.text_input("Start date", value="2024-01-01", help="YYYY-MM-DD")
 end = st.sidebar.text_input("End date", value="2024-06-30", help="YYYY-MM-DD")
@@ -146,10 +200,99 @@ if run_button:
     else:
         results = []
         progress = st.progress(0, text="Running backtests...")
-        for i, strategy_id in enumerate(selected):
-            progress.progress((i + 1) / len(selected), text=f"Running {strategy_id}...")
-            r = run_backtest_for_strategy(strategy_id, ticker, start, end)
-            results.append(r)
+        
+        if run_mode == "Combine strategies" and len(selected) > 1:
+            # Run combined strategy
+            progress.progress(0.5, text=f"Running combined strategy ({len(selected)} strategies)...")
+            
+            bt_df = make_synthetic_data(ticker, start, end)
+            if bt_df.empty or len(bt_df) < 20:
+                results.append({"Strategy": "+".join(selected), "Error": "Not enough data"})
+            else:
+                # Pre-compute signals
+                signals_by_strategy = {}
+                for sid in selected:
+                    signals = []
+                    for idx in range(len(bt_df)):
+                        signal = _get_strategy_signal(sid, bt_df, idx)
+                        signals.append(signal)
+                    signals_by_strategy[sid] = signals
+                
+                # Create combined strategy
+                from backtesting import Backtest, Strategy
+                
+                class CombinedStrategy(Strategy):
+                    def init(self):
+                        pass
+                    
+                    def next(self):
+                        idx = len(self.data) - 1
+                        if idx < 0:
+                            return
+                        
+                        signals = []
+                        for sid in selected:
+                            if sid in signals_by_strategy and idx < len(signals_by_strategy[sid]):
+                                signals.append(signals_by_strategy[sid][idx])
+                            else:
+                                signals.append(0)
+                        
+                        if voting_mode == "majority":
+                            buy_votes = sum(1 for s in signals if s > 0)
+                            sell_votes = sum(1 for s in signals if s < 0)
+                            if buy_votes > sell_votes and buy_votes > len(signals) / 2:
+                                if not self.position:
+                                    self.buy()
+                            elif sell_votes > buy_votes and sell_votes > len(signals) / 2:
+                                if self.position:
+                                    self.position.close()
+                        elif voting_mode == "unanimous":
+                            all_buy = all(s > 0 for s in signals)
+                            all_sell = all(s < 0 for s in signals)
+                            if all_buy and not self.position:
+                                self.buy()
+                            elif all_sell and self.position:
+                                self.position.close()
+                        elif voting_mode == "weighted":
+                            weighted_signal = sum(signals) / len(signals) if signals else 0
+                            if weighted_signal > 0.3:
+                                if not self.position:
+                                    self.buy()
+                            elif weighted_signal < -0.3:
+                                if self.position:
+                                    self.position.close()
+                
+                bt = Backtest(bt_df, CombinedStrategy, commission=0.002, exclusive_orders=True, trade_on_close=True, finalize_trades=True)
+                stats = bt.run()
+                
+                strategy_names = [next((c["name"] for c in STRATEGY_CHOICES if c["id"] == sid), sid) for sid in selected]
+                combined_name = " + ".join(strategy_names)
+                
+                if not isinstance(stats, pd.Series):
+                    results.append({"Strategy": combined_name, "Return [%]": 0, "Sharpe Ratio": 0, "Max. Drawdown [%]": 0})
+                else:
+                    s = stats
+                    def _num(x, default=0):
+                        v = s.get(x, default)
+                        if v is None or (isinstance(v, float) and pd.isna(v)):
+                            return default
+                        return float(v)
+                    
+                    results.append({
+                        "Strategy": combined_name,
+                        "Return [%]": round(_num("Return [%]"), 2),
+                        "Sharpe Ratio": round(_num("Sharpe Ratio"), 2),
+                        "Max. Drawdown [%]": round(_num("Max. Drawdown [%]"), 2),
+                        "# Trades": int(s.get("# Trades", 0) or 0),
+                        "Win Rate [%]": round(_num("Win Rate [%]"), 1),
+                    })
+        else:
+            # Run each strategy individually
+            for i, strategy_id in enumerate(selected):
+                progress.progress((i + 1) / len(selected), text=f"Running {strategy_id}...")
+                r = run_backtest_for_strategy(strategy_id, ticker, start, end)
+                results.append(r)
+        
         progress.empty()
         st.session_state.backtest_results = results
         if hasattr(st, "rerun"):
