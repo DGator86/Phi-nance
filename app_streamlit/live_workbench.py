@@ -355,6 +355,63 @@ def _run_backtest(strategy_class, params, config):
     av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
     tf = config.get("timeframe", "1D")
     timestep = "day" if tf == "1D" else "minute"
+    symbol = config["symbols"][0]
+    start = config["start"]
+    end = config["end"]
+    vendor = config.get("vendor", "yfinance")
+
+    # ── Try to load cached OHLCV data first ──────────────────────────────────
+    from phi.data import get_cached_dataset, fetch_and_cache
+    df = get_cached_dataset(vendor, symbol, tf, str(start.date()), str(end.date()))
+
+    if df is None or df.empty:
+        # Auto-fetch if not cached (yfinance always works, no key needed)
+        _api_key = {
+            "finnhub":  os.getenv("FINNHUB_API_KEY"),
+            "stockdata": os.getenv("STOCKDATA_API_KEY"),
+            "massive":  os.getenv("MASSIVE_API_KEY"),
+        }.get(vendor, os.getenv("AV_API_KEY"))
+        try:
+            df = fetch_and_cache(vendor, symbol, tf, str(start.date()), str(end.date()), api_key=_api_key)
+        except Exception:
+            df = None
+
+    if df is not None and not df.empty:
+        # Normalise column names to lowercase
+        df.columns = [c.lower() for c in df.columns]
+        df.index = pd.to_datetime(df.index)
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        df = df.sort_index()
+
+        # Build pandas_data dict for PandasDataBacktesting
+        asset = Asset(symbol, asset_type=Asset.AssetTypes.STOCK)
+        try:
+            from lumibot.backtesting import PandasDataBacktesting
+            pandas_data = {asset: {"df": df, "timestep": timestep}}
+            results, strat = strategy_class.run_backtest(
+                datasource_class=PandasDataBacktesting,
+                backtesting_start=start,
+                backtesting_end=end,
+                budget=config["initial_capital"],
+                benchmark_asset=config.get("benchmark", symbol),
+                parameters=params,
+                pandas_data=pandas_data,
+                show_plot=False,
+                show_tearsheet=False,
+                save_tearsheet=False,
+                show_indicators=False,
+                show_progress_bar=False,
+                quiet_logs=True,
+            )
+            return results, strat
+        except Exception as e:
+            # PandasDataBacktesting failed — log and fall through to AV
+            print(f"PandasDataBacktesting failed ({e}), falling back to AV data source")
+
+    # ── Fallback: AlphaVantageFixedDataSource ────────────────────────────────
+    from strategies.alpha_vantage_fixed import AlphaVantageFixedDataSource
+    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
     results, strat = strategy_class.run_backtest(
         datasource_class=_av_datasource(),
         backtesting_start=config["start"], backtesting_end=config["end"],
@@ -466,7 +523,7 @@ def render_dataset_builder():
         st.error("Start date must be before end date.")
         return None
 
-    col_tf, col_vendor, col_cap = st.columns(3)
+    col_tf, col_cap = st.columns(2)
     with col_tf:
         timeframe = st.selectbox(
             "Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf"
@@ -564,7 +621,7 @@ def render_dataset_builder():
                 )
                 s.update(label=f"Loaded {sum(len(d) for d in dfs.values()):,} bars", state="complete")
             else:
-                s.update(label="No data", state="error")
+                s.update(label="No data loaded", state="error")
 
     if st.session_state.get("workbench_dataset"):
         dfs = st.session_state["workbench_dataset"]
@@ -1742,6 +1799,7 @@ def main():
     )
     with tab_hist:
         render_run_history()
+
     with tab_cache:
         render_cache_manager()
     with tab_agents:
