@@ -1,0 +1,7 @@
+# Install with: pip install -r requirements-gui.txt
+# From the Phi-nance project folder (the one that contains scripts/ and src/).
+
+-e .
+streamlit>=1.28
+backtesting>=0.4
+openai>=1.0
