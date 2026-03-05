@@ -2457,8 +2457,8 @@ def main():
         """,
         unsafe_allow_html=True,
     )
-    tab_hist, tab_cache, tab_agents = st.tabs(
-        ["Run History", "Cache Manager", "AI Agents"]
+    tab_opts, tab_hist, tab_cache, tab_agents = st.tabs(
+        ["Options", "Run History", "Cache Manager", "AI Agents"]
     )
     with tab_opts:
         render_options_workbench()
@@ -2467,6 +2467,18 @@ def main():
 
     with tab_cache:
         render_cache_manager()
+
+
+def render_options_workbench():
+    """Minimal Options panel wired to Phase 2 strategy primitives."""
+    st.markdown("### Options")
+    sym_default = (st.session_state.get("workbench_config", {}) or {}).get("symbols", ["SPY"])[0]
+    symbol = st.text_input("Underlying Symbol", value=sym_default, key="opt_symbol_phase2")
+    strategy_name = st.selectbox("Strategy", ["Single Leg", "Vertical Spread", "Straddle", "Strangle"], key="opt_strategy_phase2")
+    strike = st.number_input("Strike", min_value=1.0, value=100.0, key="opt_strike_phase2")
+    expiry_days = st.slider("Expiry (days)", 7, 365, 30, key="opt_expiry_phase2")
+    qty = st.number_input("Contracts", min_value=1, value=1, key="opt_qty_phase2")
+    st.caption(f"Configured {strategy_name} on {symbol} ({qty} contract(s), {expiry_days} DTE)")
 
 
 if __name__ == "__main__":
