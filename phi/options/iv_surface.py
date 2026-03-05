@@ -100,3 +100,66 @@ def _normalize_chain_data(chain_data: pd.DataFrame) -> pd.DataFrame:
     if out.empty:
         raise ValueError("No usable IV points after cleaning")
     return out
+
+
+class HistoricalIVSurface:
+    """Time-aware IV surface with cached snapshots and HV fallback."""
+
+    def __init__(self, symbol: str, start_date, end_date, price_history: Optional[pd.DataFrame] = None, fallback_window: int = 20):
+        self.symbol = symbol.upper()
+        self.start_date = pd.Timestamp(start_date).normalize()
+        self.end_date = pd.Timestamp(end_date).normalize()
+        self.snapshots: dict[pd.Timestamp, IVSurface] = {}
+        self.fallback_window = int(max(fallback_window, 2))
+
+        self._load_cached_surfaces()
+        self._hv_series = self._build_hv_series(price_history)
+
+    def _load_cached_surfaces(self) -> None:
+        root = pd.Timestamp(self.start_date)
+        from phi.data.cache import _DATA_CACHE_ROOT  # local import to avoid top-level cache dependency cycles
+        opt_root = _DATA_CACHE_ROOT / "options" / self.symbol
+        if not opt_root.exists():
+            return
+        for d in opt_root.iterdir():
+            if not d.is_dir():
+                continue
+            try:
+                expiry = pd.Timestamp(d.name)
+            except Exception:
+                continue
+            if expiry < root:
+                continue
+            chain = get_cached_options(self.symbol, d.name)
+            if chain is None or chain.empty:
+                continue
+            iv_col = next((c for c in ["impliedVolatility", "iv", "implied_volatility"] if c in chain.columns), None)
+            if iv_col is None or "strike" not in chain.columns:
+                continue
+            grouped = chain.groupby("strike", as_index=False)[iv_col].mean().rename(columns={iv_col: "iv"})
+            grouped["expiry"] = max((expiry - self.start_date).days / 365.0, 1 / 365)
+            try:
+                self.snapshots[expiry.normalize()] = IVSurface(grouped[["strike", "expiry", "iv"]])
+            except ValueError:
+                continue
+
+    def _build_hv_series(self, price_history: Optional[pd.DataFrame]) -> pd.Series:
+        if price_history is None or price_history.empty or "close" not in price_history.columns:
+            return pd.Series(dtype=float)
+        close = price_history["close"].astype(float)
+        ret = close.pct_change().replace([np.inf, -np.inf], np.nan)
+        hv = ret.rolling(self.fallback_window).std().fillna(method="bfill").fillna(0.2) * np.sqrt(252)
+        hv.index = pd.to_datetime(hv.index).normalize()
+        return hv.clip(lower=0.05, upper=1.5)
+
+    def get_iv(self, dt, strike: float, expiry: float) -> float:
+        date_key = pd.Timestamp(dt).normalize()
+        if self.snapshots:
+            nearest = min(self.snapshots.keys(), key=lambda d: abs((d - date_key).days))
+            return self.snapshots[nearest].get_iv(strike, expiry)
+        if date_key in self._hv_series.index:
+            return float(self._hv_series.loc[date_key])
+        if not self._hv_series.empty:
+            nearest = min(self._hv_series.index, key=lambda d: abs((d - date_key).days))
+            return float(self._hv_series.loc[nearest])
+        return 0.2
