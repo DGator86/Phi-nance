@@ -1,0 +1,20 @@
+environment:
+  symbol: SPY
+  timeframe: 1m
+  vendor: yfinance
+  episode_length: 30
+  participation_cap: 0.25
+  impact_coefficient: 0.1
+  urgency_cross_spread: 1.0
+  seed: 7
+
+model:
+  hidden_size: 256
+
+training:
+  algorithm: ppo
+  total_timesteps: 100000
+  learning_rate: 0.0003
+  gamma: 0.99
+  rollout_workers: 2
+  episodes_smoke: 5

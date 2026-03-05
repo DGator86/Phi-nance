@@ -43,6 +43,7 @@ from phinance.agents.autonomous_deployer import (
     StrategyRegistry,
 )
 from phinance.agents.autonomous_pipeline import AutonomousPipeline, PipelineRunResult
+from phinance.agents.execution import ExecutionAgent, ExecutionDecision, load_rl_policy
 from phinance.agents.evolution_engine import (
     EvolutionEngine,
     EvolutionConfig,
@@ -76,6 +77,9 @@ __all__ = [
     "StrategyRegistry",
     "AutonomousPipeline",
     "PipelineRunResult",
+    "ExecutionAgent",
+    "ExecutionDecision",
+    "load_rl_policy",
     # evolution
     "EvolutionEngine",
     "EvolutionConfig",
