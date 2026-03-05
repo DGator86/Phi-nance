@@ -1,0 +1,28 @@
+environment:
+  episode_length: 10
+  seed: 11
+  data_points: 756
+  initial_cash: 10000
+  regime_lookback: 20
+  indicator_catalog:
+    rsi:
+      period: [7, 14, 21]
+      oversold: [25, 30, 35]
+      overbought: [65, 70, 75]
+    dual_sma:
+      fast: [5, 10, 20]
+      slow: [30, 50, 100]
+    bollinger:
+      window: [10, 20, 30]
+      num_std: [1.5, 2.0, 2.5]
+
+model:
+  hidden_size: 256
+
+training:
+  algorithm: ppo
+  total_timesteps: 100000
+  learning_rate: 0.0003
+  gamma: 0.99
+  rollout_workers: 2
+  episodes_smoke: 5
