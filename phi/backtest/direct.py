@@ -5,6 +5,7 @@ Uses OHLCV DataFrame directly. Guaranteed to work with pipeline data.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List
 
 import numpy as np
