@@ -1,0 +1,19 @@
+environment:
+  episode_length: 252
+  step_days: 5
+  catastrophic_drawdown: 0.5
+  penalty_coefficient: 2.0
+  initial_capital: 100000.0
+  seed: 19
+  data_points: 2520
+
+model:
+  hidden_size: 256
+
+training:
+  algorithm: ppo
+  total_timesteps: 100000
+  learning_rate: 0.0003
+  gamma: 0.99
+  rollout_workers: 2
+  episodes_smoke: 5
