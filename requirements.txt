@@ -1,4 +1,5 @@
-lumibot>=3.0.0
+lumibot==4.4.52
+headroom-ai>=0.3.7
 anthropic>=0.40.0
 streamlit>=1.30.0
 plotly>=5.18
