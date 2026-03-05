@@ -45,6 +45,7 @@ from phinance.agents.autonomous_deployer import (
 from phinance.agents.autonomous_pipeline import AutonomousPipeline, PipelineRunResult
 from phinance.agents.execution import ExecutionAgent, ExecutionDecision, load_rl_policy
 from phinance.agents.strategy_rd import StrategyRDAgent, load_strategy_rd_policy
+from phinance.agents.risk_monitor import RiskMonitorAgent, load_risk_monitor_policy
 from phinance.agents.evolution_engine import (
     EvolutionEngine,
     EvolutionConfig,
@@ -83,6 +84,8 @@ __all__ = [
     "load_rl_policy",
     "StrategyRDAgent",
     "load_strategy_rd_policy",
+    "RiskMonitorAgent",
+    "load_risk_monitor_policy",
     # evolution
     "EvolutionEngine",
     "EvolutionConfig",
