@@ -33,6 +33,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+from dotenv import load_dotenv
 
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
@@ -41,6 +42,9 @@ if str(_ROOT) not in sys.path:
 os.environ.setdefault("IS_BACKTESTING", "True")
 
 from app_streamlit.device_detect import detect_device, get_device, inject_responsive_meta, _JS_DETECT
+from phi.utils.updater import UpdateManager
+
+load_dotenv()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Indicator catalog (maps to strategies)
@@ -307,6 +311,23 @@ def _sidebar():
         )
 
 
+def _render_update_banner() -> None:
+    """Check tracked tool versions and render update notifications."""
+    updater = UpdateManager(session_state=st.session_state)
+    statuses = updater.check_all(force=False)
+    if statuses:
+        st.session_state["tool_updates"] = statuses
+
+    updates = st.session_state.get("tool_updates_available", [])
+    if not updates:
+        return
+
+    st.warning(f"Updates available for {len(updates)} external tool(s).")
+    with st.expander("View available updates", expanded=False):
+        for item in updates:
+            st.write(
+                f"- **{item.display_name}**: {item.current_version or 'unknown'} → {item.latest_version or 'unknown'}"
+            )
 def _section_header(num: str, title: str, subtitle: str = ""):
     """Render a styled step section header."""
     sub_html = (
@@ -2256,6 +2277,7 @@ def main():
 
     _inject_css()
     _sidebar()
+    _render_update_banner()
 
     # ── Hero header ─────────────────────────────────────────────────────────
     st.markdown(
