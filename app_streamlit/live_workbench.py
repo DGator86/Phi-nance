@@ -531,54 +531,18 @@ def render_dataset_builder():
 
     if dev.is_phone:
         trading_mode = st.selectbox("Trading Mode", ["Equities", "Options"], key="ds_mode")
-        symbols_raw = st.text_input("Symbol(s)", value="SPY", key="ds_symbols",
-                                    help="Comma-separated: SPY, QQQ, AAPL")
-    with col_range:
-        start_d = st.date_input(
-            "Start", value=date(2020, 1, 1), key="ds_start"
-        )
-        end_d = st.date_input(
-            "End", value=date(2024, 12, 31), key="ds_end"
-        )
-
-    if start_d >= end_d:
-        st.error("Start date must be before end date.")
-        return None
-
-    col_tf, col_cap = st.columns(2)
-    with col_tf:
-        timeframe = st.selectbox(
-            "Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf"
-        )
-    with col_vendor:
-        vendor = st.selectbox(
-            "Data Vendor",
-            ["Alpha Vantage", "yfinance", "Binance Public"],
-            key="ds_vendor"
-        )
-    with col_cap:
-        initial_capital = st.number_input(
-            "Initial Capital ($)",
-            value=100_000,
-            min_value=1_000,
-            step=10_000,
-            key="ds_cap",
-            help="Starting capital for backtest",
-        )
-                                     help="Comma-separated: SPY, QQQ, AAPL")
+        symbols_raw = st.text_input("Symbol(s)", value="SPY", key="ds_symbols", help="Comma-separated: SPY, QQQ, AAPL")
         start_d = st.date_input("Start", value=date(2020, 1, 1), key="ds_start")
         end_d = st.date_input("End", value=date(2024, 12, 31), key="ds_end")
         timeframe = st.selectbox("Timeframe", ["1D", "4H", "1H", "15m", "5m", "1m"], key="ds_tf")
         vendor = st.selectbox("Data Vendor", ["Alpha Vantage", "yfinance", "Binance Public"], key="ds_vendor")
-        initial_capital = st.number_input("Initial Capital ($)", value=100_000, min_value=1_000,
-                                           step=10_000, key="ds_cap")
+        initial_capital = st.number_input("Initial Capital ($)", value=100_000, min_value=1_000, step=10_000, key="ds_cap")
     else:
         col_mode, col_sym, col_range = st.columns([1, 2, 2])
         with col_mode:
             trading_mode = st.selectbox("Trading Mode", ["Equities", "Options"], key="ds_mode")
         with col_sym:
-            symbols_raw = st.text_input("Symbol(s)", value="SPY", key="ds_symbols",
-                                         help="Comma-separated: SPY, QQQ, AAPL")
+            symbols_raw = st.text_input("Symbol(s)", value="SPY", key="ds_symbols", help="Comma-separated: SPY, QQQ, AAPL")
         with col_range:
             start_d = st.date_input("Start", value=date(2020, 1, 1), key="ds_start")
             end_d = st.date_input("End", value=date(2024, 12, 31), key="ds_end")
@@ -589,13 +553,11 @@ def render_dataset_builder():
         with col_vendor:
             vendor = st.selectbox("Data Vendor", ["Alpha Vantage", "yfinance", "Binance Public"], key="ds_vendor")
         with col_cap:
-            initial_capital = st.number_input("Initial Capital ($)", value=100_000, min_value=1_000,
-                                               step=10_000, key="ds_cap")
+            initial_capital = st.number_input("Initial Capital ($)", value=100_000, min_value=1_000, step=10_000, key="ds_cap")
 
     if start_d >= end_d:
         st.error("Start date must be before end date.")
         return None
-
     if initial_capital <= 0:
         st.error("Initial capital must be > 0")
         return None
@@ -612,75 +574,35 @@ def render_dataset_builder():
         return None
 
     dfs = {}
-
-    date_range_years = (end_d - start_d).days / 365.25
-    if date_range_years > 5:
-        st.warning(
-            "⚠️ Date range > 5 years selected — this may take longer to process. "
-            "Consider reducing the date range for faster results."
-        )
-
     if fetch_clicked or use_cached:
         from phi.data import fetch_and_cache, get_cached_dataset
-        with st.status("Loading data...", expanded=True) as s:
+
+        with st.status("Loading data...", expanded=True):
             for sym in symbols:
                 try:
-                    df = fetch_and_cache(vendor_key, sym, timeframe, str(start_d), str(end_d)) if fetch_clicked \
-                         else get_cached_dataset(vendor_key, sym, timeframe, str(start_d), str(end_d))
+                    df = fetch_and_cache(vendor_key, sym, timeframe, str(start_d), str(end_d)) if fetch_clicked else get_cached_dataset(vendor_key, sym, timeframe, str(start_d), str(end_d))
                     if df is not None and not df.empty:
                         dfs[sym] = df
                 except Exception as e:
                     st.error(f"{sym}: {e}")
-            if dfs:
-                st.session_state["workbench_dataset"] = dfs
-                st.session_state["workbench_config"] = {
-                    "trading_mode": trading_mode.lower(), "symbols": symbols,
-                    "start": datetime.combine(start_d, datetime.min.time()),
-                    "end": datetime.combine(end_d, datetime.min.time()),
-                    "timeframe": timeframe, "vendor": vendor_key,
-                    "initial_capital": float(initial_capital), "benchmark": symbols[0],
-                }
-                bars_count = sum(len(d) for d in dfs.values())
-                s.update(
-                    label=f"Cached {bars_count:,} bars",
-                    state="complete"
-                )
-                s.update(label=f"Loaded {sum(len(d) for d in dfs.values()):,} bars", state="complete")
-            else:
-                s.update(label="No data loaded", state="error")
 
-    if st.session_state.get("workbench_dataset"):
-        dfs = st.session_state["workbench_dataset"]
-        cfg = st.session_state.get("workbench_config", {})
+        if dfs:
+            st.session_state["workbench_dataset"] = dfs
+            st.session_state["workbench_config"] = {
+                "trading_mode": trading_mode.lower(),
+                "symbols": symbols,
+                "start": datetime.combine(start_d, datetime.min.time()),
+                "end": datetime.combine(end_d, datetime.min.time()),
+                "timeframe": timeframe,
+                "vendor": vendor_key,
+                "initial_capital": float(initial_capital),
+            }
+            st.success(f"Loaded {len(dfs)} dataset(s).")
 
-        kpis = [
-            ("Symbols", ", ".join(dfs.keys()), "", "neutral"),
-            ("Total Bars", f"{sum(len(d) for d in dfs.values()):,}", "", "neutral"),
-            ("Capital", f"${cfg.get('initial_capital', 0):,.0f}", "", "neutral"),
-            ("Mode", cfg.get("trading_mode", "equities").title(), "", "neutral"),
-        ]
-        st.markdown(_render_kpi_row(kpis), unsafe_allow_html=True)
-
-        for sym, df in list(dfs.items())[:3]:
-            with st.expander(f"{sym} -- {len(df):,} rows"):
-                # Mini chart
-                if "close" in df.columns and len(df) > 10:
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=df.index, y=df["close"], mode="lines",
-                        line=dict(color="#a855f7", width=1.8, shape="spline", smoothing=0.6),
-                        fill="tozeroy", fillcolor="rgba(168,85,247,0.04)",
-                        hovertemplate="$%{y:.2f}<extra></extra>",
-                    ))
-                    fig.update_layout(
-                        title=dict(text=f"{sym} PREVIEW", font=dict(size=12, color="#7a7a90")),
-                        yaxis_tickformat="$,.2f", height=200,
-                        margin=dict(l=40, r=20, t=35, b=25),
-                    )
-                    _phi_chart(fig, height=200)
-                st.dataframe(df.tail(10), use_container_width=True)
-        return cfg
-    return None
+    cfg = st.session_state.get("workbench_config")
+    if cfg:
+        st.caption(f"Current dataset: {', '.join(cfg['symbols'])} | {cfg['timeframe']} | {cfg['vendor']}")
+    return cfg
 
 
 # ---------------------------------------------------------------------------
@@ -2470,15 +2392,130 @@ def main():
 
 
 def render_options_workbench():
-    """Minimal Options panel wired to Phase 2 strategy primitives."""
+    """Phase 3 options workbench with dynamic strategy controls and pricing preview."""
+    from phi.options.iv_surface import IVSurface
+    from phi.options.strategies import (
+        ButterflySpread,
+        CalendarSpread,
+        Collar,
+        CoveredCall,
+        DiagonalSpread,
+        ProtectivePut,
+        SingleLeg,
+        Straddle,
+        Strangle,
+        VerticalSpread,
+    )
+
     st.markdown("### Options")
     sym_default = (st.session_state.get("workbench_config", {}) or {}).get("symbols", ["SPY"])[0]
-    symbol = st.text_input("Underlying Symbol", value=sym_default, key="opt_symbol_phase2")
-    strategy_name = st.selectbox("Strategy", ["Single Leg", "Vertical Spread", "Straddle", "Strangle"], key="opt_strategy_phase2")
-    strike = st.number_input("Strike", min_value=1.0, value=100.0, key="opt_strike_phase2")
-    expiry_days = st.slider("Expiry (days)", 7, 365, 30, key="opt_expiry_phase2")
-    qty = st.number_input("Contracts", min_value=1, value=1, key="opt_qty_phase2")
-    st.caption(f"Configured {strategy_name} on {symbol} ({qty} contract(s), {expiry_days} DTE)")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        symbol = st.text_input("Underlying Symbol", value=sym_default, key="opt_symbol_phase3").upper()
+    with c2:
+        expiry_mode = st.selectbox("Expiry selection", ["Nearest Monthly", "Next Weekly", "Specific Date", "Days to Expiry"], key="opt_expiry_mode")
+    with c3:
+        qty = int(st.number_input("Contracts", min_value=1, value=1, key="opt_qty_phase3"))
+
+    strategy_map = {
+        "Single Leg": SingleLeg,
+        "Vertical Spread": VerticalSpread,
+        "Straddle": Straddle,
+        "Strangle": Strangle,
+        "Butterfly Spread": ButterflySpread,
+        "Calendar Spread": CalendarSpread,
+        "Diagonal Spread": DiagonalSpread,
+        "Covered Call": CoveredCall,
+        "Protective Put": ProtectivePut,
+        "Collar": Collar,
+    }
+    strategy_name = st.selectbox("Strategy", list(strategy_map.keys()), key="opt_strategy_phase3")
+
+    if expiry_mode == "Specific Date":
+        expiry_dt = st.date_input("Expiry Date", value=date.today(), key="opt_expiry_date")
+        expiry_years = max((pd.Timestamp(expiry_dt) - pd.Timestamp(date.today())).days / 365.0, 7 / 365)
+    elif expiry_mode == "Days to Expiry":
+        expiry_days = int(st.slider("Expiry (days)", 7, 365, 30, key="opt_expiry_days"))
+        expiry_years = expiry_days / 365.0
+    elif expiry_mode == "Next Weekly":
+        expiry_years = 7 / 365.0
+    else:
+        expiry_years = 30 / 365.0
+
+    spot = float(st.number_input("Spot", min_value=1.0, value=100.0, step=1.0, key="opt_spot_phase3"))
+    rate = float(st.number_input("Risk-free rate", min_value=0.0, max_value=0.2, value=0.01, step=0.001, key="opt_rate_phase3"))
+    base_strike = float(st.number_input("Base Strike", min_value=1.0, value=spot, step=1.0, key="opt_strike_phase3"))
+
+    lower = float(st.number_input("Lower Strike", min_value=1.0, value=max(1.0, base_strike * 0.95), step=1.0, key="opt_lower_strike"))
+    upper = float(st.number_input("Upper Strike", min_value=1.0, value=base_strike * 1.05, step=1.0, key="opt_upper_strike"))
+    middle = float(st.number_input("Middle Strike", min_value=1.0, value=base_strike, step=1.0, key="opt_middle_strike"))
+    option_type = st.selectbox("Option Type", ["call", "put"], key="opt_type_phase3")
+    action = st.selectbox("Action", ["buy", "sell"], key="opt_action_phase3")
+
+    cls = strategy_map[strategy_name]
+    if strategy_name == "Single Leg":
+        strategy = cls(option_type=option_type, action=action, strike=base_strike, expiry=expiry_years, quantity=qty)
+    elif strategy_name == "Vertical Spread":
+        strategy = cls(option_type=option_type, lower_strike=min(lower, upper), upper_strike=max(lower, upper), expiry=expiry_years, quantity=qty, bullish=True)
+    elif strategy_name == "Straddle":
+        strategy = cls(strike=base_strike, expiry=expiry_years, quantity=qty)
+    elif strategy_name == "Strangle":
+        strategy = cls(lower_strike=min(lower, upper), upper_strike=max(lower, upper), expiry=expiry_years, quantity=qty)
+    elif strategy_name == "Butterfly Spread":
+        strategy = cls(option_type=option_type, lower_strike=min(lower, middle), middle_strike=middle, upper_strike=max(upper, middle), expiry=expiry_years, quantity=qty)
+    elif strategy_name == "Calendar Spread":
+        strategy = cls(option_type=option_type, strike=base_strike, near_expiry=max(expiry_years * 0.6, 7 / 365), far_expiry=expiry_years, quantity=qty)
+    elif strategy_name == "Diagonal Spread":
+        strategy = cls(option_type=option_type, short_strike=base_strike, long_strike=upper, near_expiry=max(expiry_years * 0.6, 7 / 365), far_expiry=expiry_years, quantity=qty)
+    elif strategy_name == "Covered Call":
+        strategy = cls(strike=upper, expiry=expiry_years, quantity=qty)
+    elif strategy_name == "Protective Put":
+        strategy = cls(strike=lower, expiry=expiry_years, quantity=qty)
+    else:
+        strategy = cls(put_strike=lower, call_strike=upper, expiry=expiry_years, quantity=qty)
+
+    iv_df = pd.DataFrame(
+        {"strike": [spot * 0.8, spot * 0.9, spot, spot * 1.1, spot * 1.2], "expiry": [expiry_years] * 5, "iv": [0.28, 0.24, 0.22, 0.24, 0.27]}
+    )
+    iv_surface = IVSurface(iv_df)
+    premium = strategy.net_premium(spot, rate, iv_surface)
+    gs = strategy.greeks(spot, rate, iv_surface)
+
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    k1.metric("Net Premium", f"${premium:,.2f}")
+    k2.metric("Delta", f"{gs['delta']:.2f}")
+    k3.metric("Gamma", f"{gs['gamma']:.4f}")
+    k4.metric("Theta", f"{gs['theta']:.2f}")
+    k5.metric("Vega", f"{gs['vega']:.2f}")
+    k6.metric("Rho", f"{gs['rho']:.2f}")
+
+    price_grid = np.linspace(spot * 0.6, spot * 1.4, 100)
+    payoff = np.zeros_like(price_grid)
+    for leg in strategy.legs():
+        if leg.option_type == "call":
+            leg_intr = np.maximum(price_grid - leg.strike, 0.0)
+        else:
+            leg_intr = np.maximum(leg.strike - price_grid, 0.0)
+        leg_intr *= (1 if leg.action == "buy" else -1) * leg.quantity * 100
+        payoff += leg_intr
+    payoff -= premium
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=price_grid, y=payoff, mode="lines", name="Payoff @ Expiry"))
+    fig.add_hline(y=0, line_dash="dash", line_color="#999")
+    fig.update_layout(title=f"{strategy_name} payoff diagram", xaxis_title="Underlying at expiry", yaxis_title="P&L")
+    _phi_chart(fig, height=350)
+
+    controls = {
+        "symbol": symbol,
+        "strategy": strategy_name,
+        "quantity": qty,
+        "expiry_years": expiry_years,
+        "position_pct": float(st.slider("Position size (% of capital)", 1, 100, 10, key="opt_pos_pct_phase3")) / 100.0,
+    }
+    st.session_state["bt_options_controls"] = controls
+    st.caption("Options controls saved and will be included in options backtests.")
 
 
 if __name__ == "__main__":

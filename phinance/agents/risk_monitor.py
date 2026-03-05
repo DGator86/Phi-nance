@@ -79,11 +79,15 @@ class RiskMonitorAgent:
         )
 
     def _risk_profile_from_action(self, action: int) -> Dict[str, float]:
-        return RISK_PROFILES[int(action) % len(RISK_PROFILES)]
+        profile = dict(RISK_PROFILES[int(action) % len(RISK_PROFILES)])
+        hedge_ratio = float(profile.get("hedge_ratio", 0.0))
+        profile["hedge_action"] = "buy_put_protection" if hedge_ratio > 0 else "none"
+        profile["hedge_template"] = {"type": "put", "moneyness": 0.98, "dte": 30, "ratio": hedge_ratio}
+        return profile
 
     def get_risk_limits(self, portfolio_state: Dict[str, Any], market_data: Dict[str, Any]) -> Dict[str, float]:
         if self.policy is None:
-            return RISK_PROFILES[2]
+            return self._risk_profile_from_action(2)
         state = self._build_state(portfolio_state, market_data)
         action = self.policy.act(state, deterministic=True)
         return self._risk_profile_from_action(action)

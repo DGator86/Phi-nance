@@ -45,6 +45,13 @@ def load_strategy_rd_policy(policy_path: str | Path) -> _PolicyWrapper:
     return _PolicyWrapper(path)
 
 
+
+OPTION_STRATEGY_TEMPLATES = [
+    {"name": "option_strategy", "params": {"template": "covered_call", "dte": 30, "moneyness": 1.02}},
+    {"name": "option_strategy", "params": {"template": "protective_put", "dte": 30, "moneyness": 0.98}},
+    {"name": "option_strategy", "params": {"template": "straddle", "dte": 21, "moneyness": 1.00}},
+]
+
 class StrategyRDAgent:
     """Suggest strategy templates from RL policy or random fallback."""
 
@@ -60,6 +67,9 @@ class StrategyRDAgent:
 
         if not self.template_library:
             self.template_library = StrategyRDEnv().templates
+
+        # Phase 3: include predefined options templates in the action library.
+        self.template_library.extend(OPTION_STRATEGY_TEMPLATES)
 
     def _build_state(self, market_state: Dict[str, float]) -> np.ndarray:
         regime = market_state.get("regime", "sideways")
