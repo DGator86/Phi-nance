@@ -18,9 +18,14 @@ class _PolicyWrapper:
         self.n_actions = int(payload.get("n_actions", len(RISK_PROFILES)))
         self.profiles: List[Dict[str, float]] = payload.get("profiles", RISK_PROFILES)
 
-        from scripts.train_risk_monitor_agent import RiskMonitorPolicy
+        from phinance.rl.policy_networks import CategoricalPolicy
 
-        model = RiskMonitorPolicy(obs_dim=self.obs_dim, n_actions=self.n_actions)
+        model = CategoricalPolicy(
+            obs_dim=self.obs_dim,
+            n_actions=self.n_actions,
+            architecture=str(payload.get("architecture", "mlp")),
+            sequence_length=int(payload.get("sequence_length", 16)),
+        )
         model.load_state_dict(payload["model_state_dict"])
         model.eval()
         self.model = model

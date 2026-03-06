@@ -33,3 +33,13 @@ If no checkpoint exists, the agent automatically falls back to the moderate prof
 - Add additional profiles in `RISK_PROFILES`.
 - Replace synthetic Greeks placeholders with live options exposures once options risk feeds are available.
 - Expand to multi-asset portfolio simulation through `PortfolioSimulator`.
+
+
+## Advanced architectures
+
+Training now supports configurable policy backbones via YAML:
+
+- `model.architecture`: `mlp`, `lstm`, or `transformer`
+- `model.sequence_length`: sequence window used for recurrent/transformer models
+
+These settings are persisted in checkpoints and reused by the runtime agents.

@@ -9,6 +9,8 @@ environment:
 
 model:
   hidden_size: 256
+  architecture: mlp  # mlp | lstm | transformer
+  sequence_length: 16
 
 training:
   algorithm: ppo

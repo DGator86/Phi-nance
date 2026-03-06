@@ -28,9 +28,14 @@ class _PolicyWrapper:
         payload = torch.load(policy_path, map_location="cpu")
         self.obs_dim = int(payload.get("obs_dim", len(STATE_FEATURES)))
 
-        from scripts.train_execution_agent import GaussianPolicy
+        from phinance.rl.policy_networks import GaussianPolicy
 
-        model = GaussianPolicy(obs_dim=self.obs_dim)
+        model = GaussianPolicy(
+            obs_dim=self.obs_dim,
+            action_dim=int(payload.get("action_dim", 2)),
+            architecture=str(payload.get("architecture", "mlp")),
+            sequence_length=int(payload.get("sequence_length", 16)),
+        )
         model.load_state_dict(payload["model_state_dict"])
         model.eval()
         self.model = model

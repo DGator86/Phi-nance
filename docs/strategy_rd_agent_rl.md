@@ -73,3 +73,13 @@ print(proposal)
 - Replace synthetic/quick backtest logic with full backtest integration.
 - Add regime-engine features and broader cross-sectional state features.
 - Introduce hierarchical policies for indicator selection + continuous tuning.
+
+
+## Advanced architectures
+
+Training now supports configurable policy backbones via YAML:
+
+- `model.architecture`: `mlp`, `lstm`, or `transformer`
+- `model.sequence_length`: sequence window used for recurrent/transformer models
+
+These settings are persisted in checkpoints and reused by the runtime agents.

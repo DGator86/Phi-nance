@@ -9,39 +9,12 @@ from typing import Any, Dict
 
 import numpy as np
 import torch
-import torch.nn as nn
 import yaml
 
+from phinance.rl.policy_networks import CategoricalPolicy
 from phinance.rl.strategy_rd_env import StrategyRDEnv, StrategyRDEnvConfig
 
 logger = logging.getLogger(__name__)
-
-
-class StrategyRDPolicy(nn.Module):
-    """Categorical MLP policy for discrete strategy-template actions."""
-
-    def __init__(self, obs_dim: int, n_actions: int, hidden_size: int = 256) -> None:
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(obs_dim, hidden_size),
-            nn.Tanh(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.Tanh(),
-            nn.Linear(hidden_size, n_actions),
-        )
-
-    def forward(self, state: torch.Tensor) -> torch.Tensor:
-        return self.net(state)
-
-    def act(self, state: np.ndarray, deterministic: bool = False) -> int:
-        with torch.no_grad():
-            tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
-            logits = self.forward(tensor).squeeze(0)
-            if deterministic:
-                return int(torch.argmax(logits).item())
-            probs = torch.softmax(logits, dim=-1)
-            sample = torch.multinomial(probs, num_samples=1)
-            return int(sample.item())
 
 
 def _load_config(path: Path) -> Dict[str, Any]:
@@ -55,22 +28,35 @@ def _build_env(config: Dict[str, Any]) -> StrategyRDEnv:
     return StrategyRDEnv(config=env_cfg)
 
 
+def _act(policy: CategoricalPolicy, state: np.ndarray, deterministic: bool = False) -> int:
+    with torch.no_grad():
+        tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+        logits = policy(tensor).squeeze(0)
+        if deterministic:
+            return int(torch.argmax(logits).item())
+        probs = torch.softmax(logits, dim=-1)
+        return int(torch.multinomial(probs, num_samples=1).item())
+
+
 def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
-    """Fallback smoke trainer used when AReaL is unavailable."""
+    """Fallback mini trainer used when AReaL is not available."""
     env = _build_env(config)
-    policy = StrategyRDPolicy(
+    model_cfg = config.get("model", {})
+    policy = CategoricalPolicy(
         obs_dim=env.observation_space.shape[0],
         n_actions=env.action_space.n,
-        hidden_size=config["model"]["hidden_size"],
+        hidden_size=int(model_cfg.get("hidden_size", 256)),
+        architecture=str(model_cfg.get("architecture", "mlp")),
+        sequence_length=int(model_cfg.get("sequence_length", 16)),
     )
+    episodes = int(config["training"].get("episodes_smoke", 5))
 
-    episodes = int(config["training"]["episodes_smoke"])
     for episode in range(episodes):
         state = env.reset()
         done = False
         total_reward = 0.0
         while not done:
-            action = int(np.random.randint(0, env.action_space.n))
+            action = _act(policy, state, deterministic=False)
             state, reward, done, _ = env.step(action)
             total_reward += reward
         logger.info("Fallback episode %d reward=%0.5f", episode + 1, total_reward)
@@ -83,6 +69,8 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
             "obs_dim": env.observation_space.shape[0],
             "n_actions": env.action_space.n,
             "templates": env.templates,
+            "architecture": str(model_cfg.get("architecture", "mlp")),
+            "sequence_length": int(model_cfg.get("sequence_length", 16)),
         },
         checkpoint,
     )
@@ -97,18 +85,22 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
         raise RuntimeError("AReaL is not installed. Install it or run fallback smoke training.") from exc
 
     env = _build_env(config)
-    policy = StrategyRDPolicy(
+    model_cfg = config.get("model", {})
+    training_cfg = config.get("training", {})
+    policy = CategoricalPolicy(
         obs_dim=env.observation_space.shape[0],
         n_actions=env.action_space.n,
-        hidden_size=config["model"]["hidden_size"],
+        hidden_size=int(model_cfg.get("hidden_size", 256)),
+        architecture=str(model_cfg.get("architecture", "mlp")),
+        sequence_length=int(model_cfg.get("sequence_length", 16)),
     )
     trainer = AsyncTrainer(
         env=env,
         policy=policy,
-        algorithm=config["training"].get("algorithm", "ppo"),
-        total_timesteps=int(config["training"]["total_timesteps"]),
-        learning_rate=float(config["training"]["learning_rate"]),
-        gamma=float(config["training"]["gamma"]),
+        algorithm=str(training_cfg.get("algorithm", "ppo")),
+        total_timesteps=int(training_cfg["total_timesteps"]),
+        learning_rate=float(training_cfg.get("learning_rate", 0.0003)),
+        gamma=float(training_cfg.get("gamma", 0.99)),
         tensorboard_log=str(output_dir / "tb"),
     )
     trainer.train()
@@ -121,6 +113,8 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
             "obs_dim": env.observation_space.shape[0],
             "n_actions": env.action_space.n,
             "templates": env.templates,
+            "architecture": str(model_cfg.get("architecture", "mlp")),
+            "sequence_length": int(model_cfg.get("sequence_length", 16)),
         },
         checkpoint,
     )

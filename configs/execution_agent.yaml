@@ -10,9 +10,11 @@ environment:
 
 model:
   hidden_size: 256
+  architecture: lstm  # mlp | lstm | transformer
+  sequence_length: 16
 
 training:
-  algorithm: ppo
+  algorithm: sac  # ppo | sac | td3 (when supported by AReaL)
   total_timesteps: 100000
   learning_rate: 0.0003
   gamma: 0.99

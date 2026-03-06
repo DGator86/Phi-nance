@@ -10,7 +10,7 @@ This module introduces an RL-driven execution policy to replace static TWAP/VWAP
   - Reward is negative implementation shortfall against arrival price.
   - Includes linear impact model: `impact = k * (volume_traded / ADV) * spread`.
 - `scripts/train_execution_agent.py`
-  - Uses AReaL `AsyncTrainer` with PPO when installed.
+  - Uses AReaL `AsyncTrainer` with configurable algorithms (`ppo`, `sac`, `td3`) when installed.
   - Includes a fallback smoke trainer (`--fallback`) for local validation when AReaL is not present.
 - `configs/execution_agent.yaml`
   - Hyperparameters and environment defaults.
@@ -25,7 +25,7 @@ source venv/bin/activate
 python scripts/train_execution_agent.py --config configs/execution_agent.yaml --fallback
 ```
 
-When AReaL is installed, omit `--fallback` to use asynchronous PPO training:
+When AReaL is installed, omit `--fallback` to use asynchronous training with the configured algorithm:
 
 ```bash
 python scripts/train_execution_agent.py --config configs/execution_agent.yaml
@@ -57,3 +57,14 @@ Run:
 ```bash
 pytest tests/unit/rl/test_execution_env.py
 ```
+
+
+## Advanced architectures
+
+`configs/execution_agent.yaml` now supports:
+
+- `model.architecture`: `mlp`, `lstm`, or `transformer`
+- `model.sequence_length`: synthetic sequence length used by recurrent/transformer backbones
+- `training.algorithm`: `ppo`, `sac`, or `td3` (backend dependent)
+
+The checkpoint stores these settings so runtime inference mirrors training.
