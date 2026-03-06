@@ -23,3 +23,7 @@ training:
 
 use_transformer_embeddings: false
 transformer_model_path: "phinance/ml/checkpoints/transformer_latest.pt"
+use_auto_features: false
+use_gp_features: false
+feature_registry_path: "phinance/features/feature_registry.json"
+feature_window: 32

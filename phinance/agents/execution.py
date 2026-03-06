@@ -12,6 +12,7 @@ import torch
 
 from phinance.ml.inference import TransformerFeatureExtractor
 from phinance.rl.execution_env import STATE_FEATURES
+from phinance.features.extractor import FeatureExtractor
 
 
 @dataclass
@@ -66,9 +67,14 @@ class ExecutionAgent:
         policy_path: str = "models/execution_agent/latest.pt",
         use_transformer_embeddings: bool = False,
         transformer_model_path: str = "phinance/ml/checkpoints/transformer_latest.pt",
+        use_auto_features: bool = False,
+        use_gp_features: bool = False,
+        feature_registry_path: str = "phinance/features/feature_registry.json",
+        feature_window: int = 32,
     ) -> None:
         self.policy: Optional[_PolicyWrapper] = None
         self.transformer: Optional[TransformerFeatureExtractor] = None
+        self.feature_extractor: Optional[FeatureExtractor] = None
         if use_rl:
             try:
                 self.policy = load_rl_policy(policy_path)
@@ -79,6 +85,16 @@ class ExecutionAgent:
                 self.transformer = TransformerFeatureExtractor(transformer_model_path)
             except FileNotFoundError:
                 self.transformer = None
+        if use_auto_features or use_gp_features:
+            try:
+                self.feature_extractor = FeatureExtractor(
+                    registry_path=feature_registry_path,
+                    use_autoencoder=use_auto_features,
+                    use_gp_features=use_gp_features,
+                    window=feature_window,
+                )
+            except FileNotFoundError:
+                self.feature_extractor = None
 
     def _build_state(self, order: Dict[str, Any], market_data: pd.DataFrame) -> np.ndarray:
         row = market_data.iloc[-1]
@@ -111,10 +127,18 @@ class ExecutionAgent:
             ],
             dtype=np.float32,
         )
-        if self.transformer is None:
+        extras: list[np.ndarray] = []
+        if self.transformer is not None:
+            embedding = self.transformer.extract_embedding(market_data)
+            extras.append(embedding.astype(np.float32))
+        if self.feature_extractor is not None:
+            discovered = self.feature_extractor.extract(market_data)
+            if discovered.size:
+                extras.append(discovered.astype(np.float32))
+
+        if not extras:
             return state
-        embedding = self.transformer.extract_embedding(market_data)
-        return np.concatenate([state, embedding.astype(np.float32)])
+        return np.concatenate([state, *extras])
 
     def _schedule_from_action(self, action: np.ndarray, order: Dict[str, Any]) -> ExecutionDecision:
         remaining = float(order.get("remaining_shares", order.get("qty", 0.0)))
