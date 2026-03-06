@@ -1,0 +1,19 @@
+model:
+  obs_dim: 9
+  action_dim: 2
+  det_dim: 128
+  stoch_dim: 32
+  hidden_dim: 128
+  min_std: 0.1
+
+training:
+  learning_rate: 0.0003
+  batch_size: 64
+  steps: 2000
+  reward_coef: 1.0
+  kl_coef: 0.1
+  done_coef: 0.1
+
+world_model:
+  imagination_horizon: 64
+  confidence_threshold: 0.55
