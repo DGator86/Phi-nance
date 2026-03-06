@@ -13,6 +13,11 @@ import yaml
 
 from phinance.rl.execution_env import ExecutionEnv, ExecutionEnvConfig
 from phinance.rl.policy_networks import GaussianPolicy
+from phinance.world.integration import (
+    build_execution_training_env,
+    estimate_world_model_confidence,
+    should_fallback_to_model_free,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +33,18 @@ def _build_env(config: Dict[str, Any]) -> ExecutionEnv:
     return ExecutionEnv(config=env_cfg)
 
 
-def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
+def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path, world_model_path: Path | None = None) -> Path:
     """Fallback mini trainer used when AReaL is not available."""
-    env = _build_env(config)
+    env, using_world_model = build_execution_training_env(config, world_model_path)
+    if using_world_model:
+        recent_losses = np.asarray(config.get("world_model", {}).get("recent_losses", [0.35]), dtype=np.float32)
+        confidence = estimate_world_model_confidence(recent_losses)
+        if should_fallback_to_model_free(confidence, threshold=float(config.get("world_model", {}).get("confidence_threshold", 0.55))):
+            logger.warning("World model confidence %.3f below threshold; switching to model-free fallback.", confidence)
+            env = _build_env(config)
+            using_world_model = False
+        else:
+            logger.info("Using imagination environment (confidence=%.3f)", confidence)
     model_cfg = config.get("model", {})
     policy = GaussianPolicy(
         obs_dim=env.observation_space.shape[0],
@@ -69,14 +83,16 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
     return checkpoint
 
 
-def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
+def train_with_areal(config: Dict[str, Any], output_dir: Path, world_model_path: Path | None = None) -> Path:
     """Train using AReaL AsyncTrainer and selected algorithm."""
     try:
         from areal.rl import AsyncTrainer  # type: ignore
     except Exception as exc:  # pragma: no cover - depends on optional package
         raise RuntimeError("AReaL is not installed. Install it or run fallback smoke training.") from exc
 
-    env = _build_env(config)
+    env, using_world_model = build_execution_training_env(config, world_model_path)
+    if using_world_model:
+        logger.info("Training with imagination environment backed by world model %s", world_model_path)
     model_cfg = config.get("model", {})
     training_cfg = config.get("training", {})
     policy = GaussianPolicy(
@@ -115,15 +131,16 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=Path("configs/execution_agent.yaml"))
     parser.add_argument("--output", type=Path, default=Path("models/execution_agent"))
     parser.add_argument("--fallback", action="store_true", help="Use fallback smoke loop instead of AReaL")
+    parser.add_argument("--world-model-path", type=Path, default=None, help="Optional checkpoint for imagination training")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     config = _load_config(args.config)
     if args.fallback:
-        checkpoint = train_with_fallback_loop(config, args.output)
+        checkpoint = train_with_fallback_loop(config, args.output, args.world_model_path)
     else:
-        checkpoint = train_with_areal(config, args.output)
+        checkpoint = train_with_areal(config, args.output, args.world_model_path)
 
     logger.info("Saved execution policy checkpoint to %s", checkpoint)
 
