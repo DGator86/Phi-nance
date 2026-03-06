@@ -1,0 +1,11 @@
+profiling:
+  enabled: true
+  rows: 2520
+  iterations: 3
+  cprofile_out: artifacts/perf/backtest_cprofile.txt
+
+runtime:
+  use_gpu: false
+  use_mixed_precision: false
+  use_ray: false
+  ray_num_workers: 0
