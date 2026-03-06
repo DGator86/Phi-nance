@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date, datetime, timezone
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -26,7 +27,7 @@ def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"Provider data is missing required columns: {missing}")
 
     out = df.rename(columns={cols[c]: c for c in required})[required].copy()
-    out.index = pd.to_datetime(out.index)
+    out.index = pd.to_datetime(out.index, utc=True)
     if out.index.tz is not None:
         out.index = out.index.tz_localize(None)
     return out.sort_index()
@@ -45,6 +46,30 @@ def _ohlcv_sanity_check(df: pd.DataFrame, symbol: str = "") -> None:
             logger.warning("%s sanity check: negative values in '%s' column", symbol, col)
     if not df.index.is_monotonic_increasing:
         logger.warning("%s sanity check: index is not chronologically ordered", symbol)
+
+    duplicate_rows = int(df.index.duplicated().sum())
+    if duplicate_rows:
+        logger.warning("%s sanity check: %d duplicate timestamp rows detected", symbol, duplicate_rows)
+
+    if (df["volume"] < 0).any():
+        logger.warning("%s sanity check: negative values in 'volume' column", symbol)
+
+    zero_volume_rate = float((df["volume"] == 0).mean())
+    if zero_volume_rate > 0.20:
+        logger.warning(
+            "%s sanity check: %.1f%% of rows have zero volume",
+            symbol,
+            zero_volume_rate * 100,
+        )
+
+    close_returns = df["close"].pct_change().abs()
+    extreme_moves = int((close_returns > 0.25).sum())
+    if extreme_moves:
+        logger.warning(
+            "%s sanity check: %d rows have >25%% absolute close-to-close moves",
+            symbol,
+            extreme_moves,
+        )
 
 
 class DataCache:
@@ -91,7 +116,7 @@ class DataCache:
 
         try:
             return pd.read_parquet(path)
-        except Exception as exc:
+        except (FileNotFoundError, OSError, ValueError, TypeError) as exc:
             logger.warning("Cache load failed for %s: %s", path, exc)
             return None
 
@@ -133,7 +158,7 @@ class DataCache:
             if meta_path.exists():
                 try:
                     meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                except Exception:
+                except (OSError, JSONDecodeError, TypeError):
                     meta = {}
             meta.setdefault("path", str(parquet))
             out.append(meta)
@@ -153,7 +178,7 @@ class DataCache:
             max_age = 1 if timeframe != "1D" else 7
             if age_days > max_age:
                 logger.warning("Cached data for %s %s is %.1f days old (threshold: %d days).", symbol, timeframe, age_days, max_age)
-        except Exception:
+        except (OSError, JSONDecodeError, ValueError, TypeError):
             return
 
 
@@ -222,7 +247,7 @@ def load_metadata(vendor: str, symbol: str, timeframe: str, start: str, end: str
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, JSONDecodeError, TypeError):
         return None
 
 
@@ -281,6 +306,6 @@ def get_cached_options(symbol: str, date: str) -> Optional[pd.DataFrame]:
         return None
     try:
         return pd.read_parquet(path)
-    except Exception as exc:
+    except (FileNotFoundError, OSError, ValueError, TypeError) as exc:
         logger.warning("Failed to load cached options chain %s: %s", path, exc)
         return None
