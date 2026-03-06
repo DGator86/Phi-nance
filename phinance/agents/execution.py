@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+from phinance.ml.inference import TransformerFeatureExtractor
 from phinance.rl.execution_env import STATE_FEATURES
 
 
@@ -59,13 +60,25 @@ def load_rl_policy(policy_path: str | Path) -> _PolicyWrapper:
 class ExecutionAgent:
     """Convert large parent orders into dynamic slices."""
 
-    def __init__(self, use_rl: bool = True, policy_path: str = "models/execution_agent/latest.pt") -> None:
+    def __init__(
+        self,
+        use_rl: bool = True,
+        policy_path: str = "models/execution_agent/latest.pt",
+        use_transformer_embeddings: bool = False,
+        transformer_model_path: str = "phinance/ml/checkpoints/transformer_latest.pt",
+    ) -> None:
         self.policy: Optional[_PolicyWrapper] = None
+        self.transformer: Optional[TransformerFeatureExtractor] = None
         if use_rl:
             try:
                 self.policy = load_rl_policy(policy_path)
             except FileNotFoundError:
                 self.policy = None
+        if use_transformer_embeddings:
+            try:
+                self.transformer = TransformerFeatureExtractor(transformer_model_path)
+            except FileNotFoundError:
+                self.transformer = None
 
     def _build_state(self, order: Dict[str, Any], market_data: pd.DataFrame) -> np.ndarray:
         row = market_data.iloc[-1]
@@ -98,7 +111,10 @@ class ExecutionAgent:
             ],
             dtype=np.float32,
         )
-        return state
+        if self.transformer is None:
+            return state
+        embedding = self.transformer.extract_embedding(market_data)
+        return np.concatenate([state, embedding.astype(np.float32)])
 
     def _schedule_from_action(self, action: np.ndarray, order: Dict[str, Any]) -> ExecutionDecision:
         remaining = float(order.get("remaining_shares", order.get("qty", 0.0)))

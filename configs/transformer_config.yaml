@@ -1,0 +1,19 @@
+data:
+  symbols: ["SPY"]
+  data_dir: "data/transformer"
+  sequence_length: 60
+
+model:
+  d_model: 128
+  num_layers: 4
+  num_heads: 4
+  dropout: 0.1
+  dim_feedforward: 256
+
+training:
+  batch_size: 64
+  epochs: 30
+  learning_rate: 0.0003
+  validation_ratio: 0.2
+  early_stopping_patience: 5
+  checkpoint_path: "phinance/ml/checkpoints/transformer_latest.pt"

@@ -28,3 +28,6 @@ training:
   gamma: 0.99
   rollout_workers: 2
   episodes_smoke: 5
+
+use_transformer_embeddings: false
+transformer_model_path: "phinance/ml/checkpoints/transformer_latest.pt"
