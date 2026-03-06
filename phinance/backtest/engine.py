@@ -23,10 +23,102 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
+try:
+    from numba import njit
+except Exception:  # pragma: no cover - fallback when numba is unavailable
+    def njit(*args: Any, **kwargs: Any):  # type: ignore[misc]
+        def _wrap(func: Any) -> Any:
+            return func
+
+        return _wrap
+
 from phinance.backtest.models import Trade
 from phinance.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+@njit(cache=True)
+def _simulate_state(
+    closes: np.ndarray,
+    signals: np.ndarray,
+    initial_capital: float,
+    position_size_pct: float,
+    signal_threshold: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Numba-accelerated state transition core for backtest simulation."""
+    n = len(closes)
+    portfolio_values = np.empty(n + 1, dtype=np.float64)
+    portfolio_values[0] = initial_capital
+
+    entry_idx = np.full(n, -1, dtype=np.int64)
+    exit_idx = np.full(n, -1, dtype=np.int64)
+    qty_arr = np.zeros(n, dtype=np.int64)
+    entry_price_arr = np.zeros(n, dtype=np.float64)
+    exit_price_arr = np.zeros(n, dtype=np.float64)
+    hold_bars_arr = np.zeros(n, dtype=np.int64)
+
+    cap = initial_capital
+    position = 0
+    open_entry_idx = -1
+    open_entry_price = 0.0
+    trade_count = 0
+
+    for i in range(n):
+        price = closes[i]
+        sig = signals[i]
+
+        if np.isnan(price) or price <= 0:
+            prev_price = closes[i - 1] if i > 0 else 0.0
+            portfolio_values[i + 1] = cap + position * prev_price
+            continue
+
+        if sig > signal_threshold and position == 0:
+            qty = int((cap * position_size_pct) // price)
+            if qty > 0:
+                position = qty
+                open_entry_price = price
+                open_entry_idx = i
+                cap -= qty * price
+
+        elif sig < -signal_threshold and position > 0:
+            cap += position * price
+            if open_entry_idx >= 0 and trade_count < n:
+                entry_idx[trade_count] = open_entry_idx
+                exit_idx[trade_count] = i
+                qty_arr[trade_count] = position
+                entry_price_arr[trade_count] = open_entry_price
+                exit_price_arr[trade_count] = price
+                hold_bars_arr[trade_count] = i - open_entry_idx
+                trade_count += 1
+            position = 0
+            open_entry_idx = -1
+            open_entry_price = 0.0
+
+        portfolio_values[i + 1] = cap + position * price
+
+    if position > 0:
+        last_price = closes[n - 1]
+        cap += position * last_price
+        if open_entry_idx >= 0 and trade_count < n and open_entry_price > 0:
+            entry_idx[trade_count] = open_entry_idx
+            exit_idx[trade_count] = n - 1
+            qty_arr[trade_count] = position
+            entry_price_arr[trade_count] = open_entry_price
+            exit_price_arr[trade_count] = last_price
+            hold_bars_arr[trade_count] = n - 1 - open_entry_idx
+            trade_count += 1
+        portfolio_values[n] = cap
+
+    return (
+        portfolio_values,
+        entry_idx[:trade_count],
+        exit_idx[:trade_count],
+        qty_arr[:trade_count],
+        entry_price_arr[:trade_count],
+        exit_price_arr[:trade_count],
+        hold_bars_arr[:trade_count],
+    )
 
 
 def simulate(
@@ -56,86 +148,59 @@ def simulate(
     prediction_log   : List[Dict]         — bar-by-bar signal records
     trades           : List[Trade]        — closed round-trip trades
     """
-    closes = ohlcv["close"].values
-    cap = float(initial_capital)
-    position = 0       # shares
-    entry_price = 0.0
-    entry_date: Any = None
-    entry_bar = 0
+    closes = ohlcv["close"].to_numpy(dtype=np.float64, copy=False)
+    signals = composite_signal.reindex(ohlcv.index).fillna(0.0).to_numpy(dtype=np.float64, copy=False)
+    dates = ohlcv.index.to_list()
 
-    portfolio_values: List[float] = [cap]
-    prediction_log:   List[Dict[str, Any]] = []
-    trades:           List[Trade] = []
+    (
+        portfolio_values,
+        entry_idx,
+        exit_idx,
+        qty_arr,
+        entry_price_arr,
+        exit_price_arr,
+        hold_bars_arr,
+    ) = _simulate_state(
+        closes,
+        signals,
+        float(initial_capital),
+        float(position_size_pct),
+        float(signal_threshold),
+    )
 
-    for i, sig in enumerate(composite_signal):
-        price = float(closes[i])
-        date = ohlcv.index[i]
+    prediction_log: List[Dict[str, Any]] = []
+    for i, sig in enumerate(signals):
+        direction = "UP" if sig > signal_threshold else "DOWN" if sig < -signal_threshold else "NEUTRAL"
+        prediction_log.append(
+            {
+                "date": dates[i],
+                "symbol": symbol,
+                "signal": direction,
+                "price": float(closes[i]),
+            }
+        )
 
-        if np.isnan(price) or price <= 0:
-            portfolio_values.append(cap + position * (float(closes[i - 1]) if i > 0 else 0))
-            continue
+    trades: List[Trade] = []
+    for i in range(len(entry_idx)):
+        ent_i = int(entry_idx[i])
+        ex_i = int(exit_idx[i])
+        qty = int(qty_arr[i])
+        entry_price = float(entry_price_arr[i])
+        exit_price = float(exit_price_arr[i])
+        pnl_abs = qty * (exit_price - entry_price)
+        pnl_pct = (exit_price - entry_price) / entry_price if entry_price else 0.0
+        trades.append(
+            Trade(
+                entry_date=dates[ent_i],
+                exit_date=dates[ex_i],
+                symbol=symbol,
+                entry_price=entry_price,
+                exit_price=exit_price,
+                quantity=qty,
+                pnl=pnl_abs,
+                pnl_pct=pnl_pct,
+                hold_bars=int(hold_bars_arr[i]),
+            )
+        )
 
-        if sig > signal_threshold and position == 0:
-            # Enter long
-            qty = int(cap * position_size_pct // price)
-            if qty > 0:
-                position    = qty
-                entry_price = price
-                entry_date  = date
-                entry_bar   = i
-                cap        -= qty * price
-            direction = "UP"
-
-        elif sig < -signal_threshold and position > 0:
-            # Exit long
-            cap += position * price
-            pnl_abs = position * (price - entry_price)
-            pnl_pct = (price - entry_price) / entry_price if entry_price else 0.0
-            hold    = i - entry_bar
-            trades.append(Trade(
-                entry_date  = entry_date,
-                exit_date   = date,
-                symbol      = symbol,
-                entry_price = entry_price,
-                exit_price  = price,
-                quantity    = position,
-                pnl         = pnl_abs,
-                pnl_pct     = pnl_pct,
-                hold_bars   = hold,
-            ))
-            position = 0
-            direction = "DOWN"
-
-        else:
-            direction = "NEUTRAL"
-
-        pv = cap + position * price
-        portfolio_values.append(pv)
-        prediction_log.append({
-            "date":   date,
-            "symbol": symbol,
-            "signal": direction,
-            "price":  price,
-        })
-
-    # Close any remaining position at last bar
-    if position > 0:
-        last_price = float(closes[-1])
-        cap += position * last_price
-        if entry_price > 0:
-            trades.append(Trade(
-                entry_date  = entry_date,
-                exit_date   = ohlcv.index[-1],
-                symbol      = symbol,
-                entry_price = entry_price,
-                exit_price  = last_price,
-                quantity    = position,
-                pnl         = position * (last_price - entry_price),
-                pnl_pct     = (last_price - entry_price) / entry_price,
-                hold_bars   = len(composite_signal) - 1 - entry_bar,
-            ))
-        position = 0
-
-    # Replace the first placeholder with final capital
-    portfolio_values[0] = float(initial_capital)
-    return portfolio_values, prediction_log, trades
+    return portfolio_values.tolist(), prediction_log, trades
