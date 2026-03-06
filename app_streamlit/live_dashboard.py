@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 
-def render_live_dashboard(data_source_manager=None, broker=None) -> None:
+def render_live_dashboard(data_source_manager=None, broker=None, engine=None) -> None:
     st.title("📡 Live Trading Dashboard")
 
     if broker is not None:
@@ -19,6 +19,24 @@ def render_live_dashboard(data_source_manager=None, broker=None) -> None:
             c3.metric("Positions", account.get("num_positions", 0))
         except Exception as exc:  # noqa: BLE001
             st.warning(f"Unable to load account: {exc}")
+
+    if engine is not None:
+        st.subheader("Advisor Reports")
+        latest = getattr(engine, "last_advisor_report", None)
+        if latest:
+            st.info(latest)
+        else:
+            st.caption("No advisor report yet.")
+
+        symbol = st.text_input("Explanation symbol", value="SPY")
+        if st.button("Request trade explanation"):
+            quote = {"symbol": symbol, "price": 0.0}
+            report = engine.request_advisor_report(symbol=symbol, quote=quote)
+            if report:
+                st.success("Advisor response generated.")
+                st.write(report)
+            else:
+                st.warning("Advisor not enabled or unavailable.")
 
     st.subheader("Data Sources")
     if data_source_manager is None:

@@ -1,0 +1,10 @@
+llm:
+  enabled: false
+  backend: ollama           # ollama | openai | none
+  model: llama3
+  base_url: http://localhost:11434
+  temperature: 0.7
+  max_tokens: 800
+  timeout: 60
+  # For OpenAI backend, set api_key or use OPENAI_API_KEY env var
+  # api_key: ${OPENAI_API_KEY}

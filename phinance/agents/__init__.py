@@ -47,6 +47,7 @@ from phinance.agents.execution import ExecutionAgent, ExecutionDecision, load_rl
 from phinance.agents.strategy_rd import StrategyRDAgent, load_strategy_rd_policy
 from phinance.agents.risk_monitor import RiskMonitorAgent, load_risk_monitor_policy
 from phinance.agents.meta_orchestrator import MetaOrchestrator, MetaDecision
+from phinance.llm import AdvisorAgent
 from phinance.agents.evolution_engine import (
     EvolutionEngine,
     EvolutionConfig,
@@ -93,6 +94,7 @@ __all__ = [
     "Individual",
     "GenerationResult",
     "run_evolution",
+    "AdvisorAgent",
     "MetaOrchestrator",
     "MetaDecision",
 ]

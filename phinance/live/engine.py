@@ -22,9 +22,24 @@ class LiveEngine:
         self.config = config or {}
         self.use_hierarchical = bool(self.config.get("use_hierarchical", False))
         self.meta_orchestrator: Any | None = None
+        self.advisor: Any | None = None
+        self.last_advisor_report: str | None = None
+        self.advisor_reports: list[str] = []
+
+        if self.config.get("advisor_enabled", False):
+            try:
+                from phinance.llm import AdvisorAgent
+
+                config_path = str(self.config.get("advisor_config_path", "configs/llm_config.yaml"))
+                self.advisor = AdvisorAgent(config_path=config_path)
+            except Exception:  # noqa: BLE001
+                self.advisor = None
 
     def set_meta_orchestrator(self, orchestrator: Any) -> None:
         self.meta_orchestrator = orchestrator
+
+    def set_advisor(self, advisor: Any) -> None:
+        self.advisor = advisor
 
     def start(self) -> None:
         self.state.running = True
@@ -43,6 +58,27 @@ class LiveEngine:
             volume = float(quote.get("volume", 0.0))
             return np.array([price, spread, volume, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], dtype=np.float32)
         return np.zeros(10, dtype=np.float32)
+
+    def request_advisor_report(self, symbol: str, quote: dict[str, Any]) -> str | None:
+        if self.advisor is None:
+            return None
+        try:
+            trades = []
+            if hasattr(self.order_manager, "get_trades"):
+                trades = self.order_manager.get_trades() or []
+            elif hasattr(self.order_manager, "list_orders"):
+                trades = self.order_manager.list_orders() or []
+
+            report = self.advisor.explain_trades(
+                trades=trades,
+                market_context={"symbol": symbol, "quote": quote},
+            )
+            self.last_advisor_report = report
+            self.advisor_reports.append(report)
+            return report
+        except Exception as exc:  # noqa: BLE001
+            self.last_advisor_report = f"Advisor error: {exc}"
+            return self.last_advisor_report
 
     def tick(self, symbol: str) -> dict[str, Any]:
         if not self.state.running:
@@ -69,5 +105,8 @@ class LiveEngine:
             )
             response["meta_option"] = decision.option_name
             response["meta_action"] = decision.action
+
+        if self.config.get("advisor_auto", False):
+            response["advisor_report"] = self.request_advisor_report(symbol=symbol, quote=quote)
 
         return response
