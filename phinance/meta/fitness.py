@@ -102,3 +102,23 @@ class GPFitnessEvaluator:
             "num_trades": float(result.num_trades),
             "fitness": result.fitness,
         }
+
+
+def build_fitness_evaluator(
+    ohlcv: pd.DataFrame,
+    primitive_context: PrimitiveContext,
+    distributed_runner: Any | None = None,
+    **kwargs: Any,
+) -> "GPFitnessEvaluator":
+    """Return distributed evaluator when a runner is supplied, else local evaluator."""
+    if distributed_runner is None:
+        return GPFitnessEvaluator(ohlcv=ohlcv, primitive_context=primitive_context, **kwargs)
+
+    from phinance.meta.distributed_fitness import DistributedGPFitnessEvaluator
+
+    return DistributedGPFitnessEvaluator(
+        ohlcv=ohlcv,
+        primitive_context=primitive_context,
+        runner=distributed_runner,
+        **kwargs,
+    )

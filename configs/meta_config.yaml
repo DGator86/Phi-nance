@@ -8,3 +8,5 @@ gp:
   max_depth: 3
   top_k: 5
   random_seed: 42
+
+  distributed_enabled: false

@@ -43,3 +43,5 @@ financialmodelingprep>=0.0.2
 
 # Phase 4: genetic programming
 deap>=1.4.1
+
+ray[default]>=2.30.0
