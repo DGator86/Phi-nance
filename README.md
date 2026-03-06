@@ -7,6 +7,12 @@ Quantitative trading research platform with regime-aware MFT (Market Field Theor
 ## Quick Start
 
 ```bash
+# Create local env file first
+cp .env.example .env
+
+# Populate Phase 2 bars + short volume data (falls back to samples if keys are missing)
+python scripts/setup_data_spine.py --tickers SPY QQQ --years 2
+
 # Run the Live Backtest Workbench (recommended)
 python -m streamlit run app_streamlit/live_workbench.py
 
@@ -85,6 +91,16 @@ See `requirements.txt`. Key: lumibot, streamlit, pandas, yfinance, scikit-learn,
 ---
 
 ## Usage
+
+### Populate the data spine
+
+```bash
+# Uses API keys from .env when available and validates bar gaps.
+python scripts/setup_data_spine.py --tickers SPY QQQ --years 2
+
+# Keyless mode for local smoke testing.
+python scripts/setup_data_spine.py --sample-only
+```
 
 ### Data Fetching
 
