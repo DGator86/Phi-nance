@@ -5,8 +5,12 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
+import pandas as pd
+
+from phinance.features.extractor import FeatureExtractor
 from phinance.live.cache import PersistentCache
 from phinance.live.rate_limiter import RateLimiter
 from phinance.utils.logging import get_logger
@@ -38,6 +42,20 @@ class DataSourceManager:
         self.status: dict[str, SourceStatus] = {}
         self.priorities: dict[str, list[str]] = config.get("data_priorities", {})
         self.cache_ttl: dict[str, float] = config.get("cache_ttl_seconds", {})
+        self.feature_registry_path: Path | None = None
+        self.feature_window = int(config.get("feature_window", 32))
+        self.feature_extractor: FeatureExtractor | None = None
+
+        feature_registry_path = config.get("feature_registry_path")
+        if feature_registry_path:
+            self.feature_registry_path = Path(feature_registry_path)
+            if self.feature_registry_path.exists():
+                self.feature_extractor = FeatureExtractor(
+                    registry_path=self.feature_registry_path,
+                    use_autoencoder=bool(config.get("use_auto_features", True)),
+                    use_gp_features=bool(config.get("use_gp_features", True)),
+                    window=self.feature_window,
+                )
 
         self._init_sources(config.get("data_sources", {}))
 
@@ -136,6 +154,17 @@ class DataSourceManager:
                 "daily_remaining": remaining,
             }
         return snapshot
+
+    def build_discovered_features(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """Compute discovered features using configured registry, if available."""
+        if self.feature_extractor is None:
+            return {"features": [], "dim": 0, "enabled": False}
+        values = self.feature_extractor.extract(market_data)
+        return {
+            "features": values.tolist(),
+            "dim": int(values.shape[0]),
+            "enabled": True,
+        }
 
     def _mark_success(self, source: str) -> None:
         self.status[source].health = "ok"
