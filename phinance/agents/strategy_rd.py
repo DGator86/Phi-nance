@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 
+from phinance.ml.inference import TransformerFeatureExtractor
 from phinance.rl.strategy_rd_env import STATE_FEATURES, StrategyRDEnv
 
 
@@ -60,8 +61,15 @@ OPTION_STRATEGY_TEMPLATES = [
 class StrategyRDAgent:
     """Suggest strategy templates from RL policy or random fallback."""
 
-    def __init__(self, use_rl: bool = True, policy_path: str = "models/strategy_rd_agent/latest.pt") -> None:
+    def __init__(
+        self,
+        use_rl: bool = True,
+        policy_path: str = "models/strategy_rd_agent/latest.pt",
+        use_transformer_embeddings: bool = False,
+        transformer_model_path: str = "phinance/ml/checkpoints/transformer_latest.pt",
+    ) -> None:
         self.policy: Optional[_PolicyWrapper] = None
+        self.transformer: Optional[TransformerFeatureExtractor] = None
         self.template_library: List[Dict[str, Any]] = []
         if use_rl:
             try:
@@ -69,6 +77,12 @@ class StrategyRDAgent:
                 self.template_library = self.policy.templates
             except FileNotFoundError:
                 self.policy = None
+
+        if use_transformer_embeddings:
+            try:
+                self.transformer = TransformerFeatureExtractor(transformer_model_path)
+            except FileNotFoundError:
+                self.transformer = None
 
         if not self.template_library:
             self.template_library = StrategyRDEnv().templates
@@ -90,7 +104,15 @@ class StrategyRDAgent:
         exploration = float(np.clip(market_state.get("exploration_count", 0.0), 0.0, 1.0))
         best_sharpe = float(np.clip(market_state.get("best_sharpe", 0.0), -1.0, 1.0))
 
-        return np.array([*regime_vector, volatility, recent_perf, exploration, best_sharpe], dtype=np.float32)
+        state = np.array([*regime_vector, volatility, recent_perf, exploration, best_sharpe], dtype=np.float32)
+        if self.transformer is None:
+            return state
+
+        history = market_state.get("market_history")
+        if history is None:
+            return state
+        embedding = self.transformer.extract_embedding(history)
+        return np.concatenate([state, embedding.astype(np.float32)])
 
     def _template_from_index(self, idx: int) -> Dict[str, Any]:
         return self.template_library[int(idx) % len(self.template_library)]

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 
+from phinance.ml.inference import TransformerFeatureExtractor
 from phinance.rl.risk_monitor_env import RISK_PROFILES, STATE_FEATURES
 
 
@@ -50,13 +51,25 @@ def load_risk_monitor_policy(policy_path: str | Path) -> _PolicyWrapper:
 class RiskMonitorAgent:
     """Emit dynamic risk limits from RL policy or moderate defaults."""
 
-    def __init__(self, use_rl: bool = True, policy_path: str = "models/risk_monitor_agent/latest.pt") -> None:
+    def __init__(
+        self,
+        use_rl: bool = True,
+        policy_path: str = "models/risk_monitor_agent/latest.pt",
+        use_transformer_embeddings: bool = False,
+        transformer_model_path: str = "phinance/ml/checkpoints/transformer_latest.pt",
+    ) -> None:
         self.policy: Optional[_PolicyWrapper] = None
+        self.transformer: Optional[TransformerFeatureExtractor] = None
         if use_rl:
             try:
                 self.policy = load_risk_monitor_policy(policy_path)
             except FileNotFoundError:
                 self.policy = None
+        if use_transformer_embeddings:
+            try:
+                self.transformer = TransformerFeatureExtractor(transformer_model_path)
+            except FileNotFoundError:
+                self.transformer = None
 
     def _build_state(self, portfolio_state: Dict[str, Any], market_data: Dict[str, Any]) -> np.ndarray:
         regime = str(market_data.get("regime", "sideways")).lower()
@@ -65,7 +78,7 @@ class RiskMonitorAgent:
             "bear": [0.0, 1.0, 0.0],
             "sideways": [0.0, 0.0, 1.0],
         }.get(regime, [0.0, 0.0, 1.0])
-        return np.array(
+        state = np.array(
             [
                 np.clip(float(portfolio_state.get("drawdown", 0.0)), 0.0, 1.0),
                 np.clip(float(portfolio_state.get("var_95", 0.0)) * 10.0, 0.0, 1.0),
@@ -82,6 +95,14 @@ class RiskMonitorAgent:
             ],
             dtype=np.float32,
         )
+        if self.transformer is None:
+            return state
+
+        history = market_data.get("market_history")
+        if history is None:
+            return state
+        embedding = self.transformer.extract_embedding(history)
+        return np.concatenate([state, embedding.astype(np.float32)])
 
     def _risk_profile_from_action(self, action: int) -> Dict[str, float]:
         profile = dict(RISK_PROFILES[int(action) % len(RISK_PROFILES)])
