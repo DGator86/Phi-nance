@@ -67,6 +67,12 @@ A curated landscape of external options/data projects (with recommended integrat
 
 ---
 
+
+## License
+
+This project is licensed under the MIT License. See `LICENSE` for full text.
+
+---
 ## Dependencies
 
 See `requirements.txt`. Key: lumibot, streamlit, pandas, yfinance, scikit-learn, lightgbm.

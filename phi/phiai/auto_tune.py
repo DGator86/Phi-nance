@@ -16,6 +16,8 @@ import pandas as pd
 
 _MAX_PARALLEL_INDICATORS = 4
 
+logger = logging.getLogger(__name__)
+
 
 def auto_tune_params(
     ohlcv: pd.DataFrame,
@@ -222,7 +224,8 @@ def run_phiai_optimization(
                 dir_pred[dir_pred == 0] = 1
                 matches = np.sum((dir_pred * dir_use) > 0)
                 return matches / max(1, len(dir_use))
-            except Exception:
+            except (KeyError, ValueError, TypeError, IndexError) as exc:
+                logger.debug("%s objective failed for params %s: %s", ind_name, params, exc)
                 return 0.0
         return _obj
 
