@@ -35,3 +35,6 @@ data_priorities:
   options: [thetadata, yfinance]
   fundamentals: [fmp, yfinance]
   macro: [fred]
+
+use_hierarchical: false
+meta_agent_checkpoint: models/meta_agent/latest.pt
