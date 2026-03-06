@@ -35,6 +35,7 @@ dependencies = [
     "plotly>=5.18",
     "pyyaml>=6.0",
     "scipy>=1.11",
+    "numba>=0.59",
     "deap>=1.4.1",
 ]
 
@@ -58,6 +59,7 @@ dev = [
 ]
 all = [
     "scipy>=1.11",
+    "numba>=0.59",
     "deap>=1.4.1",
     "scikit-learn>=1.3.0",
     "lightgbm>=4.0.0",

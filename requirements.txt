@@ -14,6 +14,7 @@ websocket-client>=1.7
 sortedcontainers>=2.4
 # Phase 2+: options analytics
 scipy>=1.11
+numba>=0.59
 
 # Data acquisition (for generate_training_data.py)
 yfinance>=0.2.40

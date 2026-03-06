@@ -35,7 +35,7 @@ def make_synthetic_ohlcv(rows: int, seed: int = 42) -> pd.DataFrame:
     )
 
 
-def run_baseline(rows: int, iterations: int, cprofile_out: str) -> None:
+def run_baseline(rows: int, iterations: int, cprofile_out: str, warmup: int = 1) -> None:
     tracker = PerformanceTracker()
     indicators = {
         "RSI": {"enabled": True, "params": {"period": 14}},
@@ -44,6 +44,16 @@ def run_baseline(rows: int, iterations: int, cprofile_out: str) -> None:
 
     with track_time(tracker, "prepare_dataset"):
         ohlcv = make_synthetic_ohlcv(rows)
+
+    for _ in range(max(warmup, 0)):
+        run_backtest(
+            ohlcv=ohlcv,
+            symbol="SPY",
+            indicators=indicators,
+            blend_weights={"RSI": 0.5, "MACD": 0.5},
+            blend_method="weighted_sum",
+            initial_capital=100_000,
+        )
 
     for i in range(iterations):
         with track_time(tracker, "run_backtest"):
@@ -80,6 +90,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rows", type=int, default=2520, help="Number of business-day bars")
     parser.add_argument("--iterations", type=int, default=3, help="Backtest repeats for timing")
+    parser.add_argument("--warmup", type=int, default=1, help="Warmup runs before timing")
     parser.add_argument(
         "--cprofile-out",
         default="artifacts/perf/backtest_cprofile.txt",
@@ -91,4 +102,4 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = parse_args()
     Path(args.cprofile_out).parent.mkdir(parents=True, exist_ok=True)
-    run_baseline(rows=args.rows, iterations=args.iterations, cprofile_out=args.cprofile_out)
+    run_baseline(rows=args.rows, iterations=args.iterations, cprofile_out=args.cprofile_out, warmup=args.warmup)
