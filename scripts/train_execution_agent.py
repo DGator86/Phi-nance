@@ -1,4 +1,4 @@
-"""Train the RL execution policy using AReaL PPO when available."""
+"""Train the RL execution policy using AReaL PPO/SAC/TD3 when available."""
 
 from __future__ import annotations
 
@@ -9,43 +9,12 @@ from typing import Any, Dict
 
 import numpy as np
 import torch
-import torch.nn as nn
 import yaml
 
 from phinance.rl.execution_env import ExecutionEnv, ExecutionEnvConfig
+from phinance.rl.policy_networks import GaussianPolicy
 
 logger = logging.getLogger(__name__)
-
-
-class GaussianPolicy(nn.Module):
-    """Simple Gaussian MLP policy for two continuous actions."""
-
-    def __init__(self, obs_dim: int, hidden_size: int = 256) -> None:
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(obs_dim, hidden_size),
-            nn.Tanh(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.Tanh(),
-        )
-        self.mean_head = nn.Linear(hidden_size, 2)
-        self.log_std = nn.Parameter(torch.zeros(2))
-
-    def forward(self, state: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        x = self.net(state)
-        mean = torch.sigmoid(self.mean_head(x))
-        std = torch.exp(self.log_std).expand_as(mean)
-        return mean, std
-
-    def act(self, state: np.ndarray, deterministic: bool = False) -> np.ndarray:
-        with torch.no_grad():
-            tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
-            mean, std = self.forward(tensor)
-            if deterministic:
-                action = mean
-            else:
-                action = torch.normal(mean, std)
-        return torch.clamp(action.squeeze(0), 0.0, 1.0).cpu().numpy()
 
 
 def _load_config(path: Path) -> Dict[str, Any]:
@@ -62,47 +31,82 @@ def _build_env(config: Dict[str, Any]) -> ExecutionEnv:
 def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
     """Fallback mini trainer used when AReaL is not available."""
     env = _build_env(config)
-    policy = GaussianPolicy(obs_dim=env.observation_space.shape[0], hidden_size=config["model"]["hidden_size"])
-    episodes = int(config["training"]["episodes_smoke"])
+    model_cfg = config.get("model", {})
+    policy = GaussianPolicy(
+        obs_dim=env.observation_space.shape[0],
+        hidden_size=int(model_cfg.get("hidden_size", 256)),
+        architecture=str(model_cfg.get("architecture", "mlp")),
+        sequence_length=int(model_cfg.get("sequence_length", 16)),
+    )
+    episodes = int(config["training"].get("episodes_smoke", 5))
 
     for episode in range(episodes):
         state = env.reset()
         done = False
         total_reward = 0.0
         while not done:
-            action = policy.act(state, deterministic=False)
+            with torch.no_grad():
+                tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+                mean, std = policy(tensor)
+                action = torch.normal(mean, std)
+                action = torch.clamp(action.squeeze(0), 0.0, 1.0).cpu().numpy()
             state, reward, done, _ = env.step(action)
             total_reward += reward
         logger.info("Fallback episode %d reward=%0.5f", episode + 1, total_reward)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = output_dir / "latest.pt"
-    torch.save({"model_state_dict": policy.state_dict(), "obs_dim": env.observation_space.shape[0]}, checkpoint)
+    torch.save(
+        {
+            "model_state_dict": policy.state_dict(),
+            "obs_dim": env.observation_space.shape[0],
+            "action_dim": env.action_space.shape[0],
+            "architecture": str(model_cfg.get("architecture", "mlp")),
+            "sequence_length": int(model_cfg.get("sequence_length", 16)),
+        },
+        checkpoint,
+    )
     return checkpoint
 
 
 def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
-    """Train using AReaL AsyncTrainer + PPO."""
+    """Train using AReaL AsyncTrainer and selected algorithm."""
     try:
         from areal.rl import AsyncTrainer  # type: ignore
     except Exception as exc:  # pragma: no cover - depends on optional package
         raise RuntimeError("AReaL is not installed. Install it or run fallback smoke training.") from exc
 
     env = _build_env(config)
-    policy = GaussianPolicy(obs_dim=env.observation_space.shape[0], hidden_size=config["model"]["hidden_size"])
+    model_cfg = config.get("model", {})
+    training_cfg = config.get("training", {})
+    policy = GaussianPolicy(
+        obs_dim=env.observation_space.shape[0],
+        hidden_size=int(model_cfg.get("hidden_size", 256)),
+        architecture=str(model_cfg.get("architecture", "mlp")),
+        sequence_length=int(model_cfg.get("sequence_length", 16)),
+    )
     trainer = AsyncTrainer(
         env=env,
         policy=policy,
-        algorithm="ppo",
-        total_timesteps=int(config["training"]["total_timesteps"]),
-        learning_rate=float(config["training"]["learning_rate"]),
-        gamma=float(config["training"]["gamma"]),
+        algorithm=str(training_cfg.get("algorithm", "ppo")),
+        total_timesteps=int(training_cfg["total_timesteps"]),
+        learning_rate=float(training_cfg.get("learning_rate", 0.0003)),
+        gamma=float(training_cfg.get("gamma", 0.99)),
         tensorboard_log=str(output_dir / "tb"),
     )
     trainer.train()
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = output_dir / "latest.pt"
-    torch.save({"model_state_dict": policy.state_dict(), "obs_dim": env.observation_space.shape[0]}, checkpoint)
+    torch.save(
+        {
+            "model_state_dict": policy.state_dict(),
+            "obs_dim": env.observation_space.shape[0],
+            "action_dim": env.action_space.shape[0],
+            "architecture": str(model_cfg.get("architecture", "mlp")),
+            "sequence_length": int(model_cfg.get("sequence_length", 16)),
+        },
+        checkpoint,
+    )
     return checkpoint
 
 

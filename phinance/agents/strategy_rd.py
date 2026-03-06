@@ -20,9 +20,14 @@ class _PolicyWrapper:
         self.n_actions = int(payload["n_actions"])
         self.templates: List[Dict[str, Any]] = payload.get("templates", [])
 
-        from scripts.train_strategy_rd_agent import StrategyRDPolicy
+        from phinance.rl.policy_networks import CategoricalPolicy
 
-        model = StrategyRDPolicy(obs_dim=self.obs_dim, n_actions=self.n_actions)
+        model = CategoricalPolicy(
+            obs_dim=self.obs_dim,
+            n_actions=self.n_actions,
+            architecture=str(payload.get("architecture", "mlp")),
+            sequence_length=int(payload.get("sequence_length", 16)),
+        )
         model.load_state_dict(payload["model_state_dict"])
         model.eval()
         self.model = model

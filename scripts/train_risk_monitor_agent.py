@@ -8,27 +8,10 @@ from typing import Any, Dict
 
 import numpy as np
 import torch
-import torch.nn as nn
 import yaml
 
-from phinance.rl.risk_monitor_env import RiskMonitorEnv, RiskMonitorEnvConfig, RISK_PROFILES
-
-
-class RiskMonitorPolicy(nn.Module):
-    """Categorical MLP policy for discrete risk-profile actions."""
-
-    def __init__(self, obs_dim: int, n_actions: int, hidden_size: int = 256) -> None:
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(obs_dim, hidden_size),
-            nn.Tanh(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.Tanh(),
-            nn.Linear(hidden_size, n_actions),
-        )
-
-    def forward(self, state: torch.Tensor) -> torch.Tensor:
-        return self.net(state)
+from phinance.rl.policy_networks import CategoricalPolicy
+from phinance.rl.risk_monitor_env import RISK_PROFILES, RiskMonitorEnv, RiskMonitorEnvConfig
 
 
 def _load_config(path: Path) -> Dict[str, Any]:
@@ -44,10 +27,13 @@ def _build_env(config: Dict[str, Any]) -> RiskMonitorEnv:
 
 def train_with_fallback(config: Dict[str, Any], output_dir: Path) -> Path:
     env = _build_env(config)
-    policy = RiskMonitorPolicy(
+    model_cfg = config.get("model", {})
+    policy = CategoricalPolicy(
         obs_dim=env.observation_space.shape[0],
         n_actions=env.action_space.n,
-        hidden_size=config["model"].get("hidden_size", 256),
+        hidden_size=int(model_cfg.get("hidden_size", 256)),
+        architecture=str(model_cfg.get("architecture", "mlp")),
+        sequence_length=int(model_cfg.get("sequence_length", 16)),
     )
 
     episodes = int(config["training"].get("episodes_smoke", 5))
@@ -66,6 +52,8 @@ def train_with_fallback(config: Dict[str, Any], output_dir: Path) -> Path:
             "obs_dim": env.observation_space.shape[0],
             "n_actions": env.action_space.n,
             "profiles": RISK_PROFILES,
+            "architecture": str(model_cfg.get("architecture", "mlp")),
+            "sequence_length": int(model_cfg.get("sequence_length", 16)),
         },
         checkpoint,
     )
@@ -76,19 +64,23 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
     from areal.rl import AsyncTrainer  # type: ignore
 
     env = _build_env(config)
-    policy = RiskMonitorPolicy(
+    model_cfg = config.get("model", {})
+    training_cfg = config.get("training", {})
+    policy = CategoricalPolicy(
         obs_dim=env.observation_space.shape[0],
         n_actions=env.action_space.n,
-        hidden_size=config["model"].get("hidden_size", 256),
+        hidden_size=int(model_cfg.get("hidden_size", 256)),
+        architecture=str(model_cfg.get("architecture", "mlp")),
+        sequence_length=int(model_cfg.get("sequence_length", 16)),
     )
 
     trainer = AsyncTrainer(
         env=env,
         policy=policy,
-        algorithm=config["training"].get("algorithm", "ppo"),
-        total_timesteps=int(config["training"]["total_timesteps"]),
-        learning_rate=float(config["training"].get("learning_rate", 0.0003)),
-        gamma=float(config["training"].get("gamma", 0.99)),
+        algorithm=str(training_cfg.get("algorithm", "ppo")),
+        total_timesteps=int(training_cfg["total_timesteps"]),
+        learning_rate=float(training_cfg.get("learning_rate", 0.0003)),
+        gamma=float(training_cfg.get("gamma", 0.99)),
         tensorboard_log=str(output_dir / "tb"),
     )
     trainer.train()
@@ -101,6 +93,8 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
             "obs_dim": env.observation_space.shape[0],
             "n_actions": env.action_space.n,
             "profiles": RISK_PROFILES,
+            "architecture": str(model_cfg.get("architecture", "mlp")),
+            "sequence_length": int(model_cfg.get("sequence_length", 16)),
         },
         checkpoint,
     )
