@@ -1,0 +1,37 @@
+data_sources:
+  alpaca:
+    enabled: true
+    rate_limit: 200
+    rate_window_seconds: 60
+  yfinance:
+    enabled: true
+    rate_limit: 10
+    rate_window_seconds: 1
+  thetadata:
+    enabled: true
+    rate_limit: 5
+    rate_window_seconds: 1
+    daily_limit: 10000
+  fmp:
+    enabled: true
+    rate_limit: 250
+    rate_window_seconds: 86400
+    daily_limit: 250
+  fred:
+    enabled: true
+    rate_limit: 120
+    rate_window_seconds: 60
+
+cache_ttl_seconds:
+  bars: 3600
+  quotes: 10
+  options: 30
+  fundamentals: 86400
+  macro: 3600
+
+data_priorities:
+  bars: [alpaca, yfinance, fmp]
+  quotes: [alpaca]
+  options: [thetadata, yfinance]
+  fundamentals: [fmp, yfinance]
+  macro: [fred]

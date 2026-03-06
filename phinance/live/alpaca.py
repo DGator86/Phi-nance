@@ -281,3 +281,23 @@ class AlpacaBroker(BrokerAdapter):
     @property
     def is_paper(self) -> bool:
         return self._paper_mode
+
+
+class AlpacaDataSource:
+    """Small Alpaca market-data helper used by DataSourceManager."""
+
+    def __init__(self, broker: AlpacaBroker) -> None:
+        self.broker = broker
+
+    def fetch_quotes(self, symbol: str) -> dict:
+        bar = self.broker.get_latest_bar(symbol)
+        if bar is None:
+            raise RuntimeError(f"No bar returned for {symbol}")
+        return {
+            "symbol": symbol,
+            "close": float(bar.get("close", 0.0)),
+            "open": float(bar.get("open", 0.0)),
+            "high": float(bar.get("high", 0.0)),
+            "low": float(bar.get("low", 0.0)),
+            "volume": float(bar.get("volume", 0.0)),
+        }
