@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from phinance.ml.inference import TransformerFeatureExtractor
+from phinance.meta.vault_integration import load_discovered_templates
 from phinance.rl.strategy_rd_env import STATE_FEATURES, StrategyRDEnv
 
 
@@ -67,6 +68,8 @@ class StrategyRDAgent:
         policy_path: str = "models/strategy_rd_agent/latest.pt",
         use_transformer_embeddings: bool = False,
         transformer_model_path: str = "phinance/ml/checkpoints/transformer_latest.pt",
+        include_discovered: bool = True,
+        strategy_vault_path: str = "data/strategy_vault.json",
     ) -> None:
         self.policy: Optional[_PolicyWrapper] = None
         self.transformer: Optional[TransformerFeatureExtractor] = None
@@ -89,6 +92,14 @@ class StrategyRDAgent:
 
         # Phase 3: include predefined options templates in the action library.
         self.template_library.extend(OPTION_STRATEGY_TEMPLATES)
+        if include_discovered:
+            self.template_library.extend(load_discovered_templates(strategy_vault_path))
+
+    def load_discovered_strategies(self, strategy_vault_path: str = "data/strategy_vault.json") -> int:
+        """Load discovered strategies from vault and append to template library."""
+        discovered = load_discovered_templates(strategy_vault_path)
+        self.template_library.extend(discovered)
+        return len(discovered)
 
     def _build_state(self, market_state: Dict[str, float]) -> np.ndarray:
         regime = market_state.get("regime", "sideways")

@@ -6,9 +6,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict
 
+from phinance.meta.vault_integration import load_discovered_templates
 from phinance.rl.hierarchical.meta_agent import MetaAgent
 from phinance.rl.hierarchical.options import Option
 from phinance.rl.hierarchical.wrappers import build_default_options
+
+
+class _DiscoveredStrategyPolicy:
+    def __init__(self, template: Dict[str, Any]) -> None:
+        self.template = template
+
+    def act(self, state: Any, deterministic: bool = True) -> Dict[str, Any]:  # noqa: ARG002
+        return self.template
 
 
 @dataclass
@@ -25,9 +34,13 @@ class MetaOrchestrator:
         self,
         checkpoint: str | Path,
         options: list[Option] | None = None,
+        include_discovered_options: bool = False,
+        strategy_vault_path: str = "data/strategy_vault.json",
     ) -> None:
         self.meta_agent = MetaAgent.load(checkpoint)
         self.options = options or build_default_options({"use_rl": True})
+        if include_discovered_options:
+            self.options.extend(self._build_discovered_options(strategy_vault_path))
         self.current_option_idx = len(self.options) - 1
         self.option_elapsed = 0
         self.global_step = 0
@@ -68,3 +81,21 @@ class MetaOrchestrator:
             self.option_elapsed = 0
 
         return MetaDecision(option_name=option.name, option_index=idx, action=action)
+
+    def _build_discovered_options(self, strategy_vault_path: str) -> list[Option]:
+        templates = load_discovered_templates(strategy_vault_path)
+        discovered_options: list[Option] = []
+        for template in templates:
+            strategy_id = template.get("params", {}).get("strategy_id", "unknown")
+            discovered_options.append(
+                Option(
+                    name=f"discovered_{strategy_id}",
+                    policy=_DiscoveredStrategyPolicy(template),
+                    initiation_condition=lambda _ctx: True,
+                    termination_condition=lambda _ctx, _info: True,
+                    max_steps=1,
+                    can_interrupt=True,
+                    metadata={"source": "meta_gp"},
+                )
+            )
+        return discovered_options

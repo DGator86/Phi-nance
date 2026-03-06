@@ -39,3 +39,6 @@ thetadata>=0.9.11
 cachetools>=5.3.3
 sqlalchemy>=2.0.0
 financialmodelingprep>=0.0.2
+
+# Phase 4: genetic programming
+deap>=1.4.1
