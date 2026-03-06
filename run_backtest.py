@@ -18,8 +18,6 @@ from datetime import datetime
 # Suppress Lumibot credential checks by forcing backtesting mode
 os.environ["IS_BACKTESTING"] = "True"
 
-# os.environ["IS_BACKTESTING"] = "True" (moved or kept)
-# Wait, I'll just remove the line.
 from strategies.alpha_vantage_fixed import AlphaVantageFixedDataSource
 
 from strategies.bollinger import BollingerBands
@@ -47,6 +45,13 @@ STRATEGIES = {
 }
 
 
+def _positive_budget(value: str) -> float:
+    budget = float(value)
+    if budget <= 0:
+        raise argparse.ArgumentTypeError("--budget must be greater than 0")
+    return budget
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run a Lumibot backtest")
     parser.add_argument(
@@ -69,7 +74,7 @@ def parse_args():
     )
     parser.add_argument(
         "--budget",
-        type=float,
+        type=_positive_budget,
         default=100000,
         help="Starting cash budget (default: 100000)",
     )
@@ -86,7 +91,10 @@ def parse_args():
         default="minute",
         help="Backtest timestep (default: minute)",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.start >= args.end:
+        parser.error("--start must be earlier than --end")
+    return args
 
 
 def main():
