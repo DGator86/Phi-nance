@@ -1,0 +1,10 @@
+gp:
+  population_size: 20
+  generations: 5
+  tournament_size: 3
+  cxpb: 0.5
+  mutpb: 0.3
+  min_depth: 1
+  max_depth: 3
+  top_k: 5
+  random_seed: 42
