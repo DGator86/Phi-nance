@@ -1,0 +1,6 @@
+distributed:
+  enabled: false
+  use_ray: true
+  num_cpus: 4
+  address: auto
+  timeout_s: 120

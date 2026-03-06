@@ -21,10 +21,12 @@ from phinance.backtest.runner import run_backtest
 from phinance.backtest.vectorized import run_vectorized_backtest, VectorizedBacktestResult
 from phinance.backtest.walk_forward import WalkForwardHarness, WalkForwardConfig, WFOResult, run_walk_forward
 from phinance.backtest.portfolio import PortfolioBacktester, PortfolioConfig, PortfolioResult, run_portfolio_backtest
+from phinance.backtest.distributed_runner import DistributedBacktestRunner
 
 __all__ = [
     "BacktestResult", "Trade", "Position", "run_backtest",
     "run_vectorized_backtest", "VectorizedBacktestResult",
     "WalkForwardHarness", "WalkForwardConfig", "WFOResult", "run_walk_forward",
     "PortfolioBacktester", "PortfolioConfig", "PortfolioResult", "run_portfolio_backtest",
+    "DistributedBacktestRunner",
 ]

@@ -11,7 +11,8 @@ import numpy as np
 import pandas as pd
 from deap import base, creator, gp, tools
 
-from phinance.meta.fitness import GPFitnessEvaluator
+from phinance.backtest.distributed_runner import DistributedBacktestRunner
+from phinance.meta.fitness import build_fitness_evaluator
 from phinance.meta.primitives import build_feature_frame, build_primitive_set
 
 
@@ -26,6 +27,11 @@ class GPConfig:
     max_depth: int = 4
     top_k: int = 5
     random_seed: int | None = None
+    distributed_enabled: bool = False
+    distributed_num_cpus: int | None = None
+    distributed_address: str | None = None
+    distributed_use_ray: bool = True
+    distributed_timeout_s: float | None = None
 
 
 class GeneticStrategySearch:
@@ -53,7 +59,16 @@ class GeneticStrategySearch:
         toolbox.register("population", tools.initRepeat, list, toolbox.individual)
         toolbox.register("compile", gp.compile, pset=self.pset)
 
-        self.evaluator = GPFitnessEvaluator(ohlcv=ohlcv, primitive_context=self.context)
+        self.distributed_runner = DistributedBacktestRunner(
+            enabled=self.config.distributed_enabled,
+            use_ray=self.config.distributed_use_ray,
+            num_cpus=self.config.distributed_num_cpus,
+            address=self.config.distributed_address,
+            timeout_s=self.config.distributed_timeout_s,
+        )
+        runner = self.distributed_runner if self.distributed_runner.is_distributed else None
+        self.evaluator = build_fitness_evaluator(ohlcv=ohlcv, primitive_context=self.context, distributed_runner=runner)
+
         toolbox.register("evaluate", self.evaluator.evaluate, toolbox=toolbox)
         toolbox.register("select", tools.selTournament, tournsize=self.config.tournament_size)
         toolbox.register("mate", gp.cxOnePoint)
@@ -64,6 +79,18 @@ class GeneticStrategySearch:
         toolbox.decorate("mutate", gp.staticLimit(key=len, max_value=64))
 
         self.toolbox = toolbox
+
+    def _evaluate_invalid(self, individuals: List[gp.PrimitiveTree]) -> None:
+        if not individuals:
+            return
+
+        if hasattr(self.evaluator, "evaluate_population"):
+            fits = self.evaluator.evaluate_population(individuals, self.toolbox)
+        else:
+            fits = self.toolbox.map(self.toolbox.evaluate, individuals)
+
+        for ind, fit in zip(individuals, fits):
+            ind.fitness.values = fit
 
     def evolve(self) -> Dict[str, Any]:
         pop = self.toolbox.population(n=self.config.population_size)
@@ -76,9 +103,7 @@ class GeneticStrategySearch:
         history: List[Dict[str, float]] = []
 
         invalid = [ind for ind in pop if not ind.fitness.valid]
-        fits = self.toolbox.map(self.toolbox.evaluate, invalid)
-        for ind, fit in zip(invalid, fits):
-            ind.fitness.values = fit
+        self._evaluate_invalid(invalid)
 
         for gen in range(self.config.generations):
             offspring = self.toolbox.select(pop, len(pop))
@@ -96,9 +121,7 @@ class GeneticStrategySearch:
                     del mutant.fitness.values
 
             invalid = [ind for ind in offspring if not ind.fitness.valid]
-            fits = self.toolbox.map(self.toolbox.evaluate, invalid)
-            for ind, fit in zip(invalid, fits):
-                ind.fitness.values = fit
+            self._evaluate_invalid(invalid)
 
             pop[:] = offspring
             hall_of_fame.update(pop)
@@ -117,4 +140,5 @@ class GeneticStrategySearch:
                 }
             )
 
+        self.distributed_runner.shutdown()
         return {"history": history, "best_strategies": best, "feature_names": self.context.feature_names}
