@@ -68,6 +68,7 @@ def train_with_fallback_loop(
     output_dir: Path,
     world_model_path: Path | None = None,
     optim_cfg: Dict[str, Any] | None = None,
+    tracker: Any = None,
 ) -> Path:
     """Fallback mini trainer used when AReaL is not available."""
     optim_cfg = optim_cfg or {"rl_optimisation": {}}
@@ -84,7 +85,7 @@ def train_with_fallback_loop(
 
     model_cfg = config.get("model", {})
     training_cfg = config.get("training", {})
-    tracker = PerformanceTracker()
+    perf_tracker = PerformanceTracker()
     runtime_cfg = get_runtime_config(optim_cfg)
 
     policy = GaussianPolicy(
@@ -110,19 +111,19 @@ def train_with_fallback_loop(
 
     parallel_enabled = bool(optim_cfg.get("rl_optimisation", {}).get("parallel_rollouts", {}).get("enabled", False))
     for episode in range(episodes):
-        with track_time(tracker, "episode"):
+        with track_time(perf_tracker, "episode"):
             state = env.reset()
             done = False
             total_reward = 0.0
             while not done:
-                with track_time(tracker, "policy_forward"):
+                with track_time(perf_tracker, "policy_forward"):
                     with torch.no_grad():
                         tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
                         with autocast_context(runtime_cfg.mixed_precision, device.type):
                             mean, std = policy(tensor)
                             action = torch.normal(mean, std)
                             action = torch.clamp(action.squeeze(0), 0.0, 1.0).detach().cpu().numpy()
-                with track_time(tracker, "env_step"):
+                with track_time(perf_tracker, "env_step"):
                     next_state, reward, done, _ = env.step(action)
                 if buffer is not None:
                     buffer.add_batch(
@@ -133,9 +134,9 @@ def train_with_fallback_loop(
                         dones=np.asarray([done], dtype=np.float32),
                     )
                     if buffer.size >= int(buffer_cfg.get("batch_size", 128)):
-                        with track_time(tracker, "buffer_sample"):
+                        with track_time(perf_tracker, "buffer_sample"):
                             batch = buffer.sample(int(buffer_cfg.get("batch_size", 128)))
-                        with track_time(tracker, "optim_step"):
+                        with track_time(perf_tracker, "optim_step"):
                             optimizer.zero_grad(set_to_none=True)
                             sample_states = torch.tensor(batch.states, device=device)
                             with autocast_context(runtime_cfg.mixed_precision, device.type):
@@ -148,13 +149,15 @@ def train_with_fallback_loop(
                 state = next_state
                 total_reward += reward
             logger.info("Fallback episode %d reward=%0.5f", episode + 1, total_reward)
+            if tracker is not None:
+                tracker.log_metrics({"episode_reward": float(total_reward)}, step=episode + 1)
 
     if parallel_enabled:
-        with track_time(tracker, "ray_collect"):
+        with track_time(perf_tracker, "ray_collect"):
             collected = _run_parallel_collection(config, optim_cfg)
             logger.info("Ray collected %d transitions", int(collected["states"].shape[0]))
 
-    logger.info("Fallback optimisation profile:\n%s", tracker.as_markdown())
+    logger.info("Fallback optimisation profile:\n%s", perf_tracker.as_markdown())
     if buffer is not None:
         buffer.close()
 
@@ -178,6 +181,7 @@ def train_with_areal(
     output_dir: Path,
     world_model_path: Path | None = None,
     optim_cfg: Dict[str, Any] | None = None,
+    tracker: Any = None,
 ) -> Path:
     """Train using AReaL AsyncTrainer and selected algorithm."""
     try:
@@ -211,6 +215,8 @@ def train_with_areal(
         tensorboard_log=str(output_dir / "tb"),
     )
     trainer.train()
+    if tracker is not None:
+        tracker.log_metrics({"total_timesteps": float(training_cfg["total_timesteps"])})
 
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = output_dir / "latest.pt"
@@ -225,6 +231,46 @@ def train_with_areal(
         checkpoint,
     )
     return checkpoint
+
+
+def run_experiment_target(
+    config: str = "configs/execution_agent.yaml",
+    optim_config: str = "configs/rl_optimisation_config.yaml",
+    output: str = "models/execution_agent",
+    fallback: bool = True,
+    world_model_path: str | None = None,
+    tracker: Any = None,
+) -> Dict[str, float]:
+    """Experiment-runner target wrapper for execution-agent training."""
+    config_path = Path(config)
+    optim_config_path = Path(optim_config)
+    output_path = Path(output)
+    world_path = Path(world_model_path) if world_model_path else None
+
+    cfg = _load_config(config_path)
+    optim_cfg = load_optimisation_config(optim_config_path)
+    if tracker is not None:
+        tracker.log_params(
+            {
+                "config": str(config_path),
+                "optim_config": str(optim_config_path),
+                "fallback": bool(fallback),
+            }
+        )
+
+    if fallback:
+        checkpoint = train_with_fallback_loop(cfg, output_path, world_path, optim_cfg, tracker=tracker)
+    else:
+        checkpoint = train_with_areal(cfg, output_path, world_path, optim_cfg, tracker=tracker)
+
+    if tracker is not None:
+        tracker.log_artifact(str(checkpoint))
+
+    size_bytes = checkpoint.stat().st_size if checkpoint.exists() else 0
+    return {
+        "checkpoint_size_bytes": float(size_bytes),
+        "used_fallback": float(bool(fallback)),
+    }
 
 
 def main() -> None:

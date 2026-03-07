@@ -1,0 +1,12 @@
+name: "gp_discovery"
+tracking:
+  backend: "none"
+
+target: "phinance.experiment.dummy_targets:gp_discovery_target"
+params:
+  generations: 3
+
+data: {}
+tags:
+  author: "codex"
+  project: "gp"

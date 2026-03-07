@@ -1,0 +1,15 @@
+name: "backtest_spy"
+tracking:
+  backend: "none"
+
+target: "scripts.run_backtest:run_experiment_target"
+params:
+  strategy: "SmaCross"
+  symbol: "SPY"
+
+data:
+  start: "2022-01-01"
+  end: "2023-01-01"
+tags:
+  author: "codex"
+  project: "backtest"
