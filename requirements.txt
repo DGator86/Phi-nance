@@ -50,3 +50,7 @@ ray[default]>=2.30.0
 mlflow>=2.14.0
 # Optional backend
 wandb>=0.17.0
+
+matplotlib>=3.8
+jupyter>=1.0.0
+ipykernel>=6.29
