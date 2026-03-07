@@ -11,6 +11,7 @@ from typing import Any, Callable
 import pandas as pd
 
 from phinance.features.extractor import FeatureExtractor
+from phinance.data.optimised_cache import OptimisedCache
 from phinance.live.cache import PersistentCache
 from phinance.live.rate_limiter import RateLimiter
 from phinance.utils.logging import get_logger
@@ -43,6 +44,14 @@ class DataSourceManager:
         self.priorities: dict[str, list[str]] = config.get("data_priorities", {})
         self.cache_ttl: dict[str, float] = config.get("cache_ttl_seconds", {})
         self.feature_registry_path: Path | None = None
+        data_optim_cfg = config.get("data_optimisation", {})
+        mem_cfg = data_optim_cfg.get("in_memory_cache", {})
+        self.optimised_cache: OptimisedCache | None = None
+        if mem_cfg.get("enabled", False):
+            self.optimised_cache = OptimisedCache(
+                max_size_mb=int(mem_cfg.get("max_size_mb", 1024)),
+                default_ttl_seconds=float(mem_cfg.get("ttl_seconds", 300)),
+            )
         self.feature_window = int(config.get("feature_window", 32))
         self.feature_extractor: FeatureExtractor | None = None
 
@@ -111,7 +120,7 @@ class DataSourceManager:
                 continue
 
             cache_key = self._cache_key(source, data_type, **cache_params)
-            cached = self.cache.get(cache_key)
+            cached = self._get_cached(cache_key)
             if cached is not None:
                 return cached
 
@@ -123,6 +132,8 @@ class DataSourceManager:
                 payload = self.sources[source][data_type](**kwargs)
                 ttl = self.cache_ttl.get(data_type, 300)
                 self.cache.set(cache_key, payload, expiry_seconds=ttl)
+                if self.optimised_cache is not None:
+                    self.optimised_cache.set(cache_key, payload, ttl_seconds=float(ttl))
                 self.usage[source] += 1
                 self.usage_daily[source] += 1
                 self._mark_success(source)
@@ -136,6 +147,14 @@ class DataSourceManager:
         if last_error:
             raise RuntimeError(f"All sources exhausted for {data_type}: {last_error}")
         raise RuntimeError(f"All sources exhausted for {data_type}")
+
+
+    def _get_cached(self, cache_key: str) -> Any | None:
+        if self.optimised_cache is not None:
+            cached = self.optimised_cache.get(cache_key)
+            if cached is not None:
+                return cached
+        return self.cache.get(cache_key)
 
     def usage_snapshot(self) -> dict[str, dict[str, Any]]:
         snapshot: dict[str, dict[str, Any]] = {}
@@ -159,12 +178,21 @@ class DataSourceManager:
         """Compute discovered features using configured registry, if available."""
         if self.feature_extractor is None:
             return {"features": [], "dim": 0, "enabled": False}
+        if self.optimised_cache is not None:
+            feature_key = ("features", market_data.index.min(), market_data.index.max(), len(market_data))
+            cached_features = self.optimised_cache.get(feature_key)
+            if cached_features is not None:
+                return cached_features
+
         values = self.feature_extractor.extract(market_data)
-        return {
+        payload = {
             "features": values.tolist(),
             "dim": int(values.shape[0]),
             "enabled": True,
         }
+        if self.optimised_cache is not None:
+            self.optimised_cache.set(feature_key, payload)
+        return payload
 
     def _mark_success(self, source: str) -> None:
         self.status[source].health = "ok"
