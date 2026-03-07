@@ -773,12 +773,26 @@ def render_backtest_controls(config):
         exit_strat = c3.selectbox("Exit strategy", EXIT_STRATEGIES, key="bt_exit")
         return {"allow_short": allow_short, "position_sizing": pos_sizing, "exit_strategy": exit_strat}
     else:
-        st.caption("Options mode: Long Call/Put with delta-based simulation.")
+        st.warning("Options mode currently supports a single symbol and a single European option contract.")
+        option_type = st.radio("Option Type", ["call", "put"], horizontal=True, key="opt_type")
         c1, c2, c3 = st.columns(3)
-        strat_type = c1.selectbox("Strategy", ["long_call", "long_put"], key="opt_strat")
-        exit_profit = c2.slider("Exit profit %", 0.2, 1.0, 0.5, 0.1, key="opt_exit_profit")
-        exit_stop = c3.slider("Exit stop %", -0.5, -0.1, -0.3, 0.05, key="opt_exit_stop")
-        opts = {"strategy_type": strat_type, "exit_profit_pct": exit_profit, "exit_stop_pct": exit_stop}
+        strike = c1.number_input("Strike", min_value=0.01, value=100.0, step=1.0, key="opt_strike")
+        expiry = c2.date_input("Expiry", value=config.get("end", datetime.now()).date(), key="opt_expiry")
+        multiplier = c3.number_input("Multiplier", min_value=1, value=100, step=1, key="opt_multiplier")
+
+        c4, c5 = st.columns(2)
+        iv = c4.number_input("Implied Volatility", min_value=0.1, max_value=1.0, value=0.3, step=0.01, key="opt_iv")
+        r = c5.number_input("Risk-Free Rate", min_value=0.0, max_value=0.2, value=0.02, step=0.005, key="opt_r")
+
+        opts = {
+            "option_type": option_type,
+            "strike": float(strike),
+            "expiry": expiry,
+            "multiplier": int(multiplier),
+            "iv": float(iv),
+            "r": float(r),
+            "quantity": 1,
+        }
         st.session_state["bt_options_controls"] = opts
         return opts
 
@@ -1572,7 +1586,12 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
         "blend_weights": blend_weights,
         "phiai_enabled": bool(st.session_state.get("phiai_full", False)),
         "evaluation_metric": st.session_state.get("wb_eval_metric", "roi"),
+        "option_params": {},
     }
+    if config.get("trading_mode", "equities") == "options":
+        bt_opts = st.session_state.get("bt_options_controls", {})
+        symbol = run_payload["symbols"][0] if run_payload["symbols"] else "SPY"
+        run_payload["option_params"] = {symbol: bt_opts}
 
     try:
         from phi.run_config import RunConfig
@@ -1646,17 +1665,14 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
                     ohlcv = dfs.get(sym)
                     if ohlcv is None or ohlcv.empty:
                         raise ValueError("No data for options backtest. Fetch first.")
-                    bt_opts = st.session_state.get("bt_options_controls", {})
                     # pylint: disable=import-outside-toplevel
                     from phi.options import run_options_backtest
-                    opt_result[0] = run_options_backtest(
-                        ohlcv, symbol=sym,
-                        strategy_type=bt_opts.get("strategy_type", "long_call"),
-                        initial_capital=config.get("initial_capital", 100_000),
-                        position_pct=0.1,
-                        exit_profit_pct=bt_opts.get("exit_profit_pct", 0.5),
-                        exit_stop_pct=bt_opts.get("exit_stop_pct", -0.3),
-                    )
+                    from phi.run_config import RunConfig
+
+                    cfg = st.session_state.get("validated_run_config")
+                    if not isinstance(cfg, RunConfig):
+                        raise ValueError("Validated run config missing for options mode.")
+                    opt_result[0] = run_options_backtest(cfg, ohlcv)
                 except Exception as e:  # pylint: disable=broad-except
                     opt_exc[0] = e
 
