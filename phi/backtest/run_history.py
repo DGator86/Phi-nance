@@ -21,9 +21,11 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from phi.config import settings
+
 from .run_config import RunConfig
 
-RUNS_ROOT = Path(__file__).parents[2] / "runs"
+RUNS_ROOT = settings.RUNS_DIR
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +33,7 @@ RUNS_ROOT = Path(__file__).parents[2] / "runs"
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _run_dir(run_id: str) -> Path:
+    RUNS_ROOT.mkdir(parents=True, exist_ok=True)
     return RUNS_ROOT / run_id
 
 

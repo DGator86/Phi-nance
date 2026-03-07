@@ -26,11 +26,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from phi.config import settings
+
 _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-_LEARNED_DIR = _ROOT / "data_cache" / "learned_params"
+_LEARNED_DIR = settings.DATA_CACHE_DIR / "learned_params"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Strategy catalogue — mirrors INDICATOR_CATALOG in live_workbench.py

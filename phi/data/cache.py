@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from json import JSONDecodeError
@@ -18,14 +17,16 @@ import requests
 from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 import logging
+from phi.config import settings
 from phi.logging import get_logger
 
 logger = get_logger(__name__)
 
-DATA_CACHE_ROOT = Path(os.getenv("DATA_CACHE_ROOT", "./data_cache"))
-DATA_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-# Compatibility alias used by other modules.
-_DATA_CACHE_ROOT = DATA_CACHE_ROOT
+DATA_CACHE_DIR = settings.DATA_CACHE_DIR
+DATA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Compatibility aliases used by other modules.
+DATA_CACHE_ROOT = DATA_CACHE_DIR
+_DATA_CACHE_ROOT = DATA_CACHE_DIR
 
 
 class DataFetchError(RuntimeError):
@@ -114,7 +115,7 @@ class DataCache:
     """Parquet cache manager for OHLCV and options-chain datasets."""
 
     def __init__(self, root: Optional[Path] = None) -> None:
-        self.root = root or DATA_CACHE_ROOT
+        self.root = root or DATA_CACHE_DIR
         self.root.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
@@ -411,7 +412,7 @@ def _normalize_option_date(requested: Optional[str], expirations: List[str]) -> 
 def fetch_options_chain(symbol: str, date: Optional[str] = None, vendor: str = "yfinance") -> pd.DataFrame:
     """Fetch and cache options chain for a symbol and expiration date.
 
-    Cached at: ``data_cache/options/{symbol}/{date}/chain.parquet``.
+    Cached at: ``{DATA_CACHE_DIR}/options/{symbol}/{date}/chain.parquet``.
     """
     vendor_key = vendor.lower().replace("-", "_").replace(" ", "")
     if vendor_key not in {"yfinance", "yf"}:
@@ -431,7 +432,7 @@ def fetch_options_chain(symbol: str, date: Optional[str] = None, vendor: str = "
     puts["expiration"] = expiry
 
     combined = pd.concat([calls, puts], ignore_index=True)
-    cache_dir = DATA_CACHE_ROOT / "options" / symbol.upper() / expiry
+    cache_dir = DATA_CACHE_DIR / "options" / symbol.upper() / expiry
     cache_dir.mkdir(parents=True, exist_ok=True)
     out_path = cache_dir / "chain.parquet"
     combined.to_parquet(out_path, index=False)
@@ -440,7 +441,7 @@ def fetch_options_chain(symbol: str, date: Optional[str] = None, vendor: str = "
 
 def get_cached_options(symbol: str, date: str) -> Optional[pd.DataFrame]:
     """Load cached options chain for ``symbol`` and expiration ``date``."""
-    path = DATA_CACHE_ROOT / "options" / symbol.upper() / str(date) / "chain.parquet"
+    path = DATA_CACHE_DIR / "options" / symbol.upper() / str(date) / "chain.parquet"
     if not path.exists():
         return None
     try:
