@@ -77,3 +77,14 @@ def my_function(..., tracker=None) -> dict[str, float]:
 ```
 
 Existing scripts remain backward compatible because `tracker` is optional.
+
+
+## Hyperparameter sweeps
+
+Use sweep configs under `configs/sweeps/` and run:
+
+```bash
+python scripts/run_sweep.py --config configs/sweeps/gp_discovery_sweep.yaml
+```
+
+See `docs/hyperparameter_sweeps.md` for config schema, search-space types, and MLflow sweep analysis workflow.

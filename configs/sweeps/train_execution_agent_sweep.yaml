@@ -1,0 +1,40 @@
+name: execution_agent_sweep
+description: Grid search over execution agent hyperparameters
+tracking:
+  backend: none
+  uri: ./mlruns
+
+target: train_execution_agent
+params:
+  timesteps: 1000
+  learning_rate: 0.0003
+  batch_size: 64
+  seed: 42
+
+data:
+  symbols:
+    - SPY
+
+search_space:
+  params.learning_rate:
+    type: choice
+    values: [0.0001, 0.0003, 0.001]
+  params.batch_size:
+    type: choice
+    values: [32, 64, 128]
+  params.seed:
+    type: int
+    low: 42
+    high: 44
+  data.symbols:
+    type: choice
+    values:
+      - [SPY]
+      - [QQQ]
+      - [SPY, QQQ]
+
+sweep:
+  method: grid
+  parallel: 2
+  objective_metric: sharpe
+  objective_mode: max

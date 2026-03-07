@@ -16,6 +16,9 @@ class MLflowTracker(ExperimentTracker):
         tracking_uri: str | None = None,
         run_name: str | None = None,
         tags: dict[str, str] | None = None,
+        nested: bool = False,
+        parent_run_id: str | None = None,
+        **_: Any,
     ) -> None:
         try:
             import mlflow
@@ -26,7 +29,10 @@ class MLflowTracker(ExperimentTracker):
         if tracking_uri:
             self._mlflow.set_tracking_uri(tracking_uri)
         self._mlflow.set_experiment(experiment_name)
-        self._run = self._mlflow.start_run(run_name=run_name)
+        if parent_run_id:
+            self._run = self._mlflow.start_run(run_name=run_name, nested=nested, parent_run_id=parent_run_id)
+        else:
+            self._run = self._mlflow.start_run(run_name=run_name, nested=nested)
         if tags:
             self.set_tags(tags)
 
