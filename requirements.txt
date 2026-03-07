@@ -58,3 +58,4 @@ ipykernel>=6.29
 fasteners>=0.19
 tenacity>=8.2.3
 pandera>=0.20.0
+optuna>=3.6.0

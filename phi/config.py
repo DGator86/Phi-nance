@@ -23,6 +23,9 @@ class Settings:
     RUNS_DIR: Path = Path(os.getenv("RUNS_DIR", "./runs"))
     LOGS_DIR: Path = Path(os.getenv("LOGS_DIR", "./logs"))
     DEBUG: bool = _env_bool("DEBUG", default=False)
+    PHIAI_DEFAULT_N_TRIALS: int = int(os.getenv("PHIAI_DEFAULT_N_TRIALS", "100"))
+    PHIAI_PARALLEL_JOBS: int = int(os.getenv("PHIAI_PARALLEL_JOBS", "1"))
+    PHIAI_WALK_FORWARD_WINDOWS: int = int(os.getenv("PHIAI_WALK_FORWARD_WINDOWS", "3"))
 
     @property
     def DATA_CACHE_ROOT(self) -> Path:

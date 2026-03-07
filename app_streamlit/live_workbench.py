@@ -755,6 +755,10 @@ def render_phiai():
         c1, c2 = st.columns(2)
         c1.number_input("Max indicators", 1, 10, 5, key="phiai_max")
         c2.checkbox("No shorting", value=True, key="phiai_noshort")
+        o1, o2, o3 = st.columns(3)
+        o1.number_input("Optimization trials", min_value=1, max_value=1000, value=100, step=1, key="phiai_n_trials")
+        o2.number_input("Walk-forward windows", min_value=1, max_value=20, value=3, step=1, key="phiai_walk_forward_windows")
+        o3.number_input("Parallel jobs", min_value=1, max_value=16, value=1, step=1, key="phiai_parallel_jobs")
     return phiai_full
 
 
@@ -1603,6 +1607,9 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
         "blend_method": blend_method,
         "blend_weights": blend_weights,
         "phiai_enabled": bool(st.session_state.get("phiai_full", False)),
+        "phiai_n_trials": int(st.session_state.get("phiai_n_trials", 100)),
+        "phiai_walk_forward_windows": int(st.session_state.get("phiai_walk_forward_windows", 3)),
+        "phiai_parallel_jobs": int(st.session_state.get("phiai_parallel_jobs", 1)),
         "evaluation_metric": st.session_state.get("wb_eval_metric", "roi"),
         "option_params": {},
     }
@@ -1650,7 +1657,13 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
                 if _ohlcv is not None and len(_ohlcv) > 100:
                     from phi.phiai import run_phiai_optimization
                     phiai_result[0] = run_phiai_optimization(
-                        _ohlcv, indicators_to_use, max_iter_per_indicator=15
+                        ohlcv=_ohlcv,
+                        indicators_config=indicators_to_use,
+                        run_config=validated_cfg,
+                        n_trials=int(st.session_state.get("phiai_n_trials", 100)),
+                        walk_forward_windows=int(st.session_state.get("phiai_walk_forward_windows", 3)),
+                        parallel_jobs=int(st.session_state.get("phiai_parallel_jobs", 1)),
+                        metric=str(st.session_state.get("wb_eval_metric", "sharpe")),
                     )
             except Exception as ex:
                 phiai_exc[0] = ex
@@ -1664,8 +1677,9 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
             phiai_progress.progress(pct / 100, text=f"PhiAI optimizing... {pct}%")
         if phiai_exc[0]:
             st.warning(f"PhiAI skipped: {phiai_exc[0]}")
-        elif (r := phiai_result[0]) is not None and isinstance(r, (list, tuple)) and len(r) == 2:
-            indicators_to_use, phiai_explanation = r
+        elif (r := phiai_result[0]) is not None and isinstance(r, dict):
+            indicators_to_use = r.get("optimized_indicators", indicators_to_use)
+            phiai_explanation = r.get("explanation", "")
         phiai_progress.progress(1.0, text="PhiAI complete!")
         time.sleep(0.3)
         phiai_progress.empty()
