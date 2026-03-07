@@ -1,0 +1,22 @@
+name: "execution_agent_test"
+description: "Smoke-test execution agent training with experiment tracking"
+tracking:
+  backend: "none"
+  uri: "./mlruns"
+
+target: "train_execution_agent"
+params:
+  config: "configs/execution_agent.yaml"
+  optim_config: "configs/rl_optimisation_config.yaml"
+  output: "models/execution_agent"
+  fallback: true
+
+data:
+  symbols: ["SPY"]
+  start: "2020-01-01"
+  end: "2023-12-31"
+  timeframe: "1D"
+
+tags:
+  author: "codex"
+  project: "execution"

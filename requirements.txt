@@ -45,3 +45,8 @@ financialmodelingprep>=0.0.2
 deap>=1.4.1
 
 ray[default]>=2.30.0
+
+# Experiment tracking
+mlflow>=2.14.0
+# Optional backend
+wandb>=0.17.0

@@ -1,0 +1,13 @@
+name: "strategy_rd_train"
+tracking:
+  backend: "none"
+
+target: "scripts.train_strategy_rd_agent:run_experiment_target"
+params:
+  config: "configs/strategy_rd_agent.yaml"
+  output: "models/strategy_rd"
+
+data: {}
+tags:
+  author: "codex"
+  project: "strategy_rd"
