@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -12,7 +11,9 @@ from typing import Any, Dict, List, Literal, Optional
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-logger = logging.getLogger(__name__)
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _RUNS_ROOT = _PROJECT_ROOT / "runs"
@@ -116,6 +117,7 @@ class RunConfig(BaseModel):
                     )
                 total = sum(float(v) for v in self.blend_weights.values())
                 if abs(total - 1.0) > 1e-6:
+                    logger.warning("blend_weights sum is %.6f (expected 1.0)", total)
                     raise ValueError("blend_weights values must sum to 1.0")
 
         if self.trading_mode == "options":
@@ -157,6 +159,7 @@ class RunConfig(BaseModel):
             end = migrated.pop("end")
             migrated["end_date"] = end.date().isoformat() if hasattr(end, "date") else str(end)
         migrated.setdefault("schema_version", 1)
+        logger.info("Migrated legacy RunConfig payload from v0 to v1")
         return migrated
 
     @classmethod
@@ -174,8 +177,8 @@ class RunConfig(BaseModel):
             cfg = cls.model_validate(payload)
             logger.info("Loaded RunConfig from %s (schema v%s)", filepath, cfg.schema_version)
             return cfg
-        except ValidationError:
-            logger.warning("RunConfig validation failed for %s", filepath, exc_info=True)
+        except ValidationError as exc:
+            logger.warning("RunConfig validation failed for %s: %s", filepath, exc, exc_info=True)
             raise
 
     @classmethod

@@ -10,10 +10,13 @@ import numpy as np
 import pandas as pd
 
 from phi.run_config import RunConfig
+from phi.logging import get_logger
 
 from .contract import OptionContract, OptionType
 from .position import OptionPosition
 from .pricing import black_scholes_price, delta, gamma, theta, vega
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -105,6 +108,7 @@ def run_options_backtest(
 
 
 def _run_from_config(config: RunConfig, data: pd.DataFrame) -> Dict[str, Any]:
+    logger.info("Starting options backtest for symbols=%s from %s to %s", config.symbols, config.start_date, config.end_date)
     if data is None or data.empty:
         raise ValueError("data must contain underlying OHLCV history")
     if len(config.symbols) != 1:
@@ -125,6 +129,8 @@ def _run_from_config(config: RunConfig, data: pd.DataFrame) -> Dict[str, Any]:
         multiplier=int(params.get("multiplier", 100)),
     )
     iv = float(params.get("iv", 0.3))
+    if iv <= 0 or iv > 5:
+        logger.warning("IV %.4f for %s is outside expected range (0, 5]", iv, symbol)
     r = float(params.get("r", 0.02))
     quantity = int(params.get("quantity", 1))
 
@@ -141,9 +147,11 @@ def _run_from_config(config: RunConfig, data: pd.DataFrame) -> Dict[str, Any]:
             premium = black_scholes_price(price, contract.strike, contract.time_to_expiry(as_of), r, iv, contract.option_type)
             total_cost = premium * quantity * contract.multiplier
             if cash < total_cost:
+                logger.error("Insufficient capital: cash=%s required=%s", cash, total_cost)
                 raise ValueError("insufficient capital to open options position")
             cash -= total_cost
             position = OptionPosition(contract=contract, quantity=quantity, entry_cost=total_cost)
+            logger.info("Opened %s position: symbol=%s strike=%.2f expiry=%s qty=%d premium=%.4f", contract.option_type.value, symbol, contract.strike, contract.expiry, quantity, premium)
             trade_log.append({"date": as_of.isoformat(), "action": "buy", "price": premium, "value": total_cost})
 
         position_value = position.mark_to_market(price, as_of, r, iv) if position else 0.0
@@ -153,11 +161,13 @@ def _run_from_config(config: RunConfig, data: pd.DataFrame) -> Dict[str, Any]:
             intrinsic = max(price - contract.strike, 0.0) if contract.option_type == OptionType.CALL else max(contract.strike - price, 0.0)
             settlement = intrinsic * position.quantity * contract.multiplier
             cash += settlement
+            logger.info("Settled option at expiry: symbol=%s intrinsic=%.4f settlement=%.4f", symbol, intrinsic, settlement)
             trade_log.append({"date": as_of.isoformat(), "action": "expiry", "price": intrinsic, "value": settlement})
             position = None
 
     final_value = cash + (position.mark_to_market(float(close.iloc[-1]), _to_date(close.index[-1]), r, iv) if position else 0.0)
     metrics = _compute_metrics(portfolio_values, config.initial_capital)
+    logger.info("Completed options backtest for %s: final_value=%.2f trades=%d", symbol, final_value, len(trade_log))
     return {
         "portfolio_value": portfolio_values,
         "final_value": final_value,

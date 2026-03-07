@@ -23,6 +23,7 @@ import time
 import threading
 import importlib
 import warnings
+import traceback
 from pathlib import Path
 from datetime import date, datetime
 
@@ -43,9 +44,13 @@ if str(_ROOT) not in sys.path:
 os.environ.setdefault("IS_BACKTESTING", "True")
 
 from app_streamlit.device_detect import detect_device, get_device, inject_responsive_meta, _JS_DETECT
+from phi.config import settings
+from phi.logging import get_logger, setup_logging
 from phi.utils.updater import UpdateManager
 
 load_dotenv()
+setup_logging("phi")
+logger = get_logger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Indicator catalog (maps to strategies)
@@ -63,6 +68,15 @@ except (BrokenPipeError, OSError):
 # Premium CSS + HTML Components
 # ---------------------------------------------------------------------------
 _CSS_PATH = _ROOT / ".streamlit" / "styles.css"
+
+
+def _render_user_error(context: str, exc: Exception) -> None:
+    """Render friendly error text and optional debug traceback."""
+    logger.exception("%s failed", context)
+    st.error(f"{context} failed. Please check inputs/data source and try again.")
+    if settings.DEBUG:
+        with st.expander("Debug details"):
+            st.code("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)), language="text")
 
 
 def _inject_css():
@@ -585,7 +599,11 @@ def render_dataset_builder():
                     if df is not None and not df.empty:
                         dfs[sym] = df
                 except Exception as e:
-                    st.error(f"{sym}: {e}")
+                    logger.exception("Dataset load failed for %s", sym)
+                    st.error(f"{sym}: unable to load dataset from {vendor_key}.")
+                    if settings.DEBUG:
+                        with st.expander(f"Debug details ({sym})"):
+                            st.code("".join(traceback.format_exception(type(e), e, e.__traceback__)), language="text")
 
         if dfs:
             st.session_state["workbench_dataset"] = dfs
@@ -1696,7 +1714,7 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
             else:
                 st.error("No results returned.")
         except Exception as e:  # pylint: disable=broad-exception-caught
-            st.error(str(e))
+            _render_user_error("Options backtest", e)
         return
 
     # Equities backtest — direct vectorized path (no Lumibot)
@@ -1800,8 +1818,7 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         progress.empty()
-        st.error(str(e))
-        st.exception(e)
+        _render_user_error("Equities backtest", e)
 
 
 def _wrap_options_result(opt_result):

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 import subprocess
 import sys
@@ -26,8 +25,9 @@ except ImportError:  # pragma: no cover
 
 from phinence.store.parquet_store import ParquetBarStore, check_no_gap_more_than_n_bars
 from phi.data import DataFetchError, fetch_and_cache
+from phi.logging import get_logger, setup_logging
 
-LOGGER = logging.getLogger("setup_data_spine")
+LOGGER = get_logger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -165,14 +165,13 @@ def _prefetch_daily_cache(tickers: list[str], sample_only: bool) -> None:
                 )
             else:
                 LOGGER.warning("Prefetch failed for %s: %s", ticker.upper(), exc)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.exception("Unexpected prefetch error for %s", ticker.upper())
 
 
 def main() -> int:
     args = parse_args()
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(message)s",
-    )
+    setup_logging(log_level="DEBUG" if args.verbose else None)
 
     _load_env()
 
