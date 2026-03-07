@@ -32,7 +32,7 @@ def test_mlflow_tracker_with_mocked_mlflow(monkeypatch: pytest.MonkeyPatch, tmp_
     dummy = types.SimpleNamespace(
         set_tracking_uri=lambda uri: None,
         set_experiment=lambda name: None,
-        start_run=lambda run_name=None: DummyRun(),
+        start_run=lambda run_name=None, nested=False, parent_run_id=None: DummyRun(),
         log_params=lambda p: calls.__setitem__("params", p),
         log_metrics=lambda m, step=None: calls.__setitem__("metrics", (m, step)),
         log_artifact=lambda p: None,
