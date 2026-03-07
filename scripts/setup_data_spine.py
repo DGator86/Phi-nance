@@ -25,6 +25,7 @@ except ImportError:  # pragma: no cover
     load_dotenv = None
 
 from phinence.store.parquet_store import ParquetBarStore, check_no_gap_more_than_n_bars
+from phi.data import DataFetchError, fetch_and_cache
 
 LOGGER = logging.getLogger("setup_data_spine")
 
@@ -147,6 +148,25 @@ def _verify_data(data_root: Path, tickers: list[str], max_gap: int) -> bool:
     return all_ok
 
 
+def _prefetch_daily_cache(tickers: list[str], sample_only: bool) -> None:
+    """Best-effort daily OHLCV prefetch with graceful error handling."""
+    end = pd.Timestamp.utcnow().date()
+    start = end - pd.Timedelta(days=30)
+    for ticker in tickers:
+        try:
+            fetch_and_cache("yfinance", ticker.upper(), "1D", str(start), str(end))
+            LOGGER.info("Prefetched daily cache for %s", ticker.upper())
+        except (DataFetchError, ValueError) as exc:
+            if sample_only:
+                LOGGER.warning(
+                    "Prefetch failed for %s, continuing because --sample-only is enabled: %s",
+                    ticker.upper(),
+                    exc,
+                )
+            else:
+                LOGGER.warning("Prefetch failed for %s: %s", ticker.upper(), exc)
+
+
 def main() -> int:
     args = parse_args()
     logging.basicConfig(
@@ -172,6 +192,7 @@ def main() -> int:
 
     if args.sample_only:
         LOGGER.info("--sample-only enabled; skipping API population")
+        _prefetch_daily_cache(args.tickers, sample_only=True)
     elif not (bars_has_data and short_has_data):
         if polygon_or_massive or tradier_token:
             phase2_ok = _run_phase2(args)
@@ -179,6 +200,7 @@ def main() -> int:
                 LOGGER.warning("Phase 2 command failed after retries")
         else:
             LOGGER.warning("No Polygon/Massive or Tradier key detected; API population skipped")
+            _prefetch_daily_cache(args.tickers, sample_only=False)
 
     bars_has_data = _has_parquet_files(bars_root)
     short_has_data = _has_parquet_files(short_root)
