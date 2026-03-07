@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import os
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
@@ -18,7 +17,10 @@ import pandera as pa
 import requests
 from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-logger = logging.getLogger(__name__)
+import logging
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
 
 DATA_CACHE_ROOT = Path(os.getenv("DATA_CACHE_ROOT", "./data_cache"))
 DATA_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -28,6 +30,10 @@ _DATA_CACHE_ROOT = DATA_CACHE_ROOT
 
 class DataFetchError(RuntimeError):
     """Raised when vendor fetch or cache persistence fails."""
+
+
+class CacheCorruptedError(DataFetchError):
+    """Raised when cached parquet/metadata payload is missing or malformed."""
 
 
 OHLCV_SCHEMA = pa.DataFrameSchema(
@@ -160,7 +166,10 @@ class DataCache:
             return pd.read_parquet(path)
         except (FileNotFoundError, OSError, ValueError, TypeError) as exc:
             logger.warning("Cache load failed for %s: %s", path, exc)
-            return None
+            raise CacheCorruptedError(f"Cache read failed for {path}: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Unexpected error while loading cache %s", path)
+            raise CacheCorruptedError(f"Unexpected cache read error for {path}: {exc}") from exc
 
     def save(
         self,
@@ -190,9 +199,16 @@ class DataCache:
             }
         )
 
-        with _file_lock(lock_path):
-            df.to_parquet(path, index=True)
-            meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        try:
+            with _file_lock(lock_path):
+                df.to_parquet(path, index=True)
+                meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        except (TimeoutError, OSError, ValueError, TypeError) as exc:
+            logger.error("Failed to persist cache dataset %s: %s", path, exc)
+            raise DataFetchError(f"Failed to persist cache dataset {path}: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Unexpected cache persistence error for %s", path)
+            raise DataFetchError(f"Unexpected cache persistence error for {path}: {exc}") from exc
 
         logger.info("Saved cache dataset %s and metadata %s", path, meta_path)
         return path
@@ -308,9 +324,12 @@ def fetch_and_cache(
         if not meta_path.exists():
             logger.warning("Metadata sidecar missing for %s; cache considered corrupted", cache_path)
         elif not is_cache_stale(cache_path, timeframe):
-            cached = cache.load(vendor, symbol_u, timeframe, start_s, end_s)
-            if cached is not None:
-                return cached
+            try:
+                cached = cache.load(vendor, symbol_u, timeframe, start_s, end_s)
+                if cached is not None:
+                    return cached
+            except CacheCorruptedError as exc:
+                logger.warning("Corrupted cache detected for %s/%s, forcing refresh: %s", vendor, symbol_u, exc)
 
     fetcher = _get_fetcher(vendor)
     logger.info("Cache miss/stale; fetching %s %s %s %s-%s", vendor, symbol_u, timeframe, start_s, end_s)
@@ -318,6 +337,7 @@ def fetch_and_cache(
     try:
         fetched = _fetch_with_retry(fetcher, symbol_u, start_s, end_s)
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Failed to fetch data for %s/%s", vendor, symbol_u)
         raise DataFetchError(f"Failed to fetch data for {vendor}/{symbol_u} after retries: {exc}") from exc
 
     validated = _validate_ohlcv(fetched, symbol_u, vendor)
@@ -331,7 +351,10 @@ def fetch_and_cache(
     }
     try:
         cache.save(validated, vendor, symbol_u, timeframe, start_s, end_s, metadata=metadata)
+    except DataFetchError:
+        raise
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Unexpected cache save failure for %s/%s", vendor, symbol_u)
         raise DataFetchError(f"Failed to write cache for {vendor}/{symbol_u}: {exc}") from exc
 
     return validated
@@ -349,7 +372,11 @@ def auto_fetch_and_cache(
 
 def get_cached_dataset(vendor: str, symbol: str, timeframe: str, start: str, end: str) -> Optional[pd.DataFrame]:
     """Load a cached OHLCV dataset without calling a data vendor."""
-    return DataCache().load(vendor, symbol.upper(), timeframe, start, end)
+    try:
+        return DataCache().load(vendor, symbol.upper(), timeframe, start, end)
+    except CacheCorruptedError as exc:
+        logger.warning("Cached dataset is corrupted for %s/%s: %s", vendor, symbol.upper(), exc)
+        return None
 
 
 def load_metadata(vendor: str, symbol: str, timeframe: str, start: str, end: str) -> Optional[Dict[str, Any]]:

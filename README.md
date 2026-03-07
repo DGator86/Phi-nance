@@ -65,6 +65,24 @@ python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budg
 | Architecture | `Architecture.md` |
 
 
+
+## Logging & Error Handling
+
+Phi now uses centralized logging via `phi/logging.py`.
+
+- `LOG_LEVEL` (default `INFO`) controls verbosity.
+- `LOGS_DIR` (default `./logs`) controls where `phi.log` is written.
+- `DEBUG=true` enables expanded traceback details in Streamlit error panels.
+
+Example:
+
+```bash
+export LOG_LEVEL=DEBUG
+export LOGS_DIR=./logs
+export DEBUG=true
+python -m streamlit run app_streamlit/live_workbench.py
+```
+
 ## External Ecosystem Notes
 
 A curated landscape of external options/data projects (with recommended integration order for Phi-nance) is maintained in:
