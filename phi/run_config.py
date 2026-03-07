@@ -40,6 +40,7 @@ class RunConfig(BaseModel):
     vendor: str = "alphavantage"
     initial_capital: float = 100_000.0
     trading_mode: Literal["equities", "options"] = "equities"
+    option_params: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     indicators: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     blend_method: str = "weighted_sum"
     blend_weights: Dict[str, float] = Field(default_factory=dict)
@@ -116,6 +117,18 @@ class RunConfig(BaseModel):
                 total = sum(float(v) for v in self.blend_weights.values())
                 if abs(total - 1.0) > 1e-6:
                     raise ValueError("blend_weights values must sum to 1.0")
+
+        if self.trading_mode == "options":
+            if len(self.symbols) != 1:
+                raise ValueError("options mode currently supports exactly one symbol")
+            symbol = self.symbols[0]
+            params = self.option_params.get(symbol)
+            if not isinstance(params, dict):
+                raise ValueError(f"option_params must contain configuration for symbol '{symbol}'")
+            required = {"option_type", "strike", "expiry"}
+            missing = sorted(k for k in required if k not in params)
+            if missing:
+                raise ValueError(f"option_params['{symbol}'] missing required keys: {missing}")
         return self
 
     def model_dump(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:

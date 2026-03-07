@@ -1,152 +1,201 @@
-"""
-Options Backtest — Simplified Delta-Based Simulation
-
-Simulates long call/put P&L using underlying OHLCV and delta approximation.
-Uses MarketDataApp options chain snapshot when available for delta anchoring.
-"""
+"""Options backtesting utilities."""
 
 from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from datetime import date, datetime
+from typing import Any, Dict, Iterable, Optional
 
 import numpy as np
 import pandas as pd
 
-from .market_data import get_marketdataapp_snapshot
+from phi.run_config import RunConfig
+
+from .contract import OptionContract, OptionType
+from .position import OptionPosition
+from .pricing import black_scholes_price, delta, gamma, theta, vega
+
+
+@dataclass
+class OptionGreeks:
+    delta: float
+    gamma: float
+    theta: float
+    vega: float
 
 
 def compute_greeks(
-    delta: float,
-    gamma: float = None,
-    theta: float = None,
-    vega: float = None,
-) -> dict:
-    """Return a dictionary of option Greeks.
+    S: float,
+    K: float,
+    T: float,
+    r: float,
+    sigma: float,
+    option_type: OptionType | str = OptionType.CALL,
+) -> Dict[str, float]:
+    """Return Black-Scholes greeks as a plain dictionary."""
+    opt_type = _parse_option_type(option_type)
+    g = OptionGreeks(
+        delta=delta(S, K, T, r, sigma, opt_type),
+        gamma=gamma(S, K, T, r, sigma),
+        theta=theta(S, K, T, r, sigma, opt_type),
+        vega=vega(S, K, T, r, sigma),
+    )
+    return asdict(g)
 
-    Parameters
-    ----------
-    delta : float
-        Rate of change of option price with respect to underlying price.
-        Positive for calls (0 to 1), negative for puts (-1 to 0).
-    gamma : float, optional
-        Rate of change of delta with respect to underlying price.
-    theta : float, optional
-        Time decay — daily dollar decay of the option value.
-    vega : float, optional
-        Sensitivity to 1 percentage-point change in implied volatility.
 
-    Returns
-    -------
-    dict
-        ``{"delta": delta, "gamma": gamma, "theta": theta, "vega": vega}``
+def _parse_option_type(value: OptionType | str) -> OptionType:
+    if isinstance(value, OptionType):
+        return value
+    return OptionType(str(value).lower())
 
-    Examples
-    --------
-    >>> compute_greeks(0.5, gamma=0.05, theta=-0.02, vega=0.10)
-    {'delta': 0.5, 'gamma': 0.05, 'theta': -0.02, 'vega': 0.10}
-    """
+
+def _to_date(value: Any) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, pd.Timestamp):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return pd.Timestamp(value).date()
+
+
+def _compute_metrics(values: Iterable[float], initial_capital: float) -> Dict[str, float]:
+    pv = np.array(list(values), dtype=float)
+    if pv.size == 0:
+        pv = np.array([initial_capital], dtype=float)
+
+    total_return = float((pv[-1] - initial_capital) / initial_capital) if initial_capital else 0.0
+    n_years = max((len(pv) - 1) / 252.0, 1 / 252.0)
+    cagr = float((1.0 + total_return) ** (1.0 / n_years) - 1.0)
+
+    peaks = np.maximum.accumulate(pv)
+    drawdowns = (pv - peaks) / np.where(peaks == 0, 1.0, peaks)
+    max_dd = float(np.min(drawdowns))
+
+    rets = np.diff(pv) / np.where(pv[:-1] == 0, 1.0, pv[:-1])
+    sharpe = float(np.mean(rets) / np.std(rets) * np.sqrt(252.0)) if rets.size > 1 and np.std(rets) > 0 else 0.0
+
     return {
-        "delta": delta,
-        "gamma": gamma,
-        "theta": theta,
-        "vega": vega,
-    }
-
-
-def run_options_backtest(
-    ohlcv: pd.DataFrame,
-    symbol: str = "SPY",
-    strategy_type: str = "long_call",
-    initial_capital: float = 100_000.0,
-    position_pct: float = 0.1,
-    delta_assumption: float = 0.5,
-    exit_profit_pct: float = 0.5,
-    exit_stop_pct: float = -0.3,
-) -> dict:
-    """
-    Simplified options backtest using delta approximation.
-
-    P&L per bar = notional * delta * (price_return)
-    where notional = capital * position_pct at entry.
-
-    Parameters
-    ----------
-    ohlcv : DataFrame with close, index = datetime
-    strategy_type : "long_call" | "long_put"
-    initial_capital : starting capital
-    position_pct : fraction of capital in option notional (0.1 = 10%)
-    delta_assumption : assumed delta (0.5 = ATM)
-    exit_profit_pct : exit at +50% on position
-    exit_stop_pct : exit at -30% on position
-
-    Returns
-    -------
-    dict with keys: portfolio_value, trades, total_return, cagr, max_drawdown, sharpe
-    """
-    close = ohlcv["close"].values
-    if len(close) < 2:
-        return {"portfolio_value": [initial_capital], "total_return": 0, "cagr": 0, "max_drawdown": 0, "sharpe": 0}
-
-    mult = 1.0 if strategy_type == "long_call" else -1.0
-
-    # Try to anchor delta with an actual options chain snapshot from MarketDataApp.
-    spot = float(close[0])
-    snap = get_marketdataapp_snapshot(symbol=symbol, spot_price=spot, option_type="call" if mult > 0 else "put")
-    if snap and snap.delta is not None:
-        delta_assumption = float(abs(snap.delta))
-
-    returns = np.diff(close) / close[:-1] * mult
-
-    capital = initial_capital
-    notional = capital * position_pct
-    position_pnl = 0.0
-    in_position = True
-    pv_series = [capital]
-
-    for i, r in enumerate(returns):
-        if not in_position:
-            pv_series.append(capital)
-            continue
-
-        delta_pnl = notional * delta_assumption * r
-        position_pnl += delta_pnl
-        capital += delta_pnl
-
-        cum_ret = position_pnl / (notional * delta_assumption) if notional else 0
-        if cum_ret >= exit_profit_pct or cum_ret <= exit_stop_pct:
-            in_position = False
-
-        pv_series.append(capital)
-
-    pv_series = np.array(pv_series)
-    total_return = (pv_series[-1] / initial_capital - 1) if initial_capital else 0
-
-    # CAGR
-    n_years = len(ohlcv) / 252 if len(ohlcv) > 252 else 1
-    cagr = (1 + total_return) ** (1 / n_years) - 1 if n_years > 0 else total_return
-
-    # Max drawdown
-    peak = np.maximum.accumulate(pv_series)
-    dd = (pv_series - peak) / np.where(peak > 0, peak, 1)
-    max_dd = float(np.min(dd)) if len(dd) else 0
-
-    # Sharpe (annualized)
-    pv_ret = np.diff(pv_series) / np.maximum(pv_series[:-1], 1e-8)
-    sharpe = float(np.mean(pv_ret) / np.std(pv_ret) * np.sqrt(252)) if np.std(pv_ret) > 0 else 0
-
-    out = {
-        "portfolio_value": list(pv_series),
         "total_return": total_return,
         "cagr": cagr,
         "max_drawdown": max_dd,
         "sharpe": sharpe,
-        "trades": [],
     }
-    if snap:
-        out["options_snapshot"] = {
-            "source": snap.source,
-            "strike": snap.strike,
-            "expiry": snap.expiry,
-            "mid": snap.mid,
-            "delta": snap.delta,
-            "implied_volatility": snap.implied_volatility,
-        }
-    return out
+
+
+def run_options_backtest(
+    data_or_config: pd.DataFrame | RunConfig,
+    data: Optional[pd.DataFrame] = None,
+    **legacy_kwargs: Any,
+) -> Dict[str, Any]:
+    """Run a single-position European options backtest.
+
+    Preferred call:
+        run_options_backtest(config: RunConfig, data: pd.DataFrame)
+
+    Backward compatible legacy call:
+        run_options_backtest(ohlcv, symbol="SPY", strategy_type="long_call", ...)
+    """
+    if isinstance(data_or_config, RunConfig):
+        if data is None:
+            raise ValueError("data is required when passing a RunConfig")
+        return _run_from_config(data_or_config, data)
+
+    return _run_legacy(data_or_config, **legacy_kwargs)
+
+
+def _run_from_config(config: RunConfig, data: pd.DataFrame) -> Dict[str, Any]:
+    if data is None or data.empty:
+        raise ValueError("data must contain underlying OHLCV history")
+    if len(config.symbols) != 1:
+        raise ValueError("options backtest currently supports exactly one symbol")
+
+    symbol = config.symbols[0]
+    params = config.option_params.get(symbol)
+    if not params:
+        raise ValueError(f"option_params missing for symbol '{symbol}'")
+
+    option_type = _parse_option_type(params["option_type"])
+    contract = OptionContract(
+        underlying=symbol,
+        option_type=option_type,
+        strike=float(params["strike"]),
+        expiry=_to_date(params["expiry"]),
+        style=str(params.get("style", "european")),
+        multiplier=int(params.get("multiplier", 100)),
+    )
+    iv = float(params.get("iv", 0.3))
+    r = float(params.get("r", 0.02))
+    quantity = int(params.get("quantity", 1))
+
+    close = data["close"].astype(float)
+    cash = float(config.initial_capital)
+    position: OptionPosition | None = None
+    trade_log: list[dict[str, Any]] = []
+    portfolio_values: list[float] = []
+
+    for ts, price in close.items():
+        as_of = _to_date(ts)
+
+        if position is None and as_of < contract.expiry:
+            premium = black_scholes_price(price, contract.strike, contract.time_to_expiry(as_of), r, iv, contract.option_type)
+            total_cost = premium * quantity * contract.multiplier
+            if cash < total_cost:
+                raise ValueError("insufficient capital to open options position")
+            cash -= total_cost
+            position = OptionPosition(contract=contract, quantity=quantity, entry_cost=total_cost)
+            trade_log.append({"date": as_of.isoformat(), "action": "buy", "price": premium, "value": total_cost})
+
+        position_value = position.mark_to_market(price, as_of, r, iv) if position else 0.0
+        portfolio_values.append(cash + position_value)
+
+        if position and as_of >= contract.expiry:
+            intrinsic = max(price - contract.strike, 0.0) if contract.option_type == OptionType.CALL else max(contract.strike - price, 0.0)
+            settlement = intrinsic * position.quantity * contract.multiplier
+            cash += settlement
+            trade_log.append({"date": as_of.isoformat(), "action": "expiry", "price": intrinsic, "value": settlement})
+            position = None
+
+    final_value = cash + (position.mark_to_market(float(close.iloc[-1]), _to_date(close.index[-1]), r, iv) if position else 0.0)
+    metrics = _compute_metrics(portfolio_values, config.initial_capital)
+    return {
+        "portfolio_value": portfolio_values,
+        "final_value": final_value,
+        "trades": trade_log,
+        **metrics,
+    }
+
+
+def _run_legacy(
+    ohlcv: pd.DataFrame,
+    symbol: str = "SPY",
+    strategy_type: str = "long_call",
+    initial_capital: float = 100_000.0,
+    **_: Any,
+) -> Dict[str, Any]:
+    if ohlcv is None or ohlcv.empty:
+        return {"portfolio_value": [initial_capital], "total_return": 0.0, "cagr": 0.0, "max_drawdown": 0.0, "sharpe": 0.0, "trades": []}
+
+    option_type = OptionType.CALL if strategy_type == "long_call" else OptionType.PUT
+    expiry = _to_date(ohlcv.index[-1])
+    strike = float(ohlcv["close"].iloc[0])
+
+    cfg = RunConfig(
+        symbols=[symbol],
+        start_date=_to_date(ohlcv.index[0]),
+        end_date=_to_date(ohlcv.index[-1]),
+        initial_capital=initial_capital,
+        trading_mode="options",
+        option_params={
+            symbol: {
+                "option_type": option_type.value,
+                "strike": strike,
+                "expiry": expiry,
+                "iv": 0.3,
+                "r": 0.02,
+                "multiplier": 100,
+                "quantity": 1,
+            }
+        },
+    )
+    return _run_from_config(cfg, ohlcv)
