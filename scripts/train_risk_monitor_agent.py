@@ -12,6 +12,7 @@ import yaml
 
 from phinance.rl.policy_networks import CategoricalPolicy
 from phinance.rl.risk_monitor_env import RISK_PROFILES, RiskMonitorEnv, RiskMonitorEnvConfig
+from phinance.rl.training_utils import get_runtime_config, load_optimisation_config, move_policy_to_device
 
 
 def _load_config(path: Path) -> Dict[str, Any]:
@@ -25,9 +26,10 @@ def _build_env(config: Dict[str, Any]) -> RiskMonitorEnv:
     return RiskMonitorEnv(config=env_cfg)
 
 
-def train_with_fallback(config: Dict[str, Any], output_dir: Path) -> Path:
+def train_with_fallback(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[str, Any] | None = None) -> Path:
     env = _build_env(config)
     model_cfg = config.get("model", {})
+    runtime_cfg = get_runtime_config(optim_cfg or {"rl_optimisation": {}})
     policy = CategoricalPolicy(
         obs_dim=env.observation_space.shape[0],
         n_actions=env.action_space.n,
@@ -35,6 +37,7 @@ def train_with_fallback(config: Dict[str, Any], output_dir: Path) -> Path:
         architecture=str(model_cfg.get("architecture", "mlp")),
         sequence_length=int(model_cfg.get("sequence_length", 16)),
     )
+    policy, _ = move_policy_to_device(policy, runtime_cfg)
 
     episodes = int(config["training"].get("episodes_smoke", 5))
     for _ in range(episodes):
@@ -60,12 +63,13 @@ def train_with_fallback(config: Dict[str, Any], output_dir: Path) -> Path:
     return checkpoint
 
 
-def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
+def train_with_areal(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[str, Any] | None = None) -> Path:
     from areal.rl import AsyncTrainer  # type: ignore
 
     env = _build_env(config)
     model_cfg = config.get("model", {})
     training_cfg = config.get("training", {})
+    runtime_cfg = get_runtime_config(optim_cfg or {"rl_optimisation": {}})
     policy = CategoricalPolicy(
         obs_dim=env.observation_space.shape[0],
         n_actions=env.action_space.n,
@@ -73,6 +77,7 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
         architecture=str(model_cfg.get("architecture", "mlp")),
         sequence_length=int(model_cfg.get("sequence_length", 16)),
     )
+    policy, _ = move_policy_to_device(policy, runtime_cfg)
 
     trainer = AsyncTrainer(
         env=env,
@@ -104,15 +109,17 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train risk monitor RL agent")
     parser.add_argument("--config", type=Path, default=Path("configs/risk_monitor_agent.yaml"))
+    parser.add_argument("--optim-config", type=Path, default=Path("configs/rl_optimisation_config.yaml"))
     parser.add_argument("--output", type=Path, default=Path("models/risk_monitor_agent"))
     parser.add_argument("--fallback", action="store_true")
     args = parser.parse_args()
 
     config = _load_config(args.config)
+    optim_cfg = load_optimisation_config(args.optim_config)
     if args.fallback:
-        train_with_fallback(config, args.output)
+        train_with_fallback(config, args.output, optim_cfg)
     else:
-        train_with_areal(config, args.output)
+        train_with_areal(config, args.output, optim_cfg)
 
 
 if __name__ == "__main__":

@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import Any, Dict
 
 import numpy as np
-import torch
 import yaml
 
 from phinance.rl.execution_env import ExecutionEnv, ExecutionEnvConfig
 from phinance.rl.hierarchical.meta_agent import MetaAgent, MetaAgentConfig
 from phinance.rl.hierarchical.meta_env import MetaEnv, MetaEnvConfig
 from phinance.rl.hierarchical.wrappers import build_default_options
+from phinance.rl.training_utils import get_runtime_config, load_optimisation_config, move_policy_to_device
 
 logger = logging.getLogger(__name__)
 
@@ -24,16 +24,20 @@ def load_config(path: Path) -> Dict[str, Any]:
     return data or {}
 
 
-def build_meta_env(config: Dict[str, Any]) -> MetaEnv:
-    env_cfg = ExecutionEnvConfig(**config.get("environment", {}))
+def build_meta_env(config: Dict[str, Any], optim_cfg: Dict[str, Any] | None = None) -> MetaEnv:
+    env_data = dict(config.get("environment", {}))
+    if optim_cfg:
+        env_data["enable_numba"] = bool(optim_cfg.get("rl_optimisation", {}).get("numba", {}).get("enabled", False))
+        env_data["enable_state_cache"] = bool(optim_cfg.get("rl_optimisation", {}).get("caching", {}).get("enabled", False))
+    env_cfg = ExecutionEnvConfig(**env_data)
     base_env = ExecutionEnv(config=env_cfg)
     options = build_default_options(config.get("options", {}))
     meta_cfg = MetaEnvConfig(**config.get("meta_env", {}))
     return MetaEnv(env=base_env, options=options, config=meta_cfg)
 
 
-def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
-    env = build_meta_env(config)
+def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[str, Any] | None = None) -> Path:
+    env = build_meta_env(config, optim_cfg)
     model_cfg = config.get("model", {})
     train_cfg = config.get("training", {})
     meta_agent = MetaAgent(
@@ -45,6 +49,8 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
             sequence_length=int(model_cfg.get("sequence_length", 16)),
         ),
     )
+    runtime_cfg = get_runtime_config(optim_cfg or {"rl_optimisation": {}})
+    move_policy_to_device(meta_agent.policy, runtime_cfg)
 
     episodes = int(train_cfg.get("episodes_smoke", 5))
     for episode in range(episodes):
@@ -66,15 +72,16 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
     return checkpoint
 
 
-def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
+def train_with_areal(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[str, Any] | None = None) -> Path:
     try:
         from areal.rl import AsyncTrainer  # type: ignore
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("AReaL is not installed. Run with fallback for smoke training.") from exc
 
-    env = build_meta_env(config)
+    env = build_meta_env(config, optim_cfg)
     model_cfg = config.get("model", {})
     train_cfg = config.get("training", {})
+    runtime_cfg = get_runtime_config(optim_cfg or {"rl_optimisation": {}})
     meta_agent = MetaAgent(
         obs_dim=env.observation_space.shape[0],
         n_options=env.action_space.n,
@@ -84,6 +91,7 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
             sequence_length=int(model_cfg.get("sequence_length", 16)),
         ),
     )
+    move_policy_to_device(meta_agent.policy, runtime_cfg)
 
     trainer = AsyncTrainer(
         env=env,

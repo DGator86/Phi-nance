@@ -13,6 +13,7 @@ import yaml
 
 from phinance.rl.policy_networks import CategoricalPolicy
 from phinance.rl.strategy_rd_env import StrategyRDEnv, StrategyRDEnvConfig
+from phinance.rl.training_utils import get_runtime_config, load_optimisation_config, move_policy_to_device
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +29,9 @@ def _build_env(config: Dict[str, Any]) -> StrategyRDEnv:
     return StrategyRDEnv(config=env_cfg)
 
 
-def _act(policy: CategoricalPolicy, state: np.ndarray, deterministic: bool = False) -> int:
+def _act(policy: CategoricalPolicy, state: np.ndarray, device: torch.device, deterministic: bool = False) -> int:
     with torch.no_grad():
-        tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+        tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
         logits = policy(tensor).squeeze(0)
         if deterministic:
             return int(torch.argmax(logits).item())
@@ -38,10 +39,10 @@ def _act(policy: CategoricalPolicy, state: np.ndarray, deterministic: bool = Fal
         return int(torch.multinomial(probs, num_samples=1).item())
 
 
-def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
-    """Fallback mini trainer used when AReaL is not available."""
+def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[str, Any] | None = None) -> Path:
     env = _build_env(config)
     model_cfg = config.get("model", {})
+    runtime_cfg = get_runtime_config(optim_cfg or {"rl_optimisation": {}})
     policy = CategoricalPolicy(
         obs_dim=env.observation_space.shape[0],
         n_actions=env.action_space.n,
@@ -49,6 +50,7 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
         architecture=str(model_cfg.get("architecture", "mlp")),
         sequence_length=int(model_cfg.get("sequence_length", 16)),
     )
+    policy, device = move_policy_to_device(policy, runtime_cfg)
     episodes = int(config["training"].get("episodes_smoke", 5))
 
     for episode in range(episodes):
@@ -56,7 +58,7 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
         done = False
         total_reward = 0.0
         while not done:
-            action = _act(policy, state, deterministic=False)
+            action = _act(policy, state, device=device, deterministic=False)
             state, reward, done, _ = env.step(action)
             total_reward += reward
         logger.info("Fallback episode %d reward=%0.5f", episode + 1, total_reward)
@@ -77,8 +79,7 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path) -> Path:
     return checkpoint
 
 
-def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
-    """Train using AReaL AsyncTrainer + PPO for discrete policy."""
+def train_with_areal(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[str, Any] | None = None) -> Path:
     try:
         from areal.rl import AsyncTrainer  # type: ignore
     except Exception as exc:  # pragma: no cover
@@ -87,6 +88,7 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
     env = _build_env(config)
     model_cfg = config.get("model", {})
     training_cfg = config.get("training", {})
+    runtime_cfg = get_runtime_config(optim_cfg or {"rl_optimisation": {}})
     policy = CategoricalPolicy(
         obs_dim=env.observation_space.shape[0],
         n_actions=env.action_space.n,
@@ -94,6 +96,7 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
         architecture=str(model_cfg.get("architecture", "mlp")),
         sequence_length=int(model_cfg.get("sequence_length", 16)),
     )
+    policy, _ = move_policy_to_device(policy, runtime_cfg)
     trainer = AsyncTrainer(
         env=env,
         policy=policy,
@@ -124,6 +127,7 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train strategy R&D RL agent")
     parser.add_argument("--config", type=Path, default=Path("configs/strategy_rd_agent.yaml"))
+    parser.add_argument("--optim-config", type=Path, default=Path("configs/rl_optimisation_config.yaml"))
     parser.add_argument("--output", type=Path, default=Path("models/strategy_rd_agent"))
     parser.add_argument("--fallback", action="store_true", help="Use fallback smoke loop instead of AReaL")
     args = parser.parse_args()
@@ -131,10 +135,11 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     config = _load_config(args.config)
+    optim_cfg = load_optimisation_config(args.optim_config)
     if args.fallback:
-        checkpoint = train_with_fallback_loop(config, args.output)
+        checkpoint = train_with_fallback_loop(config, args.output, optim_cfg)
     else:
-        checkpoint = train_with_areal(config, args.output)
+        checkpoint = train_with_areal(config, args.output, optim_cfg)
 
     logger.info("Saved strategy R&D policy checkpoint to %s", checkpoint)
 
