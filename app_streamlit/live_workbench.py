@@ -1680,6 +1680,8 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
         elif (r := phiai_result[0]) is not None and isinstance(r, dict):
             indicators_to_use = r.get("optimized_indicators", indicators_to_use)
             phiai_explanation = r.get("explanation", "")
+            if phiai_explanation:
+                st.info(f"PhiAI optimization completed: {phiai_explanation}")
         phiai_progress.progress(1.0, text="PhiAI complete!")
         time.sleep(0.3)
         phiai_progress.empty()
