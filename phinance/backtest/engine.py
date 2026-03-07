@@ -33,6 +33,7 @@ except Exception:  # pragma: no cover - fallback when numba is unavailable
         return _wrap
 
 from phinance.backtest.models import Trade
+from phinance.data.streaming_loader import StreamingDataLoader
 from phinance.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -204,3 +205,48 @@ def simulate(
         )
 
     return portfolio_values.tolist(), prediction_log, trades
+
+
+def simulate_streaming(
+    ohlcv: pd.DataFrame,
+    composite_signal: pd.Series,
+    symbol: str = "",
+    initial_capital: float = 100_000.0,
+    position_size_pct: float = 0.95,
+    signal_threshold: float = 0.15,
+    batch_size: int = 256,
+    enabled: bool = False,
+) -> Tuple[List[float], List[Dict[str, Any]], List[Trade]]:
+    """Compatibility wrapper that can stream windows before simulation.
+
+    When disabled, falls back to :func:`simulate` exactly.
+    """
+    if not enabled:
+        return simulate(
+            ohlcv=ohlcv,
+            composite_signal=composite_signal,
+            symbol=symbol,
+            initial_capital=initial_capital,
+            position_size_pct=position_size_pct,
+            signal_threshold=signal_threshold,
+        )
+
+    loader = StreamingDataLoader(
+        data=np.arange(len(ohlcv), dtype=np.int32),
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=False,
+    )
+    # Materialise in streaming order to ensure backtest path can run without
+    # loading additional transformed windows elsewhere.
+    ordered_idx = np.concatenate([batch for batch in loader]) if len(ohlcv) else np.array([], dtype=np.int32)
+    streamed_ohlcv = ohlcv.iloc[ordered_idx] if len(ordered_idx) else ohlcv.iloc[:0]
+    streamed_signal = composite_signal.reindex(streamed_ohlcv.index)
+    return simulate(
+        ohlcv=streamed_ohlcv,
+        composite_signal=streamed_signal,
+        symbol=symbol,
+        initial_capital=initial_capital,
+        position_size_pct=position_size_pct,
+        signal_threshold=signal_threshold,
+    )

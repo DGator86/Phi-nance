@@ -8,6 +8,8 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from phinance.data.prefetcher import Prefetcher
+
 Experience = Tuple[np.ndarray, np.ndarray, float, np.ndarray, bool]
 
 try:  # pragma: no cover - optional dependency
@@ -80,6 +82,28 @@ class RayEnvRunner:
     def shutdown(self) -> None:
         if ray is not None and ray.is_initialized():
             ray.shutdown()
+
+
+def run_steps_prefetched(
+    runner: "RayEnvRunner",
+    num_steps: int,
+    *,
+    chunk_size: int = 256,
+    prefetch: int = 2,
+) -> List[Experience]:
+    """Collect transitions in chunks and prefetch next chunk asynchronously."""
+
+    def _chunk_iter():
+        remaining = num_steps
+        while remaining > 0:
+            this_chunk = min(chunk_size, remaining)
+            yield runner.run_steps(this_chunk)
+            remaining -= this_chunk
+
+    merged: List[Experience] = []
+    for batch in Prefetcher(_chunk_iter(), prefetch=prefetch):
+        merged.extend(batch)
+    return merged[:num_steps]
 
 
 def transitions_to_arrays(transitions: Sequence[Experience]) -> Dict[str, np.ndarray]:
