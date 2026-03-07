@@ -2,20 +2,58 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-from datetime import date, datetime, timezone
+import os
+from contextlib import contextmanager
+from datetime import date, datetime, timedelta, timezone
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
+import fasteners
 import pandas as pd
+import pandera as pa
+import requests
+from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
-_SECONDS_PER_DAY = 86_400
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_DATA_CACHE_ROOT = _PROJECT_ROOT / "data_cache"
+DATA_CACHE_ROOT = Path(os.getenv("DATA_CACHE_ROOT", "./data_cache"))
+DATA_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+# Compatibility alias used by other modules.
+_DATA_CACHE_ROOT = DATA_CACHE_ROOT
+
+
+class DataFetchError(RuntimeError):
+    """Raised when vendor fetch or cache persistence fails."""
+
+
+OHLCV_SCHEMA = pa.DataFrameSchema(
+    {
+        "open": pa.Column(float, nullable=False),
+        "high": pa.Column(float, nullable=False),
+        "low": pa.Column(float, nullable=False),
+        "close": pa.Column(float, nullable=False),
+        "volume": pa.Column(float, nullable=False),
+    },
+    index=pa.Index(pa.DateTime, nullable=False),
+    coerce=True,
+)
+
+_TIMEFRAME_MAX_AGE = {
+    "1D": timedelta(hours=24),
+    "1H": timedelta(hours=1),
+    "1M": timedelta(minutes=1),
+}
+_DEFAULT_MAX_AGE = timedelta(days=7)
+_LOCK_TIMEOUT_SECONDS = 30
+
+
+def _meta_path_from_cache(cache_path: Path) -> Path:
+    """Return the sidecar metadata path for a parquet cache file."""
+    return cache_path.with_suffix(".meta.json")
 
 
 def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
@@ -33,50 +71,45 @@ def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     return out.sort_index()
 
 
-def _ohlcv_sanity_check(df: pd.DataFrame, symbol: str = "") -> None:
-    """Run basic sanity checks on OHLCV data and log warnings."""
-    required = ["open", "high", "low", "close", "volume"]
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        logger.warning("%s sanity check: missing columns %s", symbol, missing)
-        return
+def _validate_ohlcv(df: pd.DataFrame, symbol: str, vendor: str) -> pd.DataFrame:
+    """Validate OHLCV dataframe shape and types."""
+    try:
+        validated = OHLCV_SCHEMA.validate(df, lazy=True)
+    except pa.errors.SchemaErrors as exc:
+        logger.error("OHLCV validation failed for %s/%s: %s", vendor, symbol, exc)
+        raise ValueError(f"OHLCV validation failed for {vendor}/{symbol}: {exc}") from exc
+    logger.info("Validation succeeded for %s/%s (%d rows)", vendor, symbol, len(validated))
+    return validated
 
-    for col in ["open", "high", "low", "close"]:
-        if (df[col] < 0).any():
-            logger.warning("%s sanity check: negative values in '%s' column", symbol, col)
-    if not df.index.is_monotonic_increasing:
-        logger.warning("%s sanity check: index is not chronologically ordered", symbol)
 
-    duplicate_rows = int(df.index.duplicated().sum())
-    if duplicate_rows:
-        logger.warning("%s sanity check: %d duplicate timestamp rows detected", symbol, duplicate_rows)
+def _hash_dataframe(df: pd.DataFrame) -> str:
+    """Compute stable SHA-256 hash for dataframe contents and index."""
+    row_hashes = pd.util.hash_pandas_object(df, index=True)
+    return hashlib.sha256(row_hashes.values.tobytes()).hexdigest()
 
-    if (df["volume"] < 0).any():
-        logger.warning("%s sanity check: negative values in 'volume' column", symbol)
 
-    zero_volume_rate = float((df["volume"] == 0).mean())
-    if zero_volume_rate > 0.20:
-        logger.warning(
-            "%s sanity check: %.1f%% of rows have zero volume",
-            symbol,
-            zero_volume_rate * 100,
-        )
-
-    close_returns = df["close"].pct_change().abs()
-    extreme_moves = int((close_returns > 0.25).sum())
-    if extreme_moves:
-        logger.warning(
-            "%s sanity check: %d rows have >25%% absolute close-to-close moves",
-            symbol,
-            extreme_moves,
-        )
+@contextmanager
+def _file_lock(lock_path: Path, timeout: int = _LOCK_TIMEOUT_SECONDS) -> Generator[None, None, None]:
+    """Acquire and release an inter-process file lock."""
+    lock = fasteners.InterProcessLock(str(lock_path))
+    logger.info("Attempting lock acquisition: %s", lock_path)
+    acquired = lock.acquire(blocking=True, timeout=timeout)
+    if not acquired:
+        raise TimeoutError(f"Could not acquire cache lock within {timeout}s: {lock_path}")
+    logger.info("Acquired lock: %s", lock_path)
+    try:
+        yield
+    finally:
+        lock.release()
+        logger.info("Released lock: %s", lock_path)
 
 
 class DataCache:
     """Parquet cache manager for OHLCV and options-chain datasets."""
 
     def __init__(self, root: Optional[Path] = None) -> None:
-        self.root = root or _DATA_CACHE_ROOT
+        self.root = root or DATA_CACHE_ROOT
+        self.root.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def _stem(start: str | date | datetime, end: str | date | datetime) -> str:
@@ -93,10 +126,12 @@ class DataCache:
         return self._cache_dir(vendor, symbol, timeframe) / f"{self._stem(start, end)}.parquet"
 
     def _meta_path(self, vendor: str, symbol: str, timeframe: str, start: str, end: str) -> Path:
-        return self._cache_dir(vendor, symbol, timeframe) / f"{self._stem(start, end)}.metadata.json"
+        return _meta_path_from_cache(self._parquet_path(vendor, symbol, timeframe, start, end))
 
     def exists(self, vendor: str, symbol: str, timeframe: str, start: str, end: str) -> bool:
-        return self._parquet_path(vendor, symbol, timeframe, start, end).exists()
+        parquet = self._parquet_path(vendor, symbol, timeframe, start, end)
+        meta = self._meta_path(vendor, symbol, timeframe, start, end)
+        return parquet.exists() and meta.exists()
 
     def load(
         self,
@@ -108,13 +143,20 @@ class DataCache:
         check_staleness: bool = False,
     ) -> Optional[pd.DataFrame]:
         path = self._parquet_path(vendor, symbol, timeframe, start, end)
+        meta_path = self._meta_path(vendor, symbol, timeframe, start, end)
         if not path.exists():
+            logger.info("Cache miss: %s", path)
+            return None
+        if not meta_path.exists():
+            logger.warning("Cache metadata missing for %s; treating as corrupted", path)
             return None
 
-        if check_staleness:
-            self._warn_if_stale(self._meta_path(vendor, symbol, timeframe, start, end), symbol, timeframe)
+        if check_staleness and is_cache_stale(path, timeframe):
+            logger.info("Cache stale for %s", path)
+            return None
 
         try:
+            logger.info("Cache hit: %s", path)
             return pd.read_parquet(path)
         except (FileNotFoundError, OSError, ValueError, TypeError) as exc:
             logger.warning("Cache load failed for %s: %s", path, exc)
@@ -131,21 +173,28 @@ class DataCache:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Path:
         path = self._parquet_path(vendor, symbol, timeframe, start, end)
+        meta_path = _meta_path_from_cache(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(path, index=True)
+        lock_path = path.with_suffix(".lock")
 
         meta = metadata.copy() if metadata else {}
-        meta.setdefault("vendor", vendor)
-        meta.setdefault("symbol", symbol.upper())
-        meta.setdefault("timeframe", timeframe)
-        meta.setdefault("start", str(start)[:10])
-        meta.setdefault("end", str(end)[:10])
-        meta.setdefault("rows", len(df))
-        meta.setdefault("columns", list(df.columns))
-        meta["fetched_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        meta.update(
+            {
+                "vendor": vendor,
+                "symbol": symbol.upper(),
+                "timeframe": timeframe,
+                "start": str(start)[:10],
+                "end": str(end)[:10],
+                "fetch_timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "data_hash": _hash_dataframe(df),
+            }
+        )
 
-        with open(self._meta_path(vendor, symbol, timeframe, start, end), "w", encoding="utf-8") as f:
-            json.dump(meta, f, indent=2)
+        with _file_lock(lock_path):
+            df.to_parquet(path, index=True)
+            meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+        logger.info("Saved cache dataset %s and metadata %s", path, meta_path)
         return path
 
     def list_datasets(self) -> List[Dict[str, Any]]:
@@ -153,7 +202,7 @@ class DataCache:
         if not self.root.exists():
             return out
         for parquet in self.root.rglob("*.parquet"):
-            meta_path = parquet.with_suffix(".metadata.json")
+            meta_path = _meta_path_from_cache(parquet)
             meta: Dict[str, Any] = {}
             if meta_path.exists():
                 try:
@@ -164,65 +213,128 @@ class DataCache:
             out.append(meta)
         return out
 
-    @staticmethod
-    def _warn_if_stale(meta_path: Path, symbol: str, timeframe: str) -> None:
-        if not meta_path.exists():
-            return
-        try:
-            with open(meta_path, encoding="utf-8") as f:
-                meta = json.load(f)
-            fetched_at = meta.get("fetched_at")
-            if not fetched_at:
-                return
-            age_days = (datetime.now(timezone.utc).replace(tzinfo=None) - datetime.fromisoformat(fetched_at)).total_seconds() / _SECONDS_PER_DAY
-            max_age = 1 if timeframe != "1D" else 7
-            if age_days > max_age:
-                logger.warning("Cached data for %s %s is %.1f days old (threshold: %d days).", symbol, timeframe, age_days, max_age)
-        except (OSError, JSONDecodeError, ValueError, TypeError):
-            return
+
+def _parse_fetch_timestamp(raw_ts: str) -> datetime:
+    """Parse sidecar metadata fetch timestamp."""
+    return datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+
+
+def is_cache_stale(cache_path: Path, timeframe: str, max_age_hours: Optional[float] = None) -> bool:
+    """Return whether cache should be considered stale using metadata fetch timestamp."""
+    meta_path = _meta_path_from_cache(cache_path)
+    if not cache_path.exists() or not meta_path.exists():
+        return True
+
+    try:
+        metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+        fetch_ts = _parse_fetch_timestamp(metadata["fetch_timestamp"])
+    except (OSError, JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        logger.warning("Invalid metadata at %s: %s", meta_path, exc)
+        return True
+
+    age_limit = timedelta(hours=max_age_hours) if max_age_hours is not None else _TIMEFRAME_MAX_AGE.get(
+        timeframe.upper(), _DEFAULT_MAX_AGE
+    )
+    age = datetime.now(timezone.utc) - fetch_ts
+    stale = age > age_limit
+    if stale:
+        logger.info("Cache stale check: %s age=%s limit=%s", cache_path, age, age_limit)
+    return stale
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=8),
+    retry=retry_if_exception_type(requests.RequestException) | retry_if_exception_type(ConnectionError),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
+def _fetch_with_retry(fetcher: Any, symbol: str, start_s: str, end_s: str) -> pd.DataFrame:
+    """Invoke a fetcher with retry behavior for transient network failures."""
+    return fetcher(symbol, start_s, end_s)
 
 
 # ---- OHLCV fetch + cache ----
 
 def _fetch_from_yfinance(symbol: str, start_s: str, end_s: str) -> pd.DataFrame:
-    """Fetch daily OHLCV from yfinance."""
+    """Fetch OHLCV data from yfinance."""
     import yfinance as yf
 
+    logger.info("Fetching yfinance data for %s (%s to %s)", symbol, start_s, end_s)
     tkr = yf.Ticker(symbol)
     df = tkr.history(start=start_s, end=end_s, auto_adjust=True)
     if df.empty:
-        raise ValueError(f"No data for {symbol}")
-    out = _normalize_ohlcv(df)
-    _ohlcv_sanity_check(out, symbol)
-    return out
+        raise ValueError(f"No data returned for {symbol}")
+    return _normalize_ohlcv(df)
+
+
+def _fetch_from_alphavantage(symbol: str, start_s: str, end_s: str) -> pd.DataFrame:
+    """Phase-1 AlphaVantage handler (delegates to yfinance fallback)."""
+    logger.warning("AlphaVantage fetch fallback active for %s; using yfinance", symbol)
+    return _fetch_from_yfinance(symbol, start_s, end_s)
+
+
+def _get_fetcher(vendor: str) -> Any:
+    """Resolve vendor key to fetcher function."""
+    vendor_key = vendor.lower().replace("-", "_").replace(" ", "")
+    fetchers = {
+        "yfinance": _fetch_from_yfinance,
+        "yf": _fetch_from_yfinance,
+        "alphavantage": _fetch_from_alphavantage,
+        "alpha_vantage": _fetch_from_alphavantage,
+    }
+    if vendor_key not in fetchers:
+        raise ValueError(f"Unknown vendor: {vendor!r}. Supported: {', '.join(sorted(fetchers))}")
+    return fetchers[vendor_key]
 
 
 def fetch_and_cache(
     vendor: str,
     symbol: str,
     timeframe: str,
-    start: str | date | datetime,
-    end: str | date | datetime,
-    api_key: Optional[str] = None,
+    start: str,
+    end: str,
+    force_refresh: bool = False,
 ) -> pd.DataFrame:
-    """Fetch OHLCV from vendor and cache result."""
-    del api_key  # placeholder for future keyed vendors
+    """Fetch OHLCV from vendor and persist a validated cache dataset."""
+    symbol_u = symbol.upper()
     start_s = str(start)[:10]
     end_s = str(end)[:10]
     cache = DataCache()
+    cache_path = cache._parquet_path(vendor, symbol_u, timeframe, start_s, end_s)
+    meta_path = _meta_path_from_cache(cache_path)
 
-    existing = cache.load(vendor, symbol.upper(), timeframe, start_s, end_s)
-    if existing is not None and not existing.empty:
-        return existing
+    if cache_path.exists() and not force_refresh:
+        if not meta_path.exists():
+            logger.warning("Metadata sidecar missing for %s; cache considered corrupted", cache_path)
+        elif not is_cache_stale(cache_path, timeframe):
+            cached = cache.load(vendor, symbol_u, timeframe, start_s, end_s)
+            if cached is not None:
+                return cached
 
-    vendor_key = vendor.lower().replace("-", "_").replace(" ", "")
-    if vendor_key not in {"yfinance", "yf", "alphavantage", "alpha_vantage", "binance", "binance_public"}:
-        raise ValueError(f"Unknown vendor: {vendor!r}. Supported: yfinance, alphavantage, binance")
+    fetcher = _get_fetcher(vendor)
+    logger.info("Cache miss/stale; fetching %s %s %s %s-%s", vendor, symbol_u, timeframe, start_s, end_s)
 
-    # Phase 1 keeps yfinance as canonical fallback for phi namespace.
-    df = _fetch_from_yfinance(symbol, start_s, end_s)
-    cache.save(df, vendor, symbol.upper(), timeframe, start_s, end_s)
-    return df
+    try:
+        fetched = _fetch_with_retry(fetcher, symbol_u, start_s, end_s)
+    except Exception as exc:  # noqa: BLE001
+        raise DataFetchError(f"Failed to fetch data for {vendor}/{symbol_u} after retries: {exc}") from exc
+
+    validated = _validate_ohlcv(fetched, symbol_u, vendor)
+
+    metadata = {
+        "vendor": vendor,
+        "symbol": symbol_u,
+        "timeframe": timeframe,
+        "start": start_s,
+        "end": end_s,
+    }
+    try:
+        cache.save(validated, vendor, symbol_u, timeframe, start_s, end_s, metadata=metadata)
+    except Exception as exc:  # noqa: BLE001
+        raise DataFetchError(f"Failed to write cache for {vendor}/{symbol_u}: {exc}") from exc
+
+    return validated
 
 
 def auto_fetch_and_cache(
@@ -232,7 +344,7 @@ def auto_fetch_and_cache(
     end: str | date | datetime,
 ) -> tuple[pd.DataFrame, str]:
     """Auto fetch data using yfinance fallback and cache it."""
-    return fetch_and_cache("yfinance", symbol, timeframe, start, end), "yfinance"
+    return fetch_and_cache("yfinance", symbol, timeframe, str(start), str(end)), "yfinance"
 
 
 def get_cached_dataset(vendor: str, symbol: str, timeframe: str, start: str, end: str) -> Optional[pd.DataFrame]:
@@ -292,7 +404,7 @@ def fetch_options_chain(symbol: str, date: Optional[str] = None, vendor: str = "
     puts["expiration"] = expiry
 
     combined = pd.concat([calls, puts], ignore_index=True)
-    cache_dir = _DATA_CACHE_ROOT / "options" / symbol.upper() / expiry
+    cache_dir = DATA_CACHE_ROOT / "options" / symbol.upper() / expiry
     cache_dir.mkdir(parents=True, exist_ok=True)
     out_path = cache_dir / "chain.parquet"
     combined.to_parquet(out_path, index=False)
@@ -301,7 +413,7 @@ def fetch_options_chain(symbol: str, date: Optional[str] = None, vendor: str = "
 
 def get_cached_options(symbol: str, date: str) -> Optional[pd.DataFrame]:
     """Load cached options chain for ``symbol`` and expiration ``date``."""
-    path = _DATA_CACHE_ROOT / "options" / symbol.upper() / str(date) / "chain.parquet"
+    path = DATA_CACHE_ROOT / "options" / symbol.upper() / str(date) / "chain.parquet"
     if not path.exists():
         return None
     try:
