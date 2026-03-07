@@ -74,6 +74,8 @@ def test_fetch_and_cache_uses_cache(monkeypatch, tmp_path):
     monkeypatch.setattr("phi.data.cache._fetch_from_yfinance", mock_fetch)
 
     # Temporarily redirect DataCache root
+    monkeypatch.setattr("phi.data.cache.DATA_CACHE_DIR", tmp_path)
+    monkeypatch.setattr("phi.data.cache.DATA_CACHE_ROOT", tmp_path)
     monkeypatch.setattr("phi.data.cache._DATA_CACHE_ROOT", tmp_path)
 
     result = fetch_and_cache("yfinance", "SPY", "1D", "2023-01-01", "2023-01-10")

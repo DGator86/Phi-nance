@@ -1795,7 +1795,7 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
         }
         try:
             save_run(cfg, run_data, result_obj.trades)
-            _log(f"Run saved: runs/{cfg.run_id}/", "info")
+            _log(f"Run saved: {settings.RUNS_DIR / cfg.run_id}", "info")
         except Exception as e:
             _log(f"Save failed: {e}", "warn")
 

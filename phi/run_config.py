@@ -11,12 +11,12 @@ from typing import Any, Dict, List, Literal, Optional
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from phi.config import settings
 from phi.logging import get_logger
 
 logger = get_logger(__name__)
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_RUNS_ROOT = _PROJECT_ROOT / "runs"
+_RUNS_ROOT = settings.RUNS_DIR
 
 
 def _ensure_runs_dir() -> Path:
@@ -197,7 +197,8 @@ class RunHistory:
     """Manages run storage and retrieval."""
 
     def __init__(self, root: Optional[Path] = None) -> None:
-        self.root = root or _RUNS_ROOT
+        self.root = root or settings.RUNS_DIR
+        self.root.mkdir(parents=True, exist_ok=True)
 
     def create_run(self, config: RunConfig) -> str:
         run_id = _new_run_id()

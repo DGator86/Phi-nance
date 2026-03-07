@@ -12,3 +12,8 @@ Modular structure:
 """
 
 __version__ = "0.1.0"
+
+
+from phi.config import settings
+
+settings.create_dirs()

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
+
+from phi.config import settings
 import pandas as pd
 from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
 from scipy.spatial import QhullError
@@ -117,8 +119,7 @@ class HistoricalIVSurface:
 
     def _load_cached_surfaces(self) -> None:
         root = pd.Timestamp(self.start_date)
-        from phi.data.cache import _DATA_CACHE_ROOT  # local import to avoid top-level cache dependency cycles
-        opt_root = _DATA_CACHE_ROOT / "options" / self.symbol
+        opt_root = settings.DATA_CACHE_DIR / "options" / self.symbol
         if not opt_root.exists():
             return
         for d in opt_root.iterdir():

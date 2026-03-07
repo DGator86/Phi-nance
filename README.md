@@ -34,7 +34,7 @@ python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budg
 5. **Backtest Controls** — Equities/Options, position sizing, exit rules
 6. **Run & Results** — Live progress, metrics, Run History, Cache Manager
 
-**Initial Capital** is required and validated. All runs are stored under `runs/{run_id}/` with config, results, and trades.
+**Initial Capital** is required and validated. All runs are stored under `${RUNS_DIR}/{run_id}/` with config, results, and trades.
 
 ---
 
@@ -42,7 +42,7 @@ python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budg
 
 | Area | Original | Added |
 |------|----------|-------|
-| **Data** | Alpha Vantage, dashboard cache | `phi.data` — `/data_cache/{vendor}/{symbol}/{timeframe}/` parquet + metadata |
+| **Data** | Alpha Vantage, dashboard cache | `phi.data` — `${DATA_CACHE_DIR}/{vendor}/{symbol}/{timeframe}/` parquet + metadata |
 | **Runs** | None | `phi.run_config` — RunConfig schema, RunHistory at `/runs/` |
 | **UI** | 6-tab dashboard | `app_streamlit/live_workbench.py` — step-by-step Workbench |
 | **Blending** | MFT blender in dashboard | `phi.blending` — Weighted Sum, Voting, Regime-Weighted |
@@ -66,17 +66,22 @@ python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budg
 
 
 
-## Logging & Error Handling
+## Configuration
 
-Phi now uses centralized logging via `phi/logging.py`.
+Phi uses centralized path and runtime settings via `phi.config.settings`.
 
-- `LOG_LEVEL` (default `INFO`) controls verbosity.
+- `DATA_CACHE_DIR` (default `./data_cache`) controls cached OHLCV/options data storage.
+- `RUNS_DIR` (default `./runs`) controls persisted backtest run artifacts.
 - `LOGS_DIR` (default `./logs`) controls where `phi.log` is written.
+- `LOG_LEVEL` (default `INFO`) controls logging verbosity.
 - `DEBUG=true` enables expanded traceback details in Streamlit error panels.
+- `DATA_CACHE_ROOT` remains a deprecated compatibility alias for `DATA_CACHE_DIR`.
 
 Example:
 
 ```bash
+export DATA_CACHE_DIR=./data_cache
+export RUNS_DIR=./runs
 export LOG_LEVEL=DEBUG
 export LOGS_DIR=./logs
 export DEBUG=true
@@ -167,7 +172,7 @@ print(explanation)
 
 ## RunConfig Schema
 
-All backtest runs are described by a `RunConfig` object and saved to `runs/{run_id}/`.
+All backtest runs are described by a `RunConfig` object and saved to `${RUNS_DIR}/{run_id}/`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -187,7 +192,7 @@ All backtest runs are described by a `RunConfig` object and saved to `runs/{run_
 
 **Saved run structure:**
 ```
-runs/{run_id}/
+${RUNS_DIR}/{run_id}/
   config.json    ← RunConfig serialized
   results.json   ← Metrics: total_return, cagr, sharpe, max_drawdown
   trades.csv     ← Trade log (if available)
