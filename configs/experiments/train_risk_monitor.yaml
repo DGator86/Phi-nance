@@ -1,0 +1,20 @@
+name: "risk_monitor_train"
+description: "Smoke-test risk monitor agent training with experiment tracking"
+tracking:
+  backend: "none"
+  uri: "./mlruns"
+
+target: "train_risk_monitor_agent"
+params:
+  config: "configs/risk_monitor_agent.yaml"
+  optim_config: "configs/rl_optimisation_config.yaml"
+  output: "models/risk_monitor_agent"
+  fallback: true
+
+data:
+  symbols: ["SPY"]
+  timeframe: "1D"
+
+tags:
+  author: "codex"
+  project: "risk_monitor"

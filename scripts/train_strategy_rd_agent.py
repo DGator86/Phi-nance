@@ -39,7 +39,12 @@ def _act(policy: CategoricalPolicy, state: np.ndarray, device: torch.device, det
         return int(torch.multinomial(probs, num_samples=1).item())
 
 
-def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[str, Any] | None = None) -> Path:
+def train_with_fallback_loop(
+    config: Dict[str, Any],
+    output_dir: Path,
+    optim_cfg: Dict[str, Any] | None = None,
+    tracker: Any = None,
+) -> tuple[Path, dict[str, float]]:
     env = _build_env(config)
     model_cfg = config.get("model", {})
     runtime_cfg = get_runtime_config(optim_cfg or {"rl_optimisation": {}})
@@ -53,6 +58,7 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path, optim_cfg
     policy, device = move_policy_to_device(policy, runtime_cfg)
     episodes = int(config["training"].get("episodes_smoke", 5))
 
+    final_reward = 0.0
     for episode in range(episodes):
         state = env.reset()
         done = False
@@ -62,6 +68,9 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path, optim_cfg
             state, reward, done, _ = env.step(action)
             total_reward += reward
         logger.info("Fallback episode %d reward=%0.5f", episode + 1, total_reward)
+        final_reward = float(total_reward)
+        if tracker is not None:
+            tracker.log_metrics({"episode_reward": float(total_reward)}, step=episode + 1)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = output_dir / "latest.pt"
@@ -76,10 +85,15 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path, optim_cfg
         },
         checkpoint,
     )
-    return checkpoint
+    return checkpoint, {"final_episode_reward": final_reward, "episodes": float(episodes)}
 
 
-def train_with_areal(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[str, Any] | None = None) -> Path:
+def train_with_areal(
+    config: Dict[str, Any],
+    output_dir: Path,
+    optim_cfg: Dict[str, Any] | None = None,
+    tracker: Any = None,
+) -> tuple[Path, dict[str, float]]:
     try:
         from areal.rl import AsyncTrainer  # type: ignore
     except Exception as exc:  # pragma: no cover
@@ -107,6 +121,8 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[s
         tensorboard_log=str(output_dir / "tb"),
     )
     trainer.train()
+    if tracker is not None:
+        tracker.log_metrics({"total_timesteps": float(training_cfg["total_timesteps"])})
 
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = output_dir / "latest.pt"
@@ -121,7 +137,52 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[s
         },
         checkpoint,
     )
-    return checkpoint
+    return checkpoint, {"total_timesteps": float(training_cfg["total_timesteps"])}
+
+
+def train_strategy_rd_agent(
+    config: str = "configs/strategy_rd_agent.yaml",
+    optim_config: str = "configs/rl_optimisation_config.yaml",
+    output: str = "models/strategy_rd_agent",
+    fallback: bool = True,
+    tracker: Any = None,
+) -> dict[str, float]:
+    config_path = Path(config)
+    optim_config_path = Path(optim_config)
+    output_path = Path(output)
+
+    cfg = _load_config(config_path)
+    optim_cfg = load_optimisation_config(optim_config_path)
+    if tracker is not None:
+        tracker.log_params(
+            {
+                "config": str(config_path),
+                "optim_config": str(optim_config_path),
+                "fallback": bool(fallback),
+            }
+        )
+
+    if fallback:
+        checkpoint, metrics = train_with_fallback_loop(cfg, output_path, optim_cfg, tracker=tracker)
+    else:
+        checkpoint, metrics = train_with_areal(cfg, output_path, optim_cfg, tracker=tracker)
+
+    if tracker is not None:
+        tracker.log_artifact(str(checkpoint))
+
+    metrics["checkpoint_size_bytes"] = float(checkpoint.stat().st_size if checkpoint.exists() else 0)
+    metrics["used_fallback"] = float(bool(fallback))
+    return metrics
+
+
+def run_experiment_target(
+    config: str = "configs/strategy_rd_agent.yaml",
+    optim_config: str = "configs/rl_optimisation_config.yaml",
+    output: str = "models/strategy_rd_agent",
+    fallback: bool = True,
+    tracker: Any = None,
+) -> dict[str, float]:
+    return train_strategy_rd_agent(config, optim_config, output, fallback, tracker)
 
 
 def main() -> None:
@@ -137,9 +198,9 @@ def main() -> None:
     config = _load_config(args.config)
     optim_cfg = load_optimisation_config(args.optim_config)
     if args.fallback:
-        checkpoint = train_with_fallback_loop(config, args.output, optim_cfg)
+        checkpoint, _ = train_with_fallback_loop(config, args.output, optim_cfg)
     else:
-        checkpoint = train_with_areal(config, args.output, optim_cfg)
+        checkpoint, _ = train_with_areal(config, args.output, optim_cfg)
 
     logger.info("Saved strategy R&D policy checkpoint to %s", checkpoint)
 

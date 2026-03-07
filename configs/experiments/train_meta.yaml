@@ -1,0 +1,20 @@
+name: "meta_agent_train"
+description: "Smoke-test meta-agent training with experiment tracking"
+tracking:
+  backend: "none"
+  uri: "./mlruns"
+
+target: "train_meta_agent"
+params:
+  config: "configs/meta_agent.yaml"
+  optim_config: "configs/rl_optimisation_config.yaml"
+  output: "models/meta_agent"
+  fallback: true
+
+data:
+  symbols: ["SPY"]
+  timeframe: "1D"
+
+tags:
+  author: "codex"
+  project: "meta_agent"

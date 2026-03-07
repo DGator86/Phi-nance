@@ -1,6 +1,8 @@
 name: "backtest_spy"
+description: "Run CLI backtest workflow as an experiment target"
 tracking:
   backend: "none"
+  uri: "./mlruns"
 
 target: "run_backtest"
 params:
@@ -11,8 +13,15 @@ params:
   vendor: "yfinance"
   indicators: ["RSI", "MACD"]
   blend: "weighted_sum"
+  capital: 100000.0
+  threshold: 0.15
+  position: 0.95
+  phiai: false
+  log_trades_artifact: true
+  trades_artifact_path: "artifacts/backtest_trades.csv"
 
 data: {}
+
 tags:
   author: "codex"
   project: "backtest"

@@ -1,13 +1,20 @@
 name: "strategy_rd_train"
+description: "Smoke-test strategy R&D agent training with experiment tracking"
 tracking:
   backend: "none"
+  uri: "./mlruns"
 
-target: "scripts.train_strategy_rd_agent:run_experiment_target"
+target: "train_strategy_rd_agent"
 params:
   config: "configs/strategy_rd_agent.yaml"
-  output: "models/strategy_rd"
+  optim_config: "configs/rl_optimisation_config.yaml"
+  output: "models/strategy_rd_agent"
+  fallback: true
 
-data: {}
+data:
+  symbols: ["SPY"]
+  timeframe: "1D"
+
 tags:
   author: "codex"
   project: "strategy_rd"
