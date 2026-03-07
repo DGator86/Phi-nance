@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from phinance.data.cache import DataCache
+from phinance.rl.training_utils import python_step_kernel, state_cache, step_kernel
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +65,12 @@ class ExecutionEnvConfig:
     impact_coefficient: float = 0.1
     urgency_cross_spread: float = 1.0
     seed: int = 7
+    enable_numba: bool = False
+    enable_state_cache: bool = False
 
 
 class ExecutionEnv(BaseEnv):
-    """Environment for training an execution policy.
-
-    State is represented by a 9-feature normalized vector and action is a
-    continuous pair ``[fraction_to_trade, urgency]`` within ``[0, 1]``.
-    """
+    """Environment for training an execution policy."""
 
     observation_space = Box(low=0.0, high=1.0, shape=(len(STATE_FEATURES),), dtype=np.float32)
     action_space = Box(low=0.0, high=1.0, shape=(2,), dtype=np.float32)
@@ -93,6 +92,9 @@ class ExecutionEnv(BaseEnv):
         self.remaining_shares = 0.0
         self.arrival_price = 0.0
         self.done = False
+        self._adv_series = self.data["volume"].rolling(390).mean().to_numpy(dtype=np.float64)
+        self._obs_builder = self._build_obs_cached if self.config.enable_state_cache else self._build_obs_uncached
+        self._step_kernel = step_kernel if self.config.enable_numba else python_step_kernel
 
     def _prepare_data(self, provided: Optional[pd.DataFrame]) -> pd.DataFrame:
         if provided is not None:
@@ -145,7 +147,6 @@ class ExecutionEnv(BaseEnv):
         return df.dropna().reset_index(drop=True)
 
     def reset(self) -> np.ndarray:
-        """Reset environment and return the initial observation."""
         max_start = len(self.data) - self.config.episode_length - 1
         if max_start <= 1:
             raise ValueError("Dataset too small for configured episode length")
@@ -153,7 +154,7 @@ class ExecutionEnv(BaseEnv):
         self.end_idx = self.start_idx + self.config.episode_length
         self.current_step = self.start_idx
 
-        adv_raw = float(self.data["volume"].rolling(390).mean().iloc[self.current_step])
+        adv_raw = float(self._adv_series[self.current_step])
         adv = adv_raw if np.isfinite(adv_raw) and adv_raw > 0 else float(self.data["volume"].mean())
         self.total_shares = max(100.0, adv * 0.01)
         self.remaining_shares = self.total_shares
@@ -161,37 +162,32 @@ class ExecutionEnv(BaseEnv):
         self.done = False
         return self._get_observation()
 
+    @state_cache(maxsize=16384)
+    def _build_obs_cached(self, state: np.ndarray) -> np.ndarray:
+        return state
+
+    def _build_obs_uncached(self, state: np.ndarray) -> np.ndarray:
+        return state
+
     def _get_observation(self) -> np.ndarray:
         row = self.data.iloc[self.current_step]
-        remaining_shares = np.clip(self.remaining_shares / max(self.total_shares, 1.0), 0.0, 1.0)
-        time_remaining = np.clip((self.end_idx - self.current_step) / max(self.config.episode_length, 1), 0.0, 1.0)
-        bid_volume = np.clip(row["bid_volume"] / max(row["volume"], 1.0), 0.0, 1.0)
-        ask_volume = np.clip(row["ask_volume"] / max(row["volume"], 1.0), 0.0, 1.0)
-        spread = np.clip(row["spread"] / max(row["mid"], 1e-6) * 100.0, 0.0, 1.0)
-        volatility = np.clip(row["volatility_5"] * 100.0, 0.0, 1.0)
-        imbalance_denom = max(row["bid_volume"] + row["ask_volume"], 1.0)
-        imbalance = np.clip((row["bid_volume"] - row["ask_volume"]) / imbalance_denom * 0.5 + 0.5, 0.0, 1.0)
-        mid_price_return = np.clip(row["return_1"] * 20.0 + 0.5, 0.0, 1.0)
-        liquidity_score = np.clip((row["liquidity_score"] + 2.0) / 4.0, 0.0, 1.0)
-
         state = np.array(
             [
-                remaining_shares,
-                time_remaining,
-                bid_volume,
-                ask_volume,
-                spread,
-                volatility,
-                imbalance,
-                mid_price_return,
-                liquidity_score,
+                np.clip(self.remaining_shares / max(self.total_shares, 1.0), 0.0, 1.0),
+                np.clip((self.end_idx - self.current_step) / max(self.config.episode_length, 1), 0.0, 1.0),
+                np.clip(row["bid_volume"] / max(row["volume"], 1.0), 0.0, 1.0),
+                np.clip(row["ask_volume"] / max(row["volume"], 1.0), 0.0, 1.0),
+                np.clip(row["spread"] / max(row["mid"], 1e-6) * 100.0, 0.0, 1.0),
+                np.clip(row["volatility_5"] * 100.0, 0.0, 1.0),
+                np.clip((row["bid_volume"] - row["ask_volume"]) / max(row["bid_volume"] + row["ask_volume"], 1.0) * 0.5 + 0.5, 0.0, 1.0),
+                np.clip(row["return_1"] * 20.0 + 0.5, 0.0, 1.0),
+                np.clip((row["liquidity_score"] + 2.0) / 4.0, 0.0, 1.0),
             ],
             dtype=np.float32,
         )
-        return state
+        return self._obs_builder(state)
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
-        """Apply action and return transition tuple."""
         if self.done:
             raise RuntimeError("Episode already done. Call reset() before step().")
 
@@ -200,28 +196,30 @@ class ExecutionEnv(BaseEnv):
         urgency = float(np.clip(action[1], 0.0, 1.0))
 
         row = self.data.iloc[self.current_step]
-        adv_raw = float(self.data["volume"].rolling(390).mean().iloc[self.current_step])
+        adv_raw = float(self._adv_series[self.current_step])
         adv = adv_raw if np.isfinite(adv_raw) and adv_raw > 0 else float(self.data["volume"].mean())
-        adv = max(adv, 1.0)
 
-        desired_shares = self.remaining_shares * fraction
-        max_slice = self.config.participation_cap * max(float(row["volume"]), 1.0)
-        executed_shares = min(self.remaining_shares, desired_shares, max_slice)
+        executed_shares, execution_price, slippage, reward, _ = self._step_kernel(
+            float(self.remaining_shares),
+            fraction,
+            float(row["volume"]),
+            float(self.config.participation_cap),
+            float(row["spread"]),
+            float(row["mid"]),
+            float(self.arrival_price),
+            float(self.config.impact_coefficient),
+            urgency,
+            float(self.config.urgency_cross_spread),
+            float(adv),
+            float(self.total_shares),
+        )
 
-        spread = float(row["spread"])
-        mid = float(row["mid"])
-        impact = self.config.impact_coefficient * (executed_shares / adv) * spread
-        urgency_penalty = urgency * self.config.urgency_cross_spread * spread
-        execution_price = mid + impact + urgency_penalty
-
-        slippage = (execution_price - self.arrival_price) / max(self.arrival_price, 1e-6)
-        reward = -slippage * (executed_shares / max(self.total_shares, 1.0))
-        self.remaining_shares -= executed_shares
+        self.remaining_shares -= float(executed_shares)
         self.current_step += 1
 
         forced_liquidation_cost = 0.0
         if self.current_step >= self.end_idx and self.remaining_shares > 0:
-            forced_execution = float(self.data.iloc[self.current_step - 1]["mid"] + spread)
+            forced_execution = float(self.data.iloc[self.current_step - 1]["mid"] + row["spread"])
             forced_slippage = (forced_execution - self.arrival_price) / max(self.arrival_price, 1e-6)
             forced_liquidation_cost = forced_slippage * (self.remaining_shares / max(self.total_shares, 1.0))
             reward -= forced_liquidation_cost

@@ -1,0 +1,19 @@
+rl_optimisation:
+  parallel_rollouts:
+    enabled: false
+    num_workers: 4
+    local_mode: false
+    steps_per_collect: 256
+  experience_buffer:
+    enabled: false
+    size: 100000
+    prefetch: true
+    batch_size: 128
+  gpu:
+    enabled: false
+    mixed_precision: false
+  caching:
+    enabled: false
+    maxsize: 16384
+  numba:
+    enabled: false
