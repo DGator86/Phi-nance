@@ -36,7 +36,12 @@ def build_meta_env(config: Dict[str, Any], optim_cfg: Dict[str, Any] | None = No
     return MetaEnv(env=base_env, options=options, config=meta_cfg)
 
 
-def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[str, Any] | None = None) -> Path:
+def train_with_fallback_loop(
+    config: Dict[str, Any],
+    output_dir: Path,
+    optim_cfg: Dict[str, Any] | None = None,
+    tracker: Any = None,
+) -> tuple[Path, dict[str, float]]:
     env = build_meta_env(config, optim_cfg)
     model_cfg = config.get("model", {})
     train_cfg = config.get("training", {})
@@ -53,6 +58,7 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path, optim_cfg
     move_policy_to_device(meta_agent.policy, runtime_cfg)
 
     episodes = int(train_cfg.get("episodes_smoke", 5))
+    final_reward = 0.0
     for episode in range(episodes):
         state = env.reset()
         done = False
@@ -62,6 +68,9 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path, optim_cfg
             state, reward, done, _ = env.step(action)
             total += reward
         logger.info("Meta fallback episode %d reward=%0.4f", episode + 1, total)
+        final_reward = float(total)
+        if tracker is not None:
+            tracker.log_metrics({"episode_reward": float(total)}, step=episode + 1)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = output_dir / "latest.pt"
@@ -69,10 +78,15 @@ def train_with_fallback_loop(config: Dict[str, Any], output_dir: Path, optim_cfg
         checkpoint,
         extra={"option_names": [option.name for option in env.options], "trainer": "fallback"},
     )
-    return checkpoint
+    return checkpoint, {"final_episode_reward": final_reward, "episodes": float(episodes)}
 
 
-def train_with_areal(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[str, Any] | None = None) -> Path:
+def train_with_areal(
+    config: Dict[str, Any],
+    output_dir: Path,
+    optim_cfg: Dict[str, Any] | None = None,
+    tracker: Any = None,
+) -> tuple[Path, dict[str, float]]:
     try:
         from areal.rl import AsyncTrainer  # type: ignore
     except Exception as exc:  # pragma: no cover
@@ -103,6 +117,8 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[s
         tensorboard_log=str(output_dir / "tb"),
     )
     trainer.train()
+    if tracker is not None:
+        tracker.log_metrics({"total_timesteps": float(train_cfg.get("total_timesteps", 10000))})
 
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = output_dir / "latest.pt"
@@ -110,4 +126,4 @@ def train_with_areal(config: Dict[str, Any], output_dir: Path, optim_cfg: Dict[s
         checkpoint,
         extra={"option_names": [option.name for option in env.options], "trainer": "areal"},
     )
-    return checkpoint
+    return checkpoint, {"total_timesteps": float(train_cfg.get("total_timesteps", 10000))}

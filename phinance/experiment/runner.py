@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 
 TARGET_REGISTRY: dict[str, str] = {
     "train_execution_agent": "scripts.train_execution_agent:run_experiment_target",
+    "train_strategy_rd_agent": "scripts.train_strategy_rd_agent:run_experiment_target",
+    "train_risk_monitor_agent": "scripts.train_risk_monitor_agent:run_experiment_target",
+    "train_meta_agent": "scripts.train_meta_agent:run_experiment_target",
+    "run_gp_search": "scripts.run_gp_search:run_experiment_target",
+    "run_backtest": "scripts.run_backtest:run_experiment_target",
 }
 
 

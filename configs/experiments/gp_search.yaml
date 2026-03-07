@@ -1,6 +1,8 @@
-name: "gp_discovery"
+name: "gp_search"
+description: "Run GP discovery with synthetic OHLCV through experiment runner"
 tracking:
   backend: "none"
+  uri: "./mlruns"
 
 target: "run_gp_search"
 params:
@@ -11,6 +13,7 @@ params:
   seed: 21
 
 data: {}
+
 tags:
   author: "codex"
   project: "gp"

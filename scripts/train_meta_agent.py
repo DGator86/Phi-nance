@@ -5,11 +5,57 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
+from typing import Any
 
 from phinance.rl.hierarchical.training import load_config, train_with_areal, train_with_fallback_loop
 from phinance.rl.training_utils import load_optimisation_config
 
 logger = logging.getLogger(__name__)
+
+
+def train_meta_agent(
+    config: str = "configs/meta_agent.yaml",
+    output: str = "models/meta_agent",
+    optim_config: str = "configs/rl_optimisation_config.yaml",
+    fallback: bool = True,
+    tracker: Any = None,
+) -> dict[str, float]:
+    config_path = Path(config)
+    output_path = Path(output)
+    optim_config_path = Path(optim_config)
+
+    cfg = load_config(config_path)
+    optim_cfg = load_optimisation_config(optim_config_path)
+    if tracker is not None:
+        tracker.log_params(
+            {
+                "config": str(config_path),
+                "optim_config": str(optim_config_path),
+                "fallback": bool(fallback),
+            }
+        )
+
+    if fallback:
+        checkpoint, metrics = train_with_fallback_loop(cfg, output_path, optim_cfg, tracker=tracker)
+    else:
+        checkpoint, metrics = train_with_areal(cfg, output_path, optim_cfg, tracker=tracker)
+
+    if tracker is not None:
+        tracker.log_artifact(str(checkpoint))
+
+    metrics["checkpoint_size_bytes"] = float(checkpoint.stat().st_size if checkpoint.exists() else 0)
+    metrics["used_fallback"] = float(bool(fallback))
+    return metrics
+
+
+def run_experiment_target(
+    config: str = "configs/meta_agent.yaml",
+    output: str = "models/meta_agent",
+    optim_config: str = "configs/rl_optimisation_config.yaml",
+    fallback: bool = True,
+    tracker: Any = None,
+) -> dict[str, float]:
+    return train_meta_agent(config, output, optim_config, fallback, tracker)
 
 
 def main() -> None:
@@ -25,9 +71,9 @@ def main() -> None:
     optim_cfg = load_optimisation_config(args.optim_config)
 
     if args.fallback:
-        checkpoint = train_with_fallback_loop(config, args.output, optim_cfg)
+        checkpoint, _ = train_with_fallback_loop(config, args.output, optim_cfg)
     else:
-        checkpoint = train_with_areal(config, args.output, optim_cfg)
+        checkpoint, _ = train_with_areal(config, args.output, optim_cfg)
 
     logger.info("Saved meta-agent checkpoint to %s", checkpoint)
 

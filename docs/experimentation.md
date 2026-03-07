@@ -79,6 +79,33 @@ def my_function(..., tracker=None) -> dict[str, float]:
 Existing scripts remain backward compatible because `tracker` is optional.
 
 
+
+## Available built-in targets
+
+You can use aliases in `phinance.experiment.runner.TARGET_REGISTRY`:
+
+- `train_execution_agent` → `scripts.train_execution_agent:run_experiment_target`
+- `train_strategy_rd_agent` → `scripts.train_strategy_rd_agent:run_experiment_target`
+- `train_risk_monitor_agent` → `scripts.train_risk_monitor_agent:run_experiment_target`
+- `train_meta_agent` → `scripts.train_meta_agent:run_experiment_target`
+- `run_gp_search` → `scripts.run_gp_search:run_experiment_target`
+- `run_backtest` → `scripts.run_backtest:run_experiment_target`
+
+Example configs for these live under `configs/experiments/`.
+
+## Running each experiment type
+
+```bash
+python scripts/run_experiment.py --config configs/experiments/train_execution_agent.yaml
+python scripts/run_experiment.py --config configs/experiments/train_strategy_rd.yaml
+python scripts/run_experiment.py --config configs/experiments/train_risk_monitor.yaml
+python scripts/run_experiment.py --config configs/experiments/train_meta.yaml
+python scripts/run_experiment.py --config configs/experiments/gp_search.yaml
+python scripts/run_experiment.py --config configs/experiments/backtest.yaml
+```
+
+All built-in target functions accept an optional `tracker` argument and return a final `dict[str, float]` so results can be logged, compared, and swept consistently.
+
 ## Hyperparameter sweeps
 
 Use sweep configs under `configs/sweeps/` and run:
