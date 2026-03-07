@@ -91,9 +91,10 @@ def run_direct_backtest(
 
     composite = blend_signals(
         signals_df,
-        weights=blend_weights,
         method=blend_method,
-        regime_probs=None,
+        weights=blend_weights,
+        regime="RANGE" if blend_method == "regime_weighted" else None,
+        regime_boosts={} if blend_method == "regime_weighted" else None,
     )
     if composite.empty:
         return _empty_results(initial_capital), _empty_strat()

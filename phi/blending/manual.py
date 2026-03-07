@@ -10,18 +10,6 @@ import pandas as pd
 from .base import BlendMethod
 
 
-REGIME_INDICATOR_BOOST = {
-    "RSI": {"TREND_UP": 1.2, "TREND_DN": 1.2, "RANGE": 1.3, "BREAKOUT_UP": 1.1, "BREAKOUT_DN": 1.1},
-    "MACD": {"TREND_UP": 1.5, "TREND_DN": 1.5, "BREAKOUT_UP": 1.3, "BREAKOUT_DN": 1.3, "RANGE": 0.6},
-    "Bollinger": {"RANGE": 1.4, "TREND_UP": 1.0, "TREND_DN": 1.0, "LOWVOL": 1.2},
-    "Dual SMA": {"TREND_UP": 1.5, "TREND_DN": 1.5, "BREAKOUT_UP": 1.3, "BREAKOUT_DN": 1.3, "RANGE": 0.5},
-    "Mean Reversion": {"RANGE": 1.6, "LOWVOL": 1.2, "TREND_UP": 0.5, "TREND_DN": 0.5},
-    "Breakout": {"BREAKOUT_UP": 1.5, "BREAKOUT_DN": 1.5, "TREND_UP": 1.2, "TREND_DN": 1.2, "RANGE": 0.6},
-    "Buy & Hold": {},
-    "VWAP": {"RANGE": 1.5, "LOWVOL": 1.3, "EXHAUST_REV": 1.2, "TREND_UP": 0.7, "TREND_DN": 0.7, "BREAKOUT_UP": 0.5, "BREAKOUT_DN": 0.5},
-}
-
-
 def _normalise_weights(signals: pd.DataFrame, weights: Optional[Dict[str, float]]) -> Dict[str, float]:
     cols = list(signals.columns)
     if not cols:
@@ -78,10 +66,13 @@ class RegimeWeighted(BlendMethod):
         rp_aligned = regime_probs.reindex(signals.index).ffill().bfill()
         rp_aligned = rp_aligned.fillna(1.0 / max(len(rp_aligned.columns), 1))
 
+        regime_boosts = kwargs.get("regime_boosts") or {}
+
         adjusted = pd.DataFrame(index=signals.index, columns=cols, dtype=float)
         for col in cols:
             boost = pd.Series(1.0, index=signals.index)
-            for regime, factor in REGIME_INDICATOR_BOOST.get(col, {}).items():
+            indicator_boosts = regime_boosts.get(col, {}) if isinstance(regime_boosts, dict) else {}
+            for regime, factor in indicator_boosts.items():
                 if regime in rp_aligned.columns:
                     boost = boost + rp_aligned[regime] * factor
             adjusted[col] = weights[col] * boost.clip(lower=0.3)
