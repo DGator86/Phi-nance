@@ -34,6 +34,7 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 from dotenv import load_dotenv
+from pydantic import ValidationError
 
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
@@ -1468,15 +1469,21 @@ def _display_results(config, results, strat, indicators, blend_method, blend_wei
 
     # ── Persist run ───────────────────────────────────────────────────────
     from phi.run_config import RunConfig, RunHistory
-    _cfg_start = config.get("start", "")
-    _cfg_end   = config.get("end",   "")
-    run_cfg = RunConfig(
-        symbols=config.get("symbols", ["SPY"]),
-        start_date=str(_cfg_start.date()) if hasattr(_cfg_start, "date") else str(_cfg_start),
-        end_date=str(_cfg_end.date())     if hasattr(_cfg_end,   "date") else str(_cfg_end),
-        timeframe=config.get("timeframe", "1D"), initial_capital=cap,
-        indicators=indicators, blend_method=blend_method, blend_weights=blend_weights,
-    )
+    run_cfg = st.session_state.get("validated_run_config")
+    if not isinstance(run_cfg, RunConfig):
+        _cfg_start = config.get("start", "")
+        _cfg_end = config.get("end", "")
+        run_cfg = RunConfig(
+            symbols=config.get("symbols", ["SPY"]),
+            start_date=str(_cfg_start.date()) if hasattr(_cfg_start, "date") else str(_cfg_start),
+            end_date=str(_cfg_end.date()) if hasattr(_cfg_end, "date") else str(_cfg_end),
+            timeframe=config.get("timeframe", "1D"),
+            initial_capital=cap,
+            indicators=indicators,
+            blend_method=blend_method,
+            blend_weights=blend_weights,
+            trading_mode=config.get("trading_mode", "equities"),
+        )
     hist = RunHistory()
     run_id = hist.create_run(run_cfg)
     hist.save_results(run_id, {
@@ -1550,6 +1557,41 @@ def render_run_and_results(config, indicators, blend_method, blend_weights):
 
     if not run_clicked:
         return
+
+    run_payload = {
+        "dataset_id": config.get("dataset_id", ""),
+        "symbols": config.get("symbols", ["SPY"]),
+        "start_date": config.get("start"),
+        "end_date": config.get("end"),
+        "timeframe": config.get("timeframe", "1D"),
+        "vendor": config.get("vendor", "alphavantage"),
+        "initial_capital": config.get("initial_capital", 100_000.0),
+        "trading_mode": config.get("trading_mode", "equities"),
+        "indicators": indicators,
+        "blend_method": blend_method,
+        "blend_weights": blend_weights,
+        "phiai_enabled": bool(st.session_state.get("phiai_full", False)),
+        "evaluation_metric": st.session_state.get("wb_eval_metric", "roi"),
+    }
+
+    try:
+        from phi.run_config import RunConfig
+        validated_cfg = RunConfig.model_validate(run_payload)
+    except ValidationError as e:
+        st.error("Configuration validation failed. Please fix the following issues:")
+        for err in e.errors():
+            field = ".".join(str(part) for part in err.get("loc", [])) or "config"
+            st.error(f"• {field}: {err.get('msg', 'invalid value')}")
+        return
+
+    config["symbols"] = validated_cfg.symbols
+    config["start"] = datetime.combine(validated_cfg.start_date, datetime.min.time())
+    config["end"] = datetime.combine(validated_cfg.end_date, datetime.min.time())
+    config["timeframe"] = validated_cfg.timeframe
+    config["vendor"] = validated_cfg.vendor
+    config["initial_capital"] = validated_cfg.initial_capital
+    config["trading_mode"] = validated_cfg.trading_mode
+    st.session_state["validated_run_config"] = validated_cfg
 
     # Honour any overrides adopted from Phibot review
     _signal_threshold  = float(st.session_state.get("phibot_signal_threshold", 0.15))
@@ -2162,20 +2204,30 @@ def render_ai_agents():
 # Run History & Cache
 # ---------------------------------------------------------------------------
 def render_run_history():
-    """Render the history of previous backtest runs."""
+    """Render validated history from previous backtest runs."""
     # pylint: disable=import-outside-toplevel
-    from phi.run_config import RunHistory
+    from phi.run_config import RunConfig, RunHistory
     hist = RunHistory()
     runs = hist.list_runs()
     if not runs:
         st.caption("No runs yet.")
         return
+
     st.markdown("### Run History")
     for r in runs[:10]:
-        with st.expander(r["run_id"]):
-            st.json(r.get("results", {}))
+        run_id = r["run_id"]
+        run_dir = hist.root / run_id
+        with st.expander(run_id):
+            try:
+                cfg = RunConfig.load(run_dir)
+                st.json({"config": cfg.model_dump(), "results": r.get("results", {})})
+            except ValidationError as exc:
+                st.error(f"Failed to validate saved config for {run_id}.")
+                for err in exc.errors():
+                    field = ".".join(str(part) for part in err.get("loc", [])) or "config"
+                    st.error(f"• {field}: {err.get('msg', 'invalid value')}")
+                st.json({"results": r.get("results", {})})
 
-        # ── Results ───────────────────────────────────────────────────────────
         render_results()
 
 # ─────────────────────────────────────────────────────────────────────────────
