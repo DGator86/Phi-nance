@@ -88,3 +88,30 @@ python scripts/run_sweep.py --config configs/sweeps/gp_discovery_sweep.yaml
 ```
 
 See `docs/hyperparameter_sweeps.md` for config schema, search-space types, and MLflow sweep analysis workflow.
+
+## Interactive Analysis with Jupyter Notebooks
+
+Install notebook dependencies:
+
+```bash
+pip install -r requirements.txt
+# or
+pip install .[experiment,notebooks]
+```
+
+Launch Jupyter:
+
+```bash
+jupyter lab
+# or
+jupyter notebook
+```
+
+Notebook templates live under `notebooks/`:
+
+- `01_basic_analysis.ipynb`: inspect a single run, parameters, and learning curves.
+- `02_sweep_analysis.ipynb`: compare child trials from a sweep and inspect parameter-performance patterns.
+- `03_custom_analysis.ipynb`: scaffold for custom analysis workflows.
+
+The notebooks use reusable helpers from `phinance.experiment.visualization` and run discovery from `phinance.experiment.results`. Set `MLFLOW_TRACKING_URI` (or configure it in code) before running cells.
+

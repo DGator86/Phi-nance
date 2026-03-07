@@ -41,6 +41,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+notebooks = [
+    "jupyter>=1.0.0",
+    "ipykernel>=6.29",
+    "matplotlib>=3.8",
+    "plotly>=5.18",
+]
 experiment = [
     "mlflow>=2.14.0",
     "wandb>=0.17.0",
