@@ -8,6 +8,7 @@ No manual tuning. Uses Ollama when available for indicator/blend suggestions.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -147,9 +148,14 @@ def run_fully_automated(
         indicators[name] = {"enabled": True, "auto_tune": True, "params": params.copy()}
 
     # 4. PhiAI optimize params using timeframe-aware grids
-    optimized, opt_expl = run_phiai_optimization(ohlcv, indicators, max_iter_per_indicator=12, timeframe=timeframe)
-    indicators = optimized
-    explanation_parts.append(opt_expl)
+    opt_result = run_phiai_optimization(
+        ohlcv=ohlcv,
+        indicators_config=indicators,
+        n_trials=12,
+        metric="sharpe",
+    )
+    indicators = opt_result.get("optimized_indicators", indicators)
+    explanation_parts.append(opt_result.get("explanation", "PhiAI made no changes."))
 
     # 5. Blend method (equal weights, handled by caller)
     from datetime import datetime

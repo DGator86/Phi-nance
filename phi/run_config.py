@@ -46,6 +46,9 @@ class RunConfig(BaseModel):
     blend_method: str = "weighted_sum"
     blend_weights: Dict[str, float] = Field(default_factory=dict)
     phiai_enabled: bool = False
+    phiai_n_trials: Optional[int] = Field(default=None, ge=1)
+    phiai_walk_forward_windows: Optional[int] = Field(default=None, ge=1)
+    phiai_parallel_jobs: Optional[int] = Field(default=None, ge=1)
     phiai_constraints: Dict[str, Any] = Field(default_factory=dict)
     exit_rules: Dict[str, Any] = Field(default_factory=dict)
     position_sizing: Dict[str, Any] = Field(default_factory=dict)
