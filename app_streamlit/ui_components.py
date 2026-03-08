@@ -62,15 +62,29 @@ def render_indicator_selector(selected_names: list[str]) -> tuple[dict[str, dict
         with st.expander(name, expanded=False):
             st.caption(spec.description)
             params: dict[str, Any] = {}
-            for param, (min_v, max_v, default_v, step) in spec.params.items():
-                params[param] = st.number_input(
-                    param,
-                    min_value=float(min_v),
-                    max_value=float(max_v),
-                    value=float(default_v),
-                    step=float(step),
-                    key=f"{name}_{param}",
-                )
+            for param, param_spec in spec.params.items():
+                if isinstance(param_spec, tuple):
+                    min_v, max_v, default_v, step = param_spec
+                    params[param] = st.number_input(
+                        param,
+                        min_value=float(min_v),
+                        max_value=float(max_v),
+                        value=float(default_v),
+                        step=float(step),
+                        key=f"{name}_{param}",
+                    )
+                elif isinstance(param_spec, dict) and param_spec.get("type") == "select":
+                    options = list(param_spec.get("options", []))
+                    default_value = param_spec.get("default", options[0] if options else "")
+                    default_idx = options.index(default_value) if default_value in options else 0
+                    params[param] = st.selectbox(
+                        param,
+                        options=options,
+                        index=default_idx,
+                        key=f"{name}_{param}",
+                    )
+                else:
+                    logger.warning("Unsupported parameter spec for %s/%s: %s", name, param, param_spec)
             indicators[name] = {"enabled": True, "params": params}
 
     if selected_names:
