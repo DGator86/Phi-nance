@@ -223,6 +223,89 @@ def _compute_adx(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     return _to_signal(signal)
 
 
+def _compute_rolling_entropy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """Rolling return entropy signal."""
+    close = ohlcv["close"].astype(float)
+    window = int(params.get("window", 20))
+    bins = int(params.get("bins", 10))
+    returns = close.pct_change().fillna(0.0)
+
+    def _entropy(x: np.ndarray) -> float:
+        hist, _ = np.histogram(x, bins=max(2, bins), density=True)
+        probs = hist / (hist.sum() + 1e-12)
+        probs = probs[probs > 0]
+        return float(-(probs * np.log(probs)).sum())
+
+    ent = returns.rolling(window, min_periods=max(5, window // 2)).apply(_entropy, raw=True)
+    return _to_signal(_safe_zscore(ent.fillna(0.0), max(30, window)))
+
+
+def _compute_mutual_information(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """Mutual information signal between returns and lagged returns."""
+    close = ohlcv["close"].astype(float)
+    window = int(params.get("window", 30))
+    bins = int(params.get("bins", 8))
+    lag = int(params.get("lag", 1))
+    returns = close.pct_change().fillna(0.0)
+    shifted = returns.shift(lag).fillna(0.0)
+
+    def _mi(x: np.ndarray, y: np.ndarray) -> float:
+        joint_hist, _, _ = np.histogram2d(x, y, bins=max(2, bins))
+        pxy = joint_hist / (joint_hist.sum() + 1e-12)
+        px = pxy.sum(axis=1, keepdims=True)
+        py = pxy.sum(axis=0, keepdims=True)
+        expected = px @ py
+        mask = pxy > 0
+        return float((pxy[mask] * np.log((pxy[mask] + 1e-12) / (expected[mask] + 1e-12))).sum())
+
+    vals = np.full(len(returns), np.nan)
+    for i in range(window - 1, len(returns)):
+        x = returns.iloc[i - window + 1 : i + 1].to_numpy(dtype=float)
+        y = shifted.iloc[i - window + 1 : i + 1].to_numpy(dtype=float)
+        vals[i] = _mi(x, y)
+    mi = pd.Series(vals, index=ohlcv.index)
+    return _to_signal(_safe_zscore(mi.fillna(0.0), max(30, window)))
+
+
+def _compute_fisher_information(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """Fisher-like information proxy from return slope intensity."""
+    close = ohlcv["close"].astype(float)
+    window = int(params.get("window", 20))
+    returns = close.pct_change().fillna(0.0)
+    mu = returns.rolling(window, min_periods=max(5, window // 2)).mean()
+    sigma = returns.rolling(window, min_periods=max(5, window // 2)).std().replace(0.0, np.nan)
+    z = (returns - mu) / sigma
+    fisher = z.diff().pow(2).rolling(window, min_periods=max(5, window // 2)).mean()
+    return _to_signal(_safe_zscore(fisher.fillna(0.0), max(30, window)))
+
+
+def _compute_kl_divergence(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """KL divergence between two adjacent rolling return distributions."""
+    close = ohlcv["close"].astype(float)
+    window = int(params.get("window", 30))
+    bins = int(params.get("bins", 10))
+    returns = close.pct_change().fillna(0.0)
+
+    values = np.full(len(returns), np.nan)
+    b = max(2, bins)
+    for i in range(2 * window - 1, len(returns)):
+        prev = returns.iloc[i - 2 * window + 1 : i - window + 1].to_numpy(dtype=float)
+        curr = returns.iloc[i - window + 1 : i + 1].to_numpy(dtype=float)
+        low = float(min(prev.min(), curr.min()))
+        high = float(max(prev.max(), curr.max()))
+        if low == high:
+            values[i] = 0.0
+            continue
+        p_hist, _ = np.histogram(prev, bins=b, range=(low, high), density=True)
+        q_hist, _ = np.histogram(curr, bins=b, range=(low, high), density=True)
+        p_dist = p_hist / (p_hist.sum() + 1e-12)
+        q_dist = q_hist / (q_hist.sum() + 1e-12)
+        values[i] = float(np.sum(p_dist * np.log((p_dist + 1e-12) / (q_dist + 1e-12))))
+
+    kl = pd.Series(values, index=ohlcv.index)
+    return _to_signal(_safe_zscore(kl.fillna(0.0), max(30, window)))
+
+
 def _compute_mft_signal(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     """Simplified MFT directional signal based on potential gradient."""
     close = ohlcv["close"].astype(float)
@@ -504,6 +587,51 @@ INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
             "amihud_scale": {"label": "Amihud Scale", "default": 1000000.0, "min": 1000.0, "max": 10000000.0, "step": 1000.0, "type": "float"},
         },
         "tune_ranges": {"window": (10, 50), "amihud_scale": (1e4, 1e7)},
+    },
+
+    "rolling_entropy": {
+        "display_name": "Rolling Entropy",
+        "description": "Shannon entropy of rolling return distributions.",
+        "type": "info_theory",
+        "compute": _compute_rolling_entropy,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 120, "step": 1, "type": "int"},
+            "bins": {"label": "Bins", "default": 10, "min": 2, "max": 40, "step": 1, "type": "int"},
+        },
+        "tune_ranges": {"window": (10, 60), "bins": (5, 20)},
+    },
+    "mutual_information": {
+        "display_name": "Mutual Information",
+        "description": "Dependency between returns and lagged returns.",
+        "type": "info_theory",
+        "compute": _compute_mutual_information,
+        "params": {
+            "window": {"label": "Window", "default": 30, "min": 10, "max": 150, "step": 1, "type": "int"},
+            "bins": {"label": "Bins", "default": 8, "min": 2, "max": 30, "step": 1, "type": "int"},
+            "lag": {"label": "Lag", "default": 1, "min": 1, "max": 10, "step": 1, "type": "int"},
+        },
+        "tune_ranges": {"window": (20, 80), "bins": (4, 16), "lag": (1, 5)},
+    },
+    "fisher_information": {
+        "display_name": "Fisher Information",
+        "description": "Slope-intensity information proxy from standardized returns.",
+        "type": "info_theory",
+        "compute": _compute_fisher_information,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 120, "step": 1, "type": "int"},
+        },
+        "tune_ranges": {"window": (10, 60)},
+    },
+    "kl_divergence": {
+        "display_name": "KL Divergence",
+        "description": "Divergence between adjacent rolling return distributions.",
+        "type": "info_theory",
+        "compute": _compute_kl_divergence,
+        "params": {
+            "window": {"label": "Window", "default": 30, "min": 10, "max": 150, "step": 1, "type": "int"},
+            "bins": {"label": "Bins", "default": 10, "min": 2, "max": 40, "step": 1, "type": "int"},
+        },
+        "tune_ranges": {"window": (20, 80), "bins": (5, 20)},
     },
     "mft_signal": {
         "display_name": "MFT Signal",

@@ -113,6 +113,28 @@ INDICATOR_SPECS: dict[str, IndicatorSpec] = {
         category="Order Flow & Liquidity",
     ),
 
+
+    "Rolling Entropy": IndicatorSpec(
+        description="Shannon entropy over rolling return distributions.",
+        params={"window": (5, 120, 20, 1), "bins": (2, 40, 10, 1)},
+        category="Information Theory",
+    ),
+    "Mutual Information": IndicatorSpec(
+        description="Dependency between returns and lagged returns.",
+        params={"window": (10, 150, 30, 1), "bins": (2, 30, 8, 1), "lag": (1, 10, 1, 1)},
+        category="Information Theory",
+    ),
+    "Fisher Information": IndicatorSpec(
+        description="Standardized return-slope information proxy.",
+        params={"window": (5, 120, 20, 1)},
+        category="Information Theory",
+    ),
+    "KL Divergence": IndicatorSpec(
+        description="Divergence between adjacent rolling return distributions.",
+        params={"window": (10, 150, 30, 1), "bins": (2, 40, 10, 1)},
+        category="Information Theory",
+    ),
+
     "MFT Signal": IndicatorSpec(
         description="Simplified Market Field Theory gradient-direction signal.",
         params={
