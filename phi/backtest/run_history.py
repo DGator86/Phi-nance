@@ -13,6 +13,10 @@ RunHistory provides list / load / compare / delete operations.
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import json
 import shutil
 from datetime import datetime

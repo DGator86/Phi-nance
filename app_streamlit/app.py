@@ -3,6 +3,10 @@
 Phi-nance — One page. Everything works.
 """
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import os, sys, math, warnings
 from pathlib import Path
 from datetime import date, timedelta

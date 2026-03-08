@@ -1,5 +1,9 @@
 """Options strategy library."""
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 from .base import Leg, OptionStrategy
 from .advanced import ButterflySpread, CalendarSpread, Collar, CoveredCall, DiagonalSpread, ProtectivePut
 from .combos import IronCondor, Straddle, Strangle

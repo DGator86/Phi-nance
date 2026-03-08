@@ -6,6 +6,10 @@ so callers can use a stable interface while incremental migration continues.
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 from typing import Any, Dict
 
 import pandas as pd

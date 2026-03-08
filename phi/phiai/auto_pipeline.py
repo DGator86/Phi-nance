@@ -7,6 +7,10 @@ No manual tuning. Uses Ollama when available for indicator/blend suggestions.
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,7 +19,6 @@ import pandas as pd
 
 from phi.run_config import RunConfig
 
-logger = logging.getLogger(__name__)
 
 # Default indicators to use when Ollama unavailable
 _DEFAULT_INDICATORS = ["RSI", "MACD", "Bollinger", "Dual SMA"]

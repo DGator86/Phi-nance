@@ -14,6 +14,10 @@ Each indicator:
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional

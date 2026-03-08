@@ -1,5 +1,9 @@
 """Blending method registry."""
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 BLEND_METHODS = {
     "weighted_sum": "phi.blending.manual.WeightedSum",
     "voting": "phi.blending.manual.Voting",

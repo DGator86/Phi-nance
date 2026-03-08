@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 def should_exercise_early(option_type: str, spot: float, strike: float, time_to_expiry: float, dividend_yield: float = 0.0) -> bool:
     """Heuristic early exercise signal.
 

@@ -88,6 +88,28 @@ export DEBUG=true
 python -m streamlit run app_streamlit/live_workbench.py
 ```
 
+
+## Logging
+
+Phi-nance uses centralized structured logging via `phi.logging.get_logger`.
+
+```python
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+logger.debug("Function entry", extra={"symbol": "SPY"})
+logger.info("Backtest started")
+logger.warning("Weights did not sum to 1.0; normalizing")
+try:
+    run_job()
+except Exception:
+    logger.exception("Backtest failed")
+```
+
+- Global level is controlled by `LOG_LEVEL` (for example `DEBUG`, `INFO`, `WARNING`).
+- File output goes to `${LOGS_DIR}/phi.log`.
+- New production code should prefer logger calls over `print(...)` for operational events and errors.
+
 ## External Ecosystem Notes
 
 A curated landscape of external options/data projects (with recommended integration order for Phi-nance) is maintained in:
@@ -138,7 +160,7 @@ df = fetch_and_cache(
     start="2022-01-01",
     end="2024-01-01",
 )
-print(df.tail())
+logger.info("Fetched rows=%s", len(df))
 ```
 
 ### Building a Blended Strategy
@@ -165,7 +187,7 @@ indicators = {
     "MACD": {"enabled": True, "auto_tune": True, "params": {}},
 }
 optimized, explanation = run_phiai_optimization(ohlcv, indicators, max_iter_per_indicator=20)
-print(explanation)
+logger.info("PhiAI explanation: %s", explanation)
 ```
 
 ---

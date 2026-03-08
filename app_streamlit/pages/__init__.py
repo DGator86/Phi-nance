@@ -5,6 +5,10 @@ app_streamlit/pages/__init__.py
 Page modules for the Phi-nance Streamlit app.
 """
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 from app_streamlit.pages.plugin_browser import render_plugin_browser
 from app_streamlit.pages.live_trading_dashboard import render_live_trading_dashboard
 from app_streamlit.pages.autonomous_pipeline_page import render_autonomous_pipeline

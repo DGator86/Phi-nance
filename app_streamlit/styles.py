@@ -4,6 +4,10 @@ app_streamlit.styles — Dark Purple/Orange Theme CSS
 Inject via st.markdown(WORKBENCH_CSS, unsafe_allow_html=True)
 """
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 PALETTE = {
     "bg":          "#0a0a12",
     "bg2":         "#12121e",

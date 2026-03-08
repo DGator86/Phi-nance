@@ -7,14 +7,18 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from phi.config import settings
 
 
 _FORMAT = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
 
 
 def _resolve_level(log_level: Optional[str]) -> int:
-    level_name = (log_level or settings.LOG_LEVEL or "INFO").upper()
+    if log_level:
+        level_name = log_level.upper()
+    else:
+        from phi.config import settings
+
+        level_name = (settings.LOG_LEVEL or "INFO").upper()
     return getattr(logging, level_name, logging.INFO)
 
 
@@ -30,7 +34,12 @@ def setup_logging(
     logger.setLevel(level)
 
     formatter = logging.Formatter(_FORMAT)
-    resolved_file = log_file or (settings.LOGS_DIR / "phi.log")
+    if log_file is None:
+        from phi.config import settings
+
+        resolved_file = settings.LOGS_DIR / "phi.log"
+    else:
+        resolved_file = log_file
 
     existing_stream = any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in logger.handlers)
     if console and not existing_stream:

@@ -9,6 +9,10 @@ register new plugins via upload or paste, and inspect metadata.
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import os
 import sys
 import tempfile

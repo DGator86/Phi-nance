@@ -9,6 +9,10 @@ and P&L visualization for the PaperBroker (or real broker adapters).
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import sys
 import time
 from datetime import datetime
