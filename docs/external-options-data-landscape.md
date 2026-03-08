@@ -1,37 +1,28 @@
 # External Options & Market-Data Landscape
 
-This note summarizes external repositories that can complement Phi-nance's options and market-data roadmap.
+This guide tracks external projects relevant to Phi-nance options/data evolution and documents practical integration priorities.
 
-## Candidate repositories
+## Candidate Repositories
 
-| Repository | Primary value for Phi-nance | How to use it here | Integration risk |
+| Repository | Primary value for Phi-nance | Practical use | Integration risk |
 |---|---|---|---|
-| `MarketDataApp/sdk-py` | Clean Python SDK for U.S. equities/options data (real-time + historical) | Add as an optional data connector in `phi.data` and use for options chain ingestion | API key dependency + vendor-specific schemas |
-| `yugedata/Options_Data_Science` | End-to-end options analytics patterns (collection, analysis, viz, paper trading) | Borrow feature engineering and analytics workflow ideas for `phi/options` | Notebook-heavy code may need production hardening |
-| `binance/binance-public-data` | Large, free crypto historical market data source | Extend data builder to support crypto symbols and regime modeling experiments | Bulk data management/storage concerns |
-| `mcdallas/wallstreet` | Lightweight real-time stock/options access utilities | Fast prototyping for options quotes/chains in experiments | Unofficial wrappers can change unexpectedly |
-| `OpenBB-finance/OpenBB` | Broad multi-provider financial data platform + tools for analysts/agents | Use as a meta data-provider layer when breadth matters more than minimal dependencies | Heavy dependency surface; versioning discipline needed |
-| `nuglifeleoji/Options-Analytics-Agent` | Agentic options analysis architecture (LangGraph, caching, memory) | Reference architecture for a future PhiAI options-agent workflow | Adds LLM orchestration complexity |
-| `SamPom100/OptionsAnalyzer` | Strong visual analytics patterns for options surfaces/heatmaps | Reuse visualization ideas in Streamlit (volatility surface, OI heatmaps) | Project-specific plotting conventions may need adaptation |
+| `MarketDataApp/sdk-py` | Clean Python SDK for US equities/options snapshots | Optional chain/quote enrichment behind env-gated connector | Vendor schema/version coupling |
+| `OpenBB-finance/OpenBB` | Wide multi-provider data abstraction | Meta-provider exploration for breadth-heavy workflows | Larger dependency footprint |
+| `yugedata/Options_Data_Science` | Options analytics workflow patterns | Feature engineering and exploratory analysis references | Notebook-heavy, production hardening needed |
+| `SamPom100/OptionsAnalyzer` | Visual options analytics ideas | Heatmaps/surface visual patterns for Streamlit pages | UI conventions require adaptation |
+| `binance/binance-public-data` | Large free crypto datasets | Alternative regime experiments and stress testing | Data volume/storage costs |
+| `nuglifeleoji/Options-Analytics-Agent` | Agentic options-analysis architecture | Future PhiAI agent orchestration reference | LLM orchestration complexity |
 
-## Suggested adoption order
+## Suggested Adoption Order
 
-1. **Data breadth first:** trial `MarketDataApp/sdk-py` and `binance/binance-public-data` behind optional connectors.
-2. **Analytics second:** port selected feature/viz concepts from `Options_Data_Science` and `OptionsAnalyzer`.
-3. **Platform scale-up:** evaluate `OpenBB` if a unified provider layer is needed.
-4. **Agent layer last:** adapt ideas from `Options-Analytics-Agent` after options backtest primitives are stable.
+1. **Low-friction data wins first**: optional MarketDataApp connector hardening.
+2. **Visualization and analytics enhancement**: port selected options analytics/UI concepts.
+3. **Provider breadth**: evaluate OpenBB when multi-provider abstraction becomes mandatory.
+4. **Agentic layer**: adopt advanced orchestration patterns after options-core maturity.
 
-## Minimal implementation plan for Phi-nance
+## Integration Principles
 
-- Add `phi/data/providers/` abstraction with a common fetch interface (OHLCV, options chain, greeks snapshot).
-- Implement one low-risk connector first (`MarketDataApp`), guarded by env flag and graceful fallback.
-- Extend `phi/options/` from stub to include normalized options chain schema and caching.
-- Add Streamlit panel cards for options OI/IV visualizations inspired by external projects.
-- Keep all third-party integrations optional to preserve current lightweight local workflows.
-
-
-## Current implementation status in Phi-nance
-
-- ✅ Added multi-vendor dataset support in `phi.data.fetch_and_cache` for `alphavantage`, `yfinance` (1D), and `binance_public`.
-- ✅ Added options-chain snapshot integration path from MarketDataApp (env-gated with `MARKETDATAAPP_API_TOKEN`) and wired it into options backtest delta selection.
-- 🚧 Remaining repositories in this note are still roadmap references and not directly integrated yet.
+- Keep third-party connectors optional and resilient to missing keys.
+- Normalize external schemas before entering backtest/analytics pipelines.
+- Preserve offline/local workflows with sample or fallback data paths.
+- Add tests around provider boundaries to guard against upstream API drift.
