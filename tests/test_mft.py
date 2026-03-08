@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
+import pytest
 
-from phi.mft.field import compute_field_dynamics, field_potential
-from phi.mft.signals import mft_energy_signal, mft_signal
+
+def _deps():
+    np = pytest.importorskip("numpy")
+    pd = pytest.importorskip("pandas")
+    return np, pd
 
 
 def test_field_potential_preserves_shape_and_index() -> None:
+    np, pd = _deps()
+    from phi.mft.field import field_potential
+
     idx = pd.date_range("2024-01-01", periods=120, freq="D")
     close = pd.Series(np.linspace(100.0, 120.0, len(idx)), index=idx)
 
@@ -20,6 +25,9 @@ def test_field_potential_preserves_shape_and_index() -> None:
 
 
 def test_compute_field_dynamics_columns_and_lengths() -> None:
+    np, pd = _deps()
+    from phi.mft.field import compute_field_dynamics
+
     idx = pd.date_range("2024-01-01", periods=90, freq="D")
     close = pd.Series(100.0 + np.sin(np.linspace(0, 6, len(idx))), index=idx)
 
@@ -31,6 +39,9 @@ def test_compute_field_dynamics_columns_and_lengths() -> None:
 
 
 def test_mft_signal_detects_direction_on_monotonic_series() -> None:
+    np, pd = _deps()
+    from phi.mft.signals import mft_signal
+
     idx = pd.date_range("2024-01-01", periods=80, freq="D")
     up_close = pd.Series(np.linspace(10.0, 30.0, len(idx)), index=idx)
     down_close = pd.Series(np.linspace(30.0, 10.0, len(idx)), index=idx)
@@ -43,6 +54,9 @@ def test_mft_signal_detects_direction_on_monotonic_series() -> None:
 
 
 def test_mft_energy_signal_bounded_range() -> None:
+    np, pd = _deps()
+    from phi.mft.signals import mft_energy_signal
+
     idx = pd.date_range("2024-01-01", periods=100, freq="D")
     close = pd.Series(100 + np.sin(np.linspace(0, 4 * np.pi, len(idx))), index=idx)
 
@@ -52,6 +66,7 @@ def test_mft_energy_signal_bounded_range() -> None:
 
 
 def test_mft_backward_compat_aliases() -> None:
+    np, pd = _deps()
     from phi.indicators.registry import compute_signal
     from phi.indicators.simple import compute_indicator
 
