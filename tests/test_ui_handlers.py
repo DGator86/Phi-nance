@@ -130,3 +130,55 @@ def test_handle_run_backtest_exception_sets_error(monkeypatch):
 
     assert result is None
     assert "Backtest failed" in sink["error"][0]
+
+
+def test_build_run_config_auto_assigns_equal_blend_weights():
+    payload = _base_payload("equities")
+    payload["blend_weights"] = {}
+    payload["indicators"] = {
+        "RSI": {"enabled": True, "params": {"rsi_period": 14}},
+        "MACD": {"enabled": True, "params": {}},
+    }
+
+    cfg = ui_handlers.build_run_config(payload)
+
+    assert sum(cfg.blend_weights.values()) == 1.0
+    assert set(cfg.blend_weights) == {"RSI", "MACD"}
+
+
+def test_handle_load_run_sets_error_when_missing(monkeypatch):
+    sink = _patch_state(monkeypatch)
+
+    class MissingHistory:
+        def load_config(self, _run_id):
+            return None
+
+        def load_results(self, _run_id):
+            return None
+
+    monkeypatch.setattr(ui_handlers, "RunHistory", lambda: MissingHistory())
+
+    result = ui_handlers.handle_load_run("does-not-exist")
+
+    assert result is None
+    assert "could not be loaded" in sink["error"][0]
+
+
+def test_handle_load_run_sets_config_and_results(monkeypatch):
+    sink = _patch_state(monkeypatch)
+    cfg = ui_handlers.build_run_config(_base_payload())
+
+    class PresentHistory:
+        def load_config(self, _run_id):
+            return cfg
+
+        def load_results(self, _run_id):
+            return {"total_return": 0.15}
+
+    monkeypatch.setattr(ui_handlers, "RunHistory", lambda: PresentHistory())
+
+    result = ui_handlers.handle_load_run("run_2")
+
+    assert result["run_id"] == "run_2"
+    assert sink["config"]["symbols"] == ["SPY"]
+    assert sink["results"]["total_return"] == 0.15

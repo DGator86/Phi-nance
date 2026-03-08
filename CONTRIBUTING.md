@@ -15,7 +15,7 @@ pip install flake8
 ## Running Tests
 
 ```bash
-pytest --cov=phi --cov=app_streamlit --cov-report=xml --cov-report=term-missing --cov-fail-under=15
+pytest --cov=phi --cov=app_streamlit --cov-report=xml --cov-report=term-missing --cov-fail-under=80
 ```
 
 ## Linting
@@ -28,7 +28,7 @@ flake8 phi/ tests/ --max-line-length=120 --ignore=E501,W503
 
 1. Fork the repository and create a feature branch from `MAIN`.
 2. Make your changes with clear, descriptive commits.
-3. Ensure all tests pass (`pytest --cov=phi --cov=app_streamlit --cov-report=xml --cov-report=term-missing --cov-fail-under=15`) and linting is clean.
+3. Ensure all tests pass (`pytest --cov=phi --cov=app_streamlit --cov-report=xml --cov-report=term-missing --cov-fail-under=80`) and linting is clean.
 4. Open a pull request against `MAIN` with a description of what you changed and why.
 
 ## Code Style
