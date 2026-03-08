@@ -14,13 +14,10 @@ Each indicator:
 
 from __future__ import annotations
 
-from phi.logging import get_logger
-
-logger = get_logger(__name__)
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional
 
 from phi.indicators.orderflow import (
     compute_cumulative_delta_signal,
@@ -29,6 +26,10 @@ from phi.indicators.orderflow import (
     compute_vwap_signal,
     get_order_flow_provider,
 )
+from phi.logging import get_logger
+from phi.mft.signals import mft_energy_signal, mft_signal
+
+logger = get_logger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -223,26 +224,22 @@ def _compute_adx(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
 
 
 def _compute_mft_signal(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
-    """Full MFT regime engine composite signal."""
-    try:
-        import yaml
-        from pathlib import Path
-        cfg_path = Path(__file__).parents[2] / "regime_engine" / "config.yaml"
-        with open(cfg_path) as f:
-            cfg = yaml.safe_load(f)
-        from regime_engine.scanner import RegimeEngine
-        engine = RegimeEngine(cfg)
-        out = engine.run(ohlcv)
-        mix = out.get("mix", pd.DataFrame())
-        if "composite_signal" in mix.columns:
-            sig = mix["composite_signal"]
-            return _to_signal(sig)
-    except Exception:
-        pass
-    # Fallback: MACD + RSI blend
-    rsi  = _compute_rsi(ohlcv, {"period": 14})
-    macd = _compute_macd(ohlcv, {"fast": 12, "slow": 26, "signal": 9})
-    return _to_signal((rsi + macd) / 2.0)
+    """Simplified MFT directional signal based on potential gradient."""
+    close = ohlcv["close"].astype(float)
+    kernel = str(params.get("kernel", "gaussian"))
+    sigma = float(params.get("sigma", 10.0))
+    threshold = float(params.get("threshold", 0.0))
+    smooth_window = int(params.get("smooth_window", 1))
+    return mft_signal(close=close, kernel=kernel, sigma=sigma, threshold=threshold, smooth_window=smooth_window)
+
+
+def _compute_mft_energy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT energy-derived signal from relative field activity."""
+    close = ohlcv["close"].astype(float)
+    kernel = str(params.get("kernel", "gaussian"))
+    sigma = float(params.get("sigma", 10.0))
+    energy_window = int(params.get("energy_window", 20))
+    return mft_energy_signal(close=close, kernel=kernel, sigma=sigma, energy_window=energy_window)
 
 
 def _compute_wyckoff(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
@@ -314,7 +311,7 @@ def _compute_orderflow_liquidity(ohlcv: pd.DataFrame, params: dict) -> pd.Series
 # Registry
 # ─────────────────────────────────────────────────────────────────────────────
 
-INDICATOR_REGISTRY: Dict[str, Dict[str, Any]] = {
+INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
     "rsi": {
         "display_name": "RSI",
         "description":  "Relative Strength Index. Oversold → buy, overbought → sell.",
@@ -508,9 +505,35 @@ INDICATOR_REGISTRY: Dict[str, Dict[str, Any]] = {
         },
         "tune_ranges": {"window": (10, 50), "amihud_scale": (1e4, 1e7)},
     },
+    "mft_signal": {
+        "display_name": "MFT Signal",
+        "description":  "Simplified Market Field Theory gradient-direction signal.",
+        "type":         "MFT",
+        "compute":      _compute_mft_signal,
+        "params": {
+            "kernel": {"label": "Kernel", "default": "gaussian", "options": ["gaussian", "exp", "linear"], "type": "select"},
+            "sigma": {"label": "Sigma", "default": 10.0, "min": 1.0, "max": 50.0, "step": 1.0, "type": "float"},
+            "threshold": {"label": "Gradient Threshold", "default": 0.0, "min": 0.0, "max": 5.0, "step": 0.05, "type": "float"},
+            "smooth_window": {"label": "Signal Smoothing", "default": 1, "min": 1, "max": 50, "step": 1, "type": "int"},
+        },
+        "tune_ranges": {"sigma": (3.0, 20.0), "threshold": (0.0, 1.0), "smooth_window": (1, 10)},
+    },
+    "mft_energy": {
+        "display_name": "MFT Energy",
+        "description":  "Relative field-energy signal (low activity bullish, high activity defensive).",
+        "type":         "MFT",
+        "compute":      _compute_mft_energy,
+        "params": {
+            "kernel": {"label": "Kernel", "default": "gaussian", "options": ["gaussian", "exp", "linear"], "type": "select"},
+            "sigma": {"label": "Sigma", "default": 10.0, "min": 1.0, "max": 50.0, "step": 1.0, "type": "float"},
+            "energy_window": {"label": "Energy Window", "default": 20, "min": 3, "max": 120, "step": 1, "type": "int"},
+        },
+        "tune_ranges": {"sigma": (3.0, 20.0), "energy_window": (10, 60)},
+    },
+
     "phi_mft": {
         "display_name": "Phi-Bot (MFT)",
-        "description":  "Full Market Field Theory composite signal — regime-aware multi-factor.",
+        "description":  "Backward-compatible alias for simplified MFT signal.",
         "type":         "MFT",
         "compute":      _compute_mft_signal,
         "params": {},
@@ -519,15 +542,15 @@ INDICATOR_REGISTRY: Dict[str, Dict[str, Any]] = {
 }
 
 
-def list_indicators() -> List[str]:
+def list_indicators() -> list[str]:
     return list(INDICATOR_REGISTRY.keys())
 
 
-def get_indicator(name: str) -> Optional[Dict[str, Any]]:
+def get_indicator(name: str) -> dict[str, Any] | None:
     return INDICATOR_REGISTRY.get(name)
 
 
-def compute_signal(name: str, ohlcv: pd.DataFrame, params: Optional[dict] = None) -> pd.Series:
+def compute_signal(name: str, ohlcv: pd.DataFrame, params: dict | None = None) -> pd.Series:
     """Compute a normalized [-1, +1] signal for the given indicator."""
     info = INDICATOR_REGISTRY.get(name)
     if info is None:
@@ -541,9 +564,9 @@ def compute_signal(name: str, ohlcv: pd.DataFrame, params: Optional[dict] = None
 
 
 def compute_all_signals(
-    names: List[str],
+    names: list[str],
     ohlcv: pd.DataFrame,
-    params_map: Optional[Dict[str, dict]] = None,
+    params_map: dict[str, dict] | None = None,
 ) -> pd.DataFrame:
     """Compute multiple indicator signals, return as DataFrame."""
     signals = {}
@@ -551,6 +574,6 @@ def compute_all_signals(
         p = (params_map or {}).get(name, {})
         try:
             signals[name] = compute_signal(name, ohlcv, p)
-        except Exception as e:
+        except Exception:
             signals[name] = pd.Series(0.0, index=ohlcv.index, name=name)
     return pd.DataFrame(signals)

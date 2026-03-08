@@ -2,13 +2,25 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import date, timedelta
+from typing import TypeAlias, TypedDict
+
 from phi.logging import get_logger
 
 logger = get_logger(__name__)
 
-from dataclasses import dataclass
-from datetime import date, timedelta
-from typing import Dict, Tuple
+
+class SelectParamSpec(TypedDict):
+    """Selectbox parameter metadata used by Streamlit controls."""
+
+    type: str
+    options: list[str]
+    default: str
+
+
+ParamRange: TypeAlias = tuple[float, float, float, float]
+IndicatorParamSpec: TypeAlias = ParamRange | SelectParamSpec
 
 DEFAULT_SYMBOL = "SPY"
 DEFAULT_TIMEFRAME = "1D"
@@ -30,11 +42,18 @@ class IndicatorSpec:
     """Descriptor for rendering an indicator toggle and parameter controls."""
 
     description: str
-    params: Dict[str, Tuple[float, float, float, float]]
+    params: dict[str, IndicatorParamSpec]
     category: str = "Core"
 
 
-INDICATOR_SPECS: Dict[str, IndicatorSpec] = {
+
+
+def _select_param(options: list[str], default: str) -> SelectParamSpec:
+    """Convenience helper for selectbox parameter specs."""
+    return {"type": "select", "options": options, "default": default}
+
+
+INDICATOR_SPECS: dict[str, IndicatorSpec] = {
     "RSI": IndicatorSpec(
         description="Relative Strength Index (momentum oscillator).",
         params={
@@ -92,5 +111,25 @@ INDICATOR_SPECS: Dict[str, IndicatorSpec] = {
         description="Spread proxy and Amihud illiquidity based signal.",
         params={"window": (5, 100, 20, 1), "amihud_scale": (1000, 10000000, 1000000, 1000)},
         category="Order Flow & Liquidity",
+    ),
+
+    "MFT Signal": IndicatorSpec(
+        description="Simplified Market Field Theory gradient-direction signal.",
+        params={
+            "kernel": _select_param(["gaussian", "exp", "linear"], "gaussian"),
+            "sigma": (1, 50, 10, 1),
+            "threshold": (0.0, 5.0, 0.0, 0.05),
+            "smooth_window": (1, 50, 1, 1),
+        },
+        category="Market Field Theory",
+    ),
+    "MFT Energy": IndicatorSpec(
+        description="Relative field-energy signal (low activity bullish, high activity defensive).",
+        params={
+            "kernel": _select_param(["gaussian", "exp", "linear"], "gaussian"),
+            "sigma": (1, 50, 10, 1),
+            "energy_window": (3, 120, 20, 1),
+        },
+        category="Market Field Theory",
     ),
 }

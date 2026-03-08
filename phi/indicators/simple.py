@@ -5,11 +5,8 @@ Returns normalized signal series (-1 to 1 scale) for blending.
 
 from __future__ import annotations
 
-from phi.logging import get_logger
-
-logger = get_logger(__name__)
-
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -21,6 +18,10 @@ from phi.indicators.orderflow import (
     compute_vwap_signal,
     get_order_flow_provider,
 )
+from phi.logging import get_logger
+from phi.mft.signals import mft_energy_signal, mft_signal
+
+logger = get_logger(__name__)
 
 
 def _normalize_signal(s: pd.Series) -> pd.Series:
@@ -186,7 +187,39 @@ def compute_liquidity_metrics(df: pd.DataFrame, window: int = 20, amihud_scale: 
     return compute_liquidity_signal(df, flow, amihud_scale=amihud_scale, window=window)
 
 
-INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
+def compute_mft_signal(
+    df: pd.DataFrame,
+    kernel: str = "gaussian",
+    sigma: float = 10.0,
+    threshold: float = 0.0,
+    smooth_window: int = 1,
+) -> pd.Series:
+    """Simplified MFT directional signal from field-potential gradient."""
+    return mft_signal(
+        close=df["close"],
+        kernel=kernel,
+        sigma=sigma,
+        threshold=threshold,
+        smooth_window=smooth_window,
+    )
+
+
+def compute_mft_energy(
+    df: pd.DataFrame,
+    kernel: str = "gaussian",
+    sigma: float = 10.0,
+    energy_window: int = 20,
+) -> pd.Series:
+    """MFT energy-derived signal based on relative field activity."""
+    return mft_energy_signal(
+        close=df["close"],
+        kernel=kernel,
+        sigma=sigma,
+        energy_window=energy_window,
+    )
+
+
+INDICATOR_COMPUTERS: dict[str, Callable[..., pd.Series]] = {
     "RSI": compute_rsi,
     "MACD": compute_macd,
     "Bollinger": compute_bollinger,
@@ -199,6 +232,9 @@ INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "Volume Profile": compute_volume_profile,
     "Cumulative Delta": compute_cumulative_delta,
     "Liquidity Metrics": compute_liquidity_metrics,
+    "MFT Signal": compute_mft_signal,
+    "MFT Energy": compute_mft_energy,
+    "Phi-Bot (MFT)": compute_mft_signal,
 }
 
 
@@ -214,10 +250,13 @@ _PARAM_MAP = {
     "Volume Profile": {"window": "window", "bins": "bins", "near_poc_threshold": "near_poc_threshold"},
     "Cumulative Delta": {"window": "window", "clip_value": "clip_value"},
     "Liquidity Metrics": {"window": "window", "amihud_scale": "amihud_scale"},
+    "MFT Signal": {"kernel": "kernel", "sigma": "sigma", "threshold": "threshold", "smooth_window": "smooth_window"},
+    "MFT Energy": {"kernel": "kernel", "sigma": "sigma", "energy_window": "energy_window"},
+    "Phi-Bot (MFT)": {},
 }
 
 
-def compute_indicator(name: str, df: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+def compute_indicator(name: str, df: pd.DataFrame, params: dict[str, Any]) -> pd.Series:
     """Compute indicator signal by name with params."""
     fn = INDICATOR_COMPUTERS.get(name)
     if fn is None:
