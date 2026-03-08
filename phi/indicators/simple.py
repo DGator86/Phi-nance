@@ -5,11 +5,8 @@ Returns normalized signal series (-1 to 1 scale) for blending.
 
 from __future__ import annotations
 
-from phi.logging import get_logger
-
-logger = get_logger(__name__)
-
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -21,8 +18,10 @@ from phi.indicators.orderflow import (
     compute_vwap_signal,
     get_order_flow_provider,
 )
-
+from phi.logging import get_logger
 from phi.mft.signals import mft_energy_signal, mft_signal
+
+logger = get_logger(__name__)
 
 
 def _normalize_signal(s: pd.Series) -> pd.Series:
@@ -220,7 +219,7 @@ def compute_mft_energy(
     )
 
 
-INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
+INDICATOR_COMPUTERS: dict[str, Callable[..., pd.Series]] = {
     "RSI": compute_rsi,
     "MACD": compute_macd,
     "Bollinger": compute_bollinger,
@@ -257,7 +256,7 @@ _PARAM_MAP = {
 }
 
 
-def compute_indicator(name: str, df: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+def compute_indicator(name: str, df: pd.DataFrame, params: dict[str, Any]) -> pd.Series:
     """Compute indicator signal by name with params."""
     fn = INDICATOR_COMPUTERS.get(name)
     if fn is None:

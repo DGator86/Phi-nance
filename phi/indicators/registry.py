@@ -14,13 +14,10 @@ Each indicator:
 
 from __future__ import annotations
 
-from phi.logging import get_logger
-
-logger = get_logger(__name__)
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional
 
 from phi.indicators.orderflow import (
     compute_cumulative_delta_signal,
@@ -29,9 +26,10 @@ from phi.indicators.orderflow import (
     compute_vwap_signal,
     get_order_flow_provider,
 )
-
+from phi.logging import get_logger
 from phi.mft.signals import mft_energy_signal, mft_signal
 
+logger = get_logger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Utility helpers
@@ -312,7 +310,7 @@ def _compute_orderflow_liquidity(ohlcv: pd.DataFrame, params: dict) -> pd.Series
 # Registry
 # ─────────────────────────────────────────────────────────────────────────────
 
-INDICATOR_REGISTRY: Dict[str, Dict[str, Any]] = {
+INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
     "rsi": {
         "display_name": "RSI",
         "description":  "Relative Strength Index. Oversold → buy, overbought → sell.",
@@ -543,15 +541,15 @@ INDICATOR_REGISTRY: Dict[str, Dict[str, Any]] = {
 }
 
 
-def list_indicators() -> List[str]:
+def list_indicators() -> list[str]:
     return list(INDICATOR_REGISTRY.keys())
 
 
-def get_indicator(name: str) -> Optional[Dict[str, Any]]:
+def get_indicator(name: str) -> dict[str, Any] | None:
     return INDICATOR_REGISTRY.get(name)
 
 
-def compute_signal(name: str, ohlcv: pd.DataFrame, params: Optional[dict] = None) -> pd.Series:
+def compute_signal(name: str, ohlcv: pd.DataFrame, params: dict | None = None) -> pd.Series:
     """Compute a normalized [-1, +1] signal for the given indicator."""
     info = INDICATOR_REGISTRY.get(name)
     if info is None:
@@ -565,9 +563,9 @@ def compute_signal(name: str, ohlcv: pd.DataFrame, params: Optional[dict] = None
 
 
 def compute_all_signals(
-    names: List[str],
+    names: list[str],
     ohlcv: pd.DataFrame,
-    params_map: Optional[Dict[str, dict]] = None,
+    params_map: dict[str, dict] | None = None,
 ) -> pd.DataFrame:
     """Compute multiple indicator signals, return as DataFrame."""
     signals = {}
@@ -575,6 +573,6 @@ def compute_all_signals(
         p = (params_map or {}).get(name, {})
         try:
             signals[name] = compute_signal(name, ohlcv, p)
-        except Exception as e:
+        except Exception:
             signals[name] = pd.Series(0.0, index=ohlcv.index, name=name)
     return pd.DataFrame(signals)
