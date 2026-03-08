@@ -5,13 +5,16 @@ Uses OHLCV DataFrame directly. Guaranteed to work with pipeline data.
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import logging
 from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
 
-logger = logging.getLogger(__name__)
 
 
 _TRADING_MINUTES_PER_YEAR = 252 * 390  # US equity market

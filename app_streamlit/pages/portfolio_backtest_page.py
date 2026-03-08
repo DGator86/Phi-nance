@@ -15,6 +15,10 @@ Allows users to:
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import os
 
 IS_BACKTESTING = os.environ.get("IS_BACKTESTING", "False").lower() == "true"

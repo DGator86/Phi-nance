@@ -6,6 +6,10 @@ Lightweight signal computation from OHLCV (no Lumibot).
 Used by BlendedWorkbenchStrategy for multi-indicator blending.
 """
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 from .simple import compute_rsi, compute_macd, compute_bollinger, compute_dual_sma
 from .simple import compute_mean_reversion, compute_breakout, INDICATOR_COMPUTERS
 

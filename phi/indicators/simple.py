@@ -5,6 +5,10 @@ Returns normalized signal series (-1 to 1 scale) for blending.
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 from typing import Any, Callable, Dict
 
 import numpy as np

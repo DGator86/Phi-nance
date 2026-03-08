@@ -6,6 +6,10 @@ Captures every parameter needed to reproduce a backtest run.
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import hashlib
 import json
 import uuid

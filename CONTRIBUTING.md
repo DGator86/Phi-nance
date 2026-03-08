@@ -36,3 +36,5 @@ flake8 phi/ tests/ --max-line-length=120 --ignore=E501,W503
 - Use [black](https://github.com/psf/black)-compatible formatting.
 - Add NumPy-style docstrings to all public functions and classes.
 - Mock all external API calls in tests (no real network calls).
+
+- Use centralized logging (`from phi.logging import get_logger`) for production modules; avoid `print(...)` outside intentional CLI UX output.

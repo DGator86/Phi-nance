@@ -1,5 +1,9 @@
 """Public API for options pricing and backtesting."""
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 from .backtest import compute_greeks, run_options_backtest
 from .contract import OptionContract, OptionType
 from .market import fetch_options_market_data

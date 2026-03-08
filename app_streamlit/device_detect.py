@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 # -*- coding: utf-8 -*-
 """
 Phi-nance Device Detection & Responsive Layout Helper

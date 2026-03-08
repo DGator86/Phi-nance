@@ -11,6 +11,10 @@ All fetchers return a standardized DataFrame:
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import os
 from datetime import date, timedelta
 from typing import Optional

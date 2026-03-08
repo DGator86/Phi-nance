@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 from typing import Dict
 
 from .models import black_scholes, binomial_tree
