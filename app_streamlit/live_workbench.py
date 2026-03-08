@@ -1,7 +1,5 @@
-"""Backward-compatible launcher for the modular live workbench app.
-
-This module intentionally delegates to ``app_streamlit.main`` after the
-refactor away from the previous monolithic implementation.
+"""Legacy entry point for the Live Backtest Workbench.
+Delegates to the modular app_streamlit.main module.
 """
 
 from __future__ import annotations
