@@ -129,6 +129,10 @@ optimized, explanation = run_phiai_optimization(
 - Full docs index: [`docs/quickstart.md`](docs/quickstart.md)
 - External options data landscape: [`docs/external-options-data-landscape.md`](docs/external-options-data-landscape.md)
 
+## Advanced Usage
+
+- Auto-training pipeline: [`docs/auto_training.md`](docs/auto_training.md)
+
 ## Contributing
 
 Please follow the standards and workflow in [`CONTRIBUTING.md`](CONTRIBUTING.md), including logging, validation, exception usage, typing, testing, and docs updates for user-facing behavior changes.

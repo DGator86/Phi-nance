@@ -229,7 +229,13 @@ def _best_params_dir() -> Path:
     return root
 
 
-def save_best_params(best_params: dict[str, dict[str, Any]], dataset_id: str, best_value: float, metric: str) -> Path:
+def save_best_params(
+    best_params: dict[str, dict[str, Any]],
+    dataset_id: str,
+    best_value: float,
+    metric: str,
+    output_dir: Path | str | None = None,
+) -> Path:
     """Persist optimized indicator params and score for later reuse."""
     payload = {
         "dataset_id": dataset_id,
@@ -237,7 +243,9 @@ def save_best_params(best_params: dict[str, dict[str, Any]], dataset_id: str, be
         "best_value": float(best_value),
         "metric": metric,
     }
-    out_path = _best_params_dir() / f"{dataset_id}.json"
+    out_root = Path(output_dir) if output_dir is not None else _best_params_dir()
+    out_root.mkdir(parents=True, exist_ok=True)
+    out_path = out_root / f"{dataset_id}.json"
     out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     logger.info("Saved PhiAI best params to %s", out_path)
     return out_path
