@@ -11,7 +11,16 @@ from phi.logging import get_logger
 logger = get_logger(__name__)
 
 from .orderflow import OHLCVOrderFlowProvider, get_order_flow_provider, set_order_flow_provider
-from .simple import compute_bollinger, compute_breakout, compute_dual_sma, compute_macd, compute_mean_reversion, compute_rsi
+from .simple import (
+    compute_bollinger,
+    compute_breakout,
+    compute_dual_sma,
+    compute_macd,
+    compute_mean_reversion,
+    compute_mft_energy,
+    compute_mft_signal,
+    compute_rsi,
+)
 from .simple import INDICATOR_COMPUTERS
 
 __all__ = [
@@ -21,6 +30,8 @@ __all__ = [
     "compute_dual_sma",
     "compute_mean_reversion",
     "compute_breakout",
+    "compute_mft_signal",
+    "compute_mft_energy",
     "INDICATOR_COMPUTERS",
     "OHLCVOrderFlowProvider",
     "set_order_flow_provider",
