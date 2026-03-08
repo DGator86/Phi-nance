@@ -22,6 +22,13 @@ from phi.indicators.orderflow import (
     get_order_flow_provider,
 )
 
+from phi.indicators.information import (
+    compute_entropy_signal,
+    compute_fisher_information_signal,
+    compute_kld_signal,
+    compute_mutual_info_signal,
+)
+
 
 def _normalize_signal(s: pd.Series) -> pd.Series:
     """Clip and scale to roughly [-1, 1]."""
@@ -185,6 +192,37 @@ def compute_liquidity_metrics(df: pd.DataFrame, window: int = 20, amihud_scale: 
     flow = provider.get_order_flow(df)
     return compute_liquidity_signal(df, flow, amihud_scale=amihud_scale, window=window)
 
+def compute_return_entropy(df: pd.DataFrame, window: int = 20, bins: int = 20, base: float = 2.0) -> pd.Series:
+    """Rolling Shannon entropy of returns normalized to [-1, 1]."""
+    return compute_entropy_signal(df, window=window, bins=bins, base=base)
+
+
+def compute_mutual_information(df: pd.DataFrame, window: int = 20, bins: int = 20, mode: str = "price_volume") -> pd.Series:
+    """Rolling mutual information signal between returns and volume changes (or returns)."""
+    return compute_mutual_info_signal(df, window=window, bins=bins, mode=mode)
+
+
+def compute_fisher_information(df: pd.DataFrame, window: int = 20, clip_percentile: float = 95.0) -> pd.Series:
+    """Rolling Fisher information proxy from inverse return variance."""
+    return compute_fisher_information_signal(df, window=window, clip_percentile=clip_percentile)
+
+
+def compute_kld_regime_shift(
+    df: pd.DataFrame,
+    recent_window: int = 20,
+    reference_window: int = 60,
+    bins: int = 20,
+    sigmoid_scale: float = 3.0,
+) -> pd.Series:
+    """Symmetric KL-divergence signal comparing recent vs prior return distributions."""
+    return compute_kld_signal(
+        df,
+        recent_window=recent_window,
+        reference_window=reference_window,
+        bins=bins,
+        sigmoid_scale=sigmoid_scale,
+    )
+
 
 INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "RSI": compute_rsi,
@@ -199,6 +237,10 @@ INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "Volume Profile": compute_volume_profile,
     "Cumulative Delta": compute_cumulative_delta,
     "Liquidity Metrics": compute_liquidity_metrics,
+    "Return Entropy": compute_return_entropy,
+    "Mutual Information": compute_mutual_information,
+    "Fisher Information": compute_fisher_information,
+    "KL Divergence": compute_kld_regime_shift,
 }
 
 
@@ -214,6 +256,10 @@ _PARAM_MAP = {
     "Volume Profile": {"window": "window", "bins": "bins", "near_poc_threshold": "near_poc_threshold"},
     "Cumulative Delta": {"window": "window", "clip_value": "clip_value"},
     "Liquidity Metrics": {"window": "window", "amihud_scale": "amihud_scale"},
+    "Return Entropy": {"window": "window", "bins": "bins", "base": "base"},
+    "Mutual Information": {"window": "window", "bins": "bins", "mode": "mode"},
+    "Fisher Information": {"window": "window", "clip_percentile": "clip_percentile"},
+    "KL Divergence": {"recent_window": "recent_window", "reference_window": "reference_window", "bins": "bins", "sigmoid_scale": "sigmoid_scale"},
 }
 
 
