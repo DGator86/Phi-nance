@@ -78,3 +78,9 @@ Then tune with backtests by market and timeframe.
 - This feature is **experimental** and should be validated empirically.
 - Results are sensitive to kernel shape and `sigma`.
 - Signals are heuristic and may evolve as MFT research in the project matures.
+
+
+## Backward compatibility
+
+- Registry key `phi_mft` is retained as an alias to the simplified `mft_signal` computation.
+- Simple-indicator name `Phi-Bot (MFT)` is retained as an alias to `MFT Signal`.

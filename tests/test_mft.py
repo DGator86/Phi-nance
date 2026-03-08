@@ -49,3 +49,27 @@ def test_mft_energy_signal_bounded_range() -> None:
     signal = mft_energy_signal(close, sigma=5.0, energy_window=15)
 
     assert signal.between(-1.0, 1.0).all()
+
+
+def test_mft_backward_compat_aliases() -> None:
+    from phi.indicators.registry import compute_signal
+    from phi.indicators.simple import compute_indicator
+
+    idx = pd.date_range("2024-01-01", periods=60, freq="D")
+    close = np.linspace(100.0, 130.0, len(idx))
+    ohlcv = pd.DataFrame(
+        {
+            "open": close,
+            "high": close * 1.01,
+            "low": close * 0.99,
+            "close": close,
+            "volume": np.full(len(idx), 1000.0),
+        },
+        index=idx,
+    )
+
+    legacy_registry_signal = compute_signal("phi_mft", ohlcv)
+    assert len(legacy_registry_signal) == len(ohlcv)
+
+    legacy_simple_signal = compute_indicator("Phi-Bot (MFT)", ohlcv, {})
+    assert len(legacy_simple_signal) == len(ohlcv)

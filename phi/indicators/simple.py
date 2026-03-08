@@ -235,6 +235,7 @@ INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "Liquidity Metrics": compute_liquidity_metrics,
     "MFT Signal": compute_mft_signal,
     "MFT Energy": compute_mft_energy,
+    "Phi-Bot (MFT)": compute_mft_signal,
 }
 
 
@@ -252,6 +253,7 @@ _PARAM_MAP = {
     "Liquidity Metrics": {"window": "window", "amihud_scale": "amihud_scale"},
     "MFT Signal": {"kernel": "kernel", "sigma": "sigma", "threshold": "threshold", "smooth_window": "smooth_window"},
     "MFT Energy": {"kernel": "kernel", "sigma": "sigma", "energy_window": "energy_window"},
+    "Phi-Bot (MFT)": {},
 }
 
 

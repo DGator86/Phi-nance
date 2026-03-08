@@ -531,6 +531,15 @@ INDICATOR_REGISTRY: Dict[str, Dict[str, Any]] = {
         },
         "tune_ranges": {"sigma": (3.0, 20.0), "energy_window": (10, 60)},
     },
+
+    "phi_mft": {
+        "display_name": "Phi-Bot (MFT)",
+        "description":  "Backward-compatible alias for simplified MFT signal.",
+        "type":         "MFT",
+        "compute":      _compute_mft_signal,
+        "params": {},
+        "tune_ranges": {},
+    },
 }
 
 

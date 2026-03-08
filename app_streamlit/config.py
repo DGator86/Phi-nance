@@ -8,7 +8,18 @@ logger = get_logger(__name__)
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Any, Dict
+from typing import Any, TypeAlias, TypedDict
+
+class SelectParamSpec(TypedDict):
+    """Selectbox parameter metadata used by Streamlit controls."""
+
+    type: str
+    options: list[str]
+    default: str
+
+
+ParamRange: TypeAlias = tuple[float, float, float, float]
+IndicatorParamSpec: TypeAlias = ParamRange | SelectParamSpec
 
 DEFAULT_SYMBOL = "SPY"
 DEFAULT_TIMEFRAME = "1D"
@@ -30,16 +41,18 @@ class IndicatorSpec:
     """Descriptor for rendering an indicator toggle and parameter controls."""
 
     description: str
-    params: Dict[str, Any]
+    params: dict[str, IndicatorParamSpec]
     category: str = "Core"
 
 
 
 
-def _select_param(options: list[str], default: str) -> dict[str, Any]:
+def _select_param(options: list[str], default: str) -> SelectParamSpec:
     """Convenience helper for selectbox parameter specs."""
     return {"type": "select", "options": options, "default": default}
-INDICATOR_SPECS: Dict[str, IndicatorSpec] = {
+
+
+INDICATOR_SPECS: dict[str, IndicatorSpec] = {
     "RSI": IndicatorSpec(
         description="Relative Strength Index (momentum oscillator).",
         params={
