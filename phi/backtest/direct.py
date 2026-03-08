@@ -48,6 +48,7 @@ def run_direct_backtest(
     signal_threshold: float = 0.15,
     initial_capital: float = 100_000,
     position_size_pct: float = 0.95,
+    regime_series: pd.Series | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """
     Run backtest directly on OHLCV. Returns (results_dict, strat_like_object).
@@ -90,13 +91,30 @@ def run_direct_backtest(
 
     from phi.blending import blend_signals
 
-    composite = blend_signals(
-        signals_df,
-        method=blend_method,
-        weights=blend_weights,
-        regime="RANGE" if blend_method == "regime_weighted" else None,
-        regime_boosts={} if blend_method == "regime_weighted" else None,
-    )
+    if blend_method == "regime_weighted":
+        if regime_series is None:
+            raise BacktestError("regime_series is required when blend_method='regime_weighted'")
+        aligned_regimes = regime_series.reindex(df.index).ffill().bfill()
+        composite = pd.Series(index=signals_df.index, dtype=float, name="composite_signal")
+        for idx in signals_df.index:
+            composite.loc[idx] = float(
+                blend_signals(
+                    signals_df.loc[[idx]],
+                    method=blend_method,
+                    weights=blend_weights,
+                    regime=str(aligned_regimes.loc[idx]),
+                    regime_boosts={},
+                ).iloc[0]
+            )
+    else:
+        composite = blend_signals(
+            signals_df,
+            method=blend_method,
+            weights=blend_weights,
+            regime=None,
+            regime_boosts=None,
+        )
+
     if composite.empty:
         return _empty_results(initial_capital), _empty_strat()
 

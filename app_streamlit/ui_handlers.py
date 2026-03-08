@@ -8,6 +8,7 @@ from datetime import date
 from typing import Any
 
 import pandas as pd
+import streamlit as st
 from pydantic import ValidationError as PydanticValidationError
 
 from app_streamlit.cache import load_historical_data
@@ -23,6 +24,7 @@ from phi.backtest import run_direct_backtest
 from phi.exceptions import BacktestError, ValidationError
 from phi.logging import get_logger
 from phi.options import run_options_backtest
+from phi.regime.train import train_regime_detector
 from phi.run_config import RunConfig, RunHistory
 from phi.utils.validation import (
     sanitize_run_id,
@@ -114,6 +116,39 @@ def build_run_config(payload: dict[str, Any]) -> RunConfig:
     )
 
 
+def handle_train_regime_detector(
+    payload: dict[str, Any],
+    *,
+    load_data_fn: Callable[..., pd.DataFrame] = load_historical_data,
+) -> tuple[Any, pd.Series, str | None] | None:
+    """Train selected regime detector and cache detector+predictions in session state."""
+    method_label = str(payload.get("regime_method", "HMM"))
+    method = "hmm" if method_label == "HMM" else "kmeans"
+
+    data = load_data_fn(
+        sanitize_ticker(payload["symbol"]),
+        payload["start_date"].isoformat(),
+        payload["end_date"].isoformat(),
+        payload["timeframe"],
+        payload["vendor"],
+    )
+    if data is None or data.empty:
+        raise BacktestError("No data returned for selected configuration.")
+
+    detector, path = train_regime_detector(
+        data,
+        method=method,
+        n_regimes=int(payload.get("regime_n_states", 3)),
+        window=int(payload.get("regime_window", 20)),
+        save=True,
+    )
+    regime_series = detector.predict(data)
+    st.session_state.regime_detector = detector
+    st.session_state.regime_series = regime_series
+    st.session_state.regime_model_path = str(path) if path else None
+    return detector, regime_series, str(path) if path else None
+
+
 def handle_run_backtest(
     payload: dict[str, Any],
     *,
@@ -147,6 +182,14 @@ def handle_run_backtest(
         if cfg.trading_mode == "options":
             results = run_options_fn(cfg, data)
         else:
+            regime_series = None
+            if payload.get("regime_enabled"):
+                detector = st.session_state.get("regime_detector")
+                if detector is None:
+                    raise BacktestError("Regime detection is enabled but no trained detector is available.")
+                regime_series = detector.predict(data)
+                st.session_state.regime_series = regime_series
+
             results, _ = run_equity_fn(
                 ohlcv=data,
                 symbol=cfg.symbols[0],
@@ -154,7 +197,11 @@ def handle_run_backtest(
                 blend_weights=cfg.blend_weights,
                 blend_method=cfg.blend_method,
                 initial_capital=cfg.initial_capital,
+                regime_series=regime_series,
             )
+            if regime_series is not None:
+                results["regime_series"] = regime_series
+                results["ohlcv"] = data
 
         history = RunHistory()
         run_id = history.create_run(cfg)

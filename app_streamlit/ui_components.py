@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 from pydantic import ValidationError as PydanticValidationError
 
@@ -105,6 +106,8 @@ def render_config_panel() -> tuple[dict[str, Any], bool]:
 
         run_clicked = st.form_submit_button("Run backtest", type="primary")
 
+    regime_payload = render_regime_detection_panel()
+
     payload = {
         "symbol": symbol,
         "start_date": start_date,
@@ -122,8 +125,63 @@ def render_config_panel() -> tuple[dict[str, Any], bool]:
         "option_iv": option_iv,
         "option_rate": option_rate,
         "option_qty": option_qty,
+        **regime_payload,
     }
     return payload, run_clicked
+
+
+def render_regime_detection_panel() -> dict[str, Any]:
+    """Render sidebar controls for regime model training and usage."""
+    with st.expander("Regime Detection", expanded=False):
+        regime_enabled = st.checkbox("Enable regime-aware blending", value=False, key="regime_enabled")
+        method_label = st.selectbox(
+            "Method",
+            options=["HMM", "Clustering (KMeans)"],
+            key="regime_method",
+        )
+        n_states = st.slider("Number of regimes", min_value=2, max_value=8, value=3, key="regime_n_states")
+        window = st.slider("Feature window", min_value=5, max_value=60, value=20, key="regime_window")
+        train_clicked = st.button("Train on selected range", key="train_regime_model")
+
+    return {
+        "regime_enabled": regime_enabled,
+        "regime_method": method_label,
+        "regime_n_states": int(n_states),
+        "regime_window": int(window),
+        "regime_train_clicked": bool(train_clicked),
+    }
+
+
+def render_regime_chart(price_data: pd.DataFrame, regime_series: pd.Series) -> None:
+    """Render price with regime-colored overlays."""
+    if price_data.empty or regime_series.empty:
+        return
+
+    df = price_data.copy()
+    close_col = next((c for c in df.columns if c.lower() == "close"), None)
+    if close_col is None:
+        return
+
+    aligned = regime_series.reindex(df.index).ffill().bfill().astype(str)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df[close_col], mode="lines", name="Close", line={"color": "#4ea1ff"}))
+
+    palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f"]
+    for idx, regime in enumerate(sorted(aligned.unique())):
+        mask = aligned == regime
+        fig.add_trace(
+            go.Scatter(
+                x=df.index[mask],
+                y=df.loc[mask, close_col],
+                mode="markers",
+                marker={"size": 5, "color": palette[idx % len(palette)]},
+                name=regime,
+                opacity=0.6,
+            )
+        )
+
+    fig.update_layout(title="Detected Regimes", xaxis_title="Date", yaxis_title="Price", height=420)
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def render_form_errors(errors: list[str]) -> None:
@@ -161,6 +219,11 @@ def render_results(results: dict[str, Any]) -> None:
     if trades:
         st.subheader("Trades")
         st.dataframe(pd.DataFrame(trades), use_container_width=True)
+
+    regime_preview = results.get("regime_series")
+    ohlcv_preview = results.get("ohlcv")
+    if isinstance(regime_preview, pd.Series) and isinstance(ohlcv_preview, pd.DataFrame):
+        render_regime_chart(ohlcv_preview, regime_preview)
 
     run_id = results.get("run_id")
     if run_id:

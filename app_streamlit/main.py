@@ -20,7 +20,7 @@ from app_streamlit.ui_components import (
     render_results,
     render_run_history,
 )
-from app_streamlit.ui_handlers import handle_load_run, handle_run_backtest
+from app_streamlit.ui_handlers import handle_load_run, handle_run_backtest, handle_train_regime_detector
 from phi.config import settings
 
 os.environ.setdefault("IS_BACKTESTING", "True")
@@ -46,6 +46,17 @@ def main() -> None:
         if selected_run_id:
             handle_load_run(selected_run_id)
             st.rerun()
+
+
+    if payload.get("regime_train_clicked"):
+        try:
+            _detector, _series, model_path = handle_train_regime_detector(payload)
+            if model_path:
+                st.sidebar.success(f"Regime model trained and saved: {model_path}")
+            else:
+                st.sidebar.success("Regime model trained.")
+        except Exception as exc:  # noqa: BLE001
+            st.sidebar.error(f"Regime training failed: {exc}")
 
     if run_clicked:
         handle_run_backtest(payload)

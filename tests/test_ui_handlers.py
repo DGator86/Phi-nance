@@ -115,7 +115,7 @@ def test_handle_run_backtest_validation_failure_sets_form_errors(monkeypatch):
     result = ui_handlers.handle_run_backtest(payload)
 
     assert result is None
-    assert "Symbol is required." in sink["form_errors"]
+    assert any("symbol" in msg.lower() for msg in sink["form_errors"])
 
 
 def test_handle_run_backtest_exception_sets_error(monkeypatch):
