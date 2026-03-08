@@ -1,5 +1,8 @@
 # Phi-nance — Live Backtest Workbench
 
+![Tests](https://github.com/DGator86/Phi-nance/actions/workflows/test.yml/badge.svg)
+![Coverage](https://img.shields.io/badge/coverage-reported-blue)
+
 Quantitative trading research platform with regime-aware MFT (Market Field Theory) and a premium Live Backtest Workbench.
 
 ---

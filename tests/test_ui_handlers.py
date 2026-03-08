@@ -28,83 +28,105 @@ def _base_payload(trading_mode: str = "equities") -> dict:
     }
 
 
-def test_handle_run_backtest_dispatches_equities(monkeypatch):
-    calls = {"equity": 0, "options": 0}
+def _patch_state(monkeypatch):
+    sink: dict[str, object] = {}
+    monkeypatch.setattr(ui_handlers, "set_form_errors", lambda errors: sink.setdefault("form_errors", errors))
+    monkeypatch.setattr(ui_handlers, "set_config", lambda config: sink.setdefault("config", config))
+    monkeypatch.setattr(ui_handlers, "transition_to", lambda *args, **kwargs: sink.setdefault("transition", (args, kwargs)))
+    monkeypatch.setattr(ui_handlers, "set_results", lambda results: sink.setdefault("results", results))
+    monkeypatch.setattr(ui_handlers, "set_error", lambda message, debug=None: sink.setdefault("error", (message, debug)))
+    return sink
 
-    monkeypatch.setattr(ui_handlers, "set_form_errors", lambda errors: None)
-    monkeypatch.setattr(ui_handlers, "set_config", lambda config: None)
-    monkeypatch.setattr(ui_handlers, "transition_to", lambda *args, **kwargs: None)
-    monkeypatch.setattr(ui_handlers, "set_results", lambda results: None)
 
+def _fake_history(monkeypatch):
     class FakeHistory:
-        def create_run(self, config):
+        def create_run(self, _config):
             return "run_1"
 
-        def save_results(self, run_id, results):
+        def save_results(self, _run_id, _results):
             return None
 
     monkeypatch.setattr(ui_handlers, "RunHistory", lambda: FakeHistory())
 
-    def fake_load_data(*args, **kwargs):
-        idx = pd.date_range("2023-01-01", periods=3, freq="D")
-        return pd.DataFrame({"open": [1, 1, 1], "high": [1, 1, 1], "low": [1, 1, 1], "close": [1, 1, 1], "volume": [1, 1, 1]}, index=idx)
 
-    def fake_equity(**kwargs):
+def _sample_data():
+    idx = pd.date_range("2023-01-01", periods=3, freq="D")
+    return pd.DataFrame(
+        {"open": [1, 1, 1], "high": [1, 1, 1], "low": [1, 1, 1], "close": [1, 1, 1], "volume": [1, 1, 1]},
+        index=idx,
+    )
+
+
+def test_handle_run_backtest_dispatches_equities(monkeypatch):
+    sink = _patch_state(monkeypatch)
+    _fake_history(monkeypatch)
+    calls = {"equity": 0, "options": 0}
+
+    def fake_equity(**_kwargs):
         calls["equity"] += 1
-        return {"total_return": 0.1, "portfolio_value": [100000, 110000]}, None
+        return {"total_return": 0.1}, None
 
-    def fake_options(*args, **kwargs):
+    def fake_options(*_args, **_kwargs):
         calls["options"] += 1
-        return {"total_return": 0.2, "portfolio_value": [100000, 120000]}
+        return {"total_return": 0.2}
 
     result = ui_handlers.handle_run_backtest(
         _base_payload("equities"),
-        load_data_fn=fake_load_data,
+        load_data_fn=lambda *_a, **_k: _sample_data(),
         run_equity_fn=fake_equity,
         run_options_fn=fake_options,
     )
 
     assert result is not None
-    assert calls["equity"] == 1
-    assert calls["options"] == 0
+    assert calls == {"equity": 1, "options": 0}
+    assert sink["results"]["run_id"] == "run_1"
 
 
 def test_handle_run_backtest_dispatches_options(monkeypatch):
+    _patch_state(monkeypatch)
+    _fake_history(monkeypatch)
     calls = {"equity": 0, "options": 0}
 
-    monkeypatch.setattr(ui_handlers, "set_form_errors", lambda errors: None)
-    monkeypatch.setattr(ui_handlers, "set_config", lambda config: None)
-    monkeypatch.setattr(ui_handlers, "transition_to", lambda *args, **kwargs: None)
-    monkeypatch.setattr(ui_handlers, "set_results", lambda results: None)
-
-    class FakeHistory:
-        def create_run(self, config):
-            return "run_2"
-
-        def save_results(self, run_id, results):
-            return None
-
-    monkeypatch.setattr(ui_handlers, "RunHistory", lambda: FakeHistory())
-
-    def fake_load_data(*args, **kwargs):
-        idx = pd.date_range("2023-01-01", periods=3, freq="D")
-        return pd.DataFrame({"open": [1, 1, 1], "high": [1, 1, 1], "low": [1, 1, 1], "close": [1, 1, 1], "volume": [1, 1, 1]}, index=idx)
-
-    def fake_equity(**kwargs):
+    def fake_equity(**_kwargs):
         calls["equity"] += 1
-        return {"total_return": 0.1, "portfolio_value": [100000, 110000]}, None
+        return {"total_return": 0.1}, None
 
-    def fake_options(*args, **kwargs):
+    def fake_options(*_args, **_kwargs):
         calls["options"] += 1
-        return {"total_return": 0.2, "portfolio_value": [100000, 120000]}
+        return {"total_return": 0.2}
 
     result = ui_handlers.handle_run_backtest(
         _base_payload("options"),
-        load_data_fn=fake_load_data,
+        load_data_fn=lambda *_a, **_k: _sample_data(),
         run_equity_fn=fake_equity,
         run_options_fn=fake_options,
     )
 
     assert result is not None
-    assert calls["equity"] == 0
-    assert calls["options"] == 1
+    assert calls == {"equity": 0, "options": 1}
+
+
+def test_handle_run_backtest_validation_failure_sets_form_errors(monkeypatch):
+    sink = _patch_state(monkeypatch)
+
+    payload = _base_payload()
+    payload["symbol"] = ""
+
+    result = ui_handlers.handle_run_backtest(payload)
+
+    assert result is None
+    assert "Symbol is required." in sink["form_errors"]
+
+
+def test_handle_run_backtest_exception_sets_error(monkeypatch):
+    sink = _patch_state(monkeypatch)
+    _fake_history(monkeypatch)
+
+    result = ui_handlers.handle_run_backtest(
+        _base_payload(),
+        load_data_fn=lambda *_a, **_k: _sample_data(),
+        run_equity_fn=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    assert result is None
+    assert "Backtest failed" in sink["error"][0]

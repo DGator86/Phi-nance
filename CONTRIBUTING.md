@@ -8,13 +8,14 @@ Thank you for your interest in contributing!
 git clone https://github.com/DGator86/Phi-nance
 cd Phi-nance
 pip install -r requirements.txt
-pip install pytest pytest-mock flake8
+pip install -r requirements-dev.txt
+pip install flake8
 ```
 
 ## Running Tests
 
 ```bash
-pytest tests/ -v
+pytest --cov=phi --cov=app_streamlit --cov-report=xml --cov-report=term-missing --cov-fail-under=15
 ```
 
 ## Linting
@@ -27,7 +28,7 @@ flake8 phi/ tests/ --max-line-length=120 --ignore=E501,W503
 
 1. Fork the repository and create a feature branch from `MAIN`.
 2. Make your changes with clear, descriptive commits.
-3. Ensure all tests pass (`pytest tests/ -v`) and linting is clean.
+3. Ensure all tests pass (`pytest --cov=phi --cov=app_streamlit --cov-report=xml --cov-report=term-missing --cov-fail-under=15`) and linting is clean.
 4. Open a pull request against `MAIN` with a description of what you changed and why.
 
 ## Code Style
@@ -38,3 +39,10 @@ flake8 phi/ tests/ --max-line-length=120 --ignore=E501,W503
 - Mock all external API calls in tests (no real network calls).
 
 - Use centralized logging (`from phi.logging import get_logger`) for production modules; avoid `print(...)` outside intentional CLI UX output.
+
+
+## Writing Unit Tests
+
+- Keep tests in `tests/` and prefer isolated unit tests with mocked external APIs/filesystem.
+- Use `tmp_path` for file IO and `monkeypatch`/`pytest-mock` for dependency isolation.
+- Avoid network calls; mock vendor/fetch functions at module boundaries.
