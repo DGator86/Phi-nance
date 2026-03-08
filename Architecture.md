@@ -1,102 +1,77 @@
 # Phi-nance Architecture
 
-## Live Backtest Workbench
+## High-Level Overview
 
-Phi-nance provides a modular **Live Backtest Workbench** for quantitative research:
+Phi-nance is organized as a modular research platform with clear separation between data access, strategy logic, optimization, and user interfaces.
 
-- Fetch & cache historical data
-- Select & tune indicators
-- Blend multiple indicators
-- PhiAI auto-tuning
-- Equities + Options backtests
-- Reproducible runs with RunConfig + RunHistory
+Primary layers:
 
----
+1. **Data layer** (`phi.data`, `data/providers`, `phinance/data`): vendor adapters, cache, and staleness-aware retrieval.
+2. **Strategy and signal layer** (`strategies`, `phi.indicators`, `regime_engine`): indicator generation, MFT regime features, and strategy outputs.
+3. **Blending/optimization layer** (`phi.blending`, `phi.phiai`, `phinance/optimization`): weighted/voting/regime-aware blending and auto-tuning workflows.
+4. **Backtesting layer** (`run_backtest.py`, `scripts/run_backtest.py`, `phi.options.backtest`): equities/options simulation and result emission.
+5. **Presentation layer** (`app_streamlit`, `dashboard.py`): modular Streamlit workbench and legacy dashboard.
 
-## Directory Structure
+## Module Map
 
-```
-Phi-nance/
-├── phi/                    # Engine modules
-│   ├── data/               # Data fetching & caching
-│   │   └── cache.py        # Parquet cache at data_cache/{vendor}/{symbol}/{tf}/
-│   ├── blending/           # Indicator blending
-│   │   └── blender.py      # Weighted Sum, Voting, Regime-Weighted
-│   ├── phiai/              # PhiAI auto-tuning
-│   │   └── auto_tune.py    # Grid/random search, regime conditioning
-│   └── run_config.py       # RunConfig schema, RunHistory storage
-│
-├── app_streamlit/          # Streamlit apps
-│   └── live_workbench.py   # Live Backtest Workbench UI
-│
-├── regime_engine/          # MFT Regime Engine (existing)
-│   ├── data_fetcher.py     # Alpha Vantage
-│   ├── indicator_library.py
-│   ├── scanner.py
-│   └── ...
-│
-├── strategies/             # Lumibot strategies (existing)
-│   ├── alpha_vantage_fixed.py
-│   ├── rsi.py, macd.py, bollinger.py, ...
-│   └── blended_mft_strategy.py
-│
-├── data_cache/             # Cached OHLCV datasets (parquet)
-├── runs/                   # Run history (config.json, results.json, trades.csv)
-└── .streamlit/
-    ├── config.toml         # Dark theme (purple/orange)
-    └── styles.css          # Custom CSS
-```
-
----
+| Module/Path | Responsibility |
+|---|---|
+| `phi/config.py` | Centralized environment-backed runtime settings (paths, logging level, PhiAI defaults). |
+| `phi/logging.py` | Shared logger setup, level resolution, file+console handler wiring. |
+| `phi/exceptions.py` + `phinance/exceptions.py` | Typed exception hierarchy used for predictable error handling. |
+| `phi/utils/validation.py` | Input sanitization and validation primitives used by scripts/UI paths. |
+| `phi/data/` | Cache and vendor fetch abstraction for OHLCV/options-adjacent data retrieval. |
+| `phi/indicators/` | Indicator registry and computation helpers. |
+| `phi/blending/` | Signal-combination methods (`weighted_sum`, `voting`, `regime_weighted`). |
+| `phi/phiai/` + `phinance/optimization/` | Parameter search, orchestration, walk-forward optimization, and explainability helpers. |
+| `phi/options/` | Options pricing/backtesting support, strategy primitives, and Greeks utilities. |
+| `regime_engine/` | Market Field Theory (MFT) features, taxonomy, regime scoring, and tuning components. |
+| `app_streamlit/` | Modular Streamlit app entry points, pages, UI state, and workflow orchestration. |
+| `tests/` | Unit/extended test coverage for blending, data, options, app handlers, and optimizers. |
 
 ## Data Flow
 
-1. **Dataset Builder** → `phi.data.fetch_and_cache()` → `data_cache/{vendor}/{symbol}/{timeframe}/`
-2. **Indicator Selection** → Strategy params from `INDICATOR_CATALOG`
-3. **Blending** → `phi.blending.blend_signals()` (weighted_sum, voting, etc.)
-4. **Backtest** → Lumibot `run_backtest()` with `AlphaVantageFixedDataSource`
-5. **Run History** → `phi.run_config.RunHistory` → `runs/{run_id}/`
+Typical research flow:
 
----
+1. **Dataset setup** (`scripts/setup_data_spine.py`) prepares and validates bar/short-volume datasets.
+2. **Data retrieval** (`phi.data.cache.fetch_and_cache`) resolves vendor data and stores cache artifacts.
+3. **Feature generation** computes indicators and regime descriptors (`phi.indicators`, `regime_engine`).
+4. **Signal blending** combines strategy outputs (`phi.blending.blender.blend_signals`).
+5. **Optimization (optional)** runs PhiAI/optimizer workflows for parameter selection and walk-forward robustness.
+6. **Backtest execution** runs equity/options simulations and persists outputs into run directories.
+7. **UI/analysis** surfaces metrics and artifacts in Streamlit modules and generated reports.
 
-## Key Schemas
+## Configuration Management
 
-### RunConfig
+`phi/config.py` exposes a `Settings` dataclass populated from environment variables.
 
-- `dataset_id`, `symbols`, `start_date`, `end_date`, `timeframe`, `vendor`
-- `initial_capital` (required, > 0)
-- `trading_mode`: equities | options
-- `indicators`, `blend_method`, `blend_weights`
-- `phiai_enabled`, `phiai_constraints`
-- `exit_rules`, `position_sizing`
-- `evaluation_metric`
+- Paths: `DATA_CACHE_DIR`, `RUNS_DIR`, `LOGS_DIR`.
+- Runtime flags: `LOG_LEVEL`, `DEBUG`.
+- Optimization defaults: `PHIAI_DEFAULT_N_TRIALS`, `PHIAI_PARALLEL_JOBS`, `PHIAI_WALK_FORWARD_WINDOWS`.
+- Compatibility alias: `DATA_CACHE_ROOT` remains available for backward compatibility.
 
-### Cache Layout
+The settings object is used throughout runtime modules to reduce scattered path logic and centralize defaults.
 
-```
-data_cache/
-  alphavantage/
-    SPY/
-      1D/
-        20200101_20241231.parquet
-        20200101_20241231.parquet.metadata.json
-```
+## Logging and Error Handling
 
----
+- `phi/logging.py` standardizes logger setup and output format.
+- Production modules should use logger calls instead of `print` for operational events.
+- Custom exceptions from `phi.exceptions` / `phinance.exceptions` are preferred over broad `Exception` raises.
+- Validation helpers in `phi.utils.validation` should be used to fail early with clear error messages.
 
-## Entry Points
+## Testing and CI Strategy
 
-| Command | Purpose |
-|---------|---------|
-| `streamlit run app_streamlit/live_workbench.py` | Live Backtest Workbench |
-| `streamlit run dashboard.py` | Legacy MFT Dashboard (6 tabs) |
-| `python run_backtest.py --strategy rsi --start 2020-01-01` | CLI backtest |
+- Tests live under `tests/` and include unit-style and feature-level checks.
+- Default local command: `pytest` (see `pyproject.toml` for configured options).
+- CI expectations: lint/type-check/test gates, coverage reporting, and docs synchronization for user-facing changes.
 
----
+## UI Architecture
 
-## Theme
+The Streamlit workbench (`app_streamlit/main.py`) coordinates:
 
-- **Base**: Dark
-- **Primary**: `#a855f7` (purple)
-- **Accent**: `#f97316` (orange)
-- **Background**: `#0f0f12`, `#1a1a1f`
+- session state and cache helpers,
+- page-level modules under `app_streamlit/pages/`,
+- shared UI components and rendering helpers,
+- backtest controls and run result display.
+
+Legacy dashboards remain available for backward compatibility and experimentation.

@@ -1,48 +1,71 @@
 # Contributing to Phi-nance
 
-Thank you for your interest in contributing!
+Thanks for contributing to Phi-nance. This guide defines expected engineering and documentation standards.
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/DGator86/Phi-nance
+git clone https://github.com/DGator86/Phi-nance.git
 cd Phi-nance
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
-pip install flake8
+pre-commit install
+cp .env.example .env
 ```
 
-## Running Tests
+## Coding Standards
+
+- **Type hints are required** for new/changed public interfaces.
+- **Use custom exceptions** from `phi.exceptions` / `phinance.exceptions` where applicable.
+- **Use centralized logging** (`phi.logging.get_logger` or package logger helper), not ad hoc `print` statements in runtime modules.
+- **Validate external inputs** with helpers in `phi.utils.validation` where practical.
+- Follow configured linting and formatting conventions (`ruff`, `black` profile settings in `pyproject.toml`).
+- Maintain consistent docstring style for public classes/functions (Google- or NumPy-style acceptable; keep one style per module).
+
+## Testing Expectations
+
+Run before opening a PR:
 
 ```bash
-pytest --cov=phi --cov=app_streamlit --cov-report=xml --cov-report=term-missing --cov-fail-under=80
+pytest
+ruff check .
+mypy phinance phi
 ```
 
-## Linting
+Recommended coverage run:
 
 ```bash
-flake8 phi/ tests/ --max-line-length=120 --ignore=E501,W503
+pytest --cov=phi --cov=phinance --cov=app_streamlit --cov-report=term-missing
 ```
 
-## Submitting a Pull Request
+For refactors, add or update tests that cover:
 
-1. Fork the repository and create a feature branch from `MAIN`.
-2. Make your changes with clear, descriptive commits.
-3. Ensure all tests pass (`pytest --cov=phi --cov=app_streamlit --cov-report=xml --cov-report=term-missing --cov-fail-under=80`) and linting is clean.
-4. Open a pull request against `MAIN` with a description of what you changed and why.
+- nominal logic,
+- error/validation paths,
+- regression scenarios introduced by the change.
 
-## Code Style
+## Pull Request Process
 
-- Follow [PEP 8](https://peps.python.org/pep-0008/) with a maximum line length of 120 characters.
-- Use [black](https://github.com/psf/black)-compatible formatting.
-- Add NumPy-style docstrings to all public functions and classes.
-- Mock all external API calls in tests (no real network calls).
+1. Create a focused branch and keep commits logically grouped.
+2. Ensure lint/type/test checks pass locally.
+3. Update documentation for any user-facing behavior or config changes.
+4. Include concise PR notes: what changed, why, risk/rollback considerations.
+5. Confirm CI passes (tests, lint, coverage gates as configured).
 
-- Use centralized logging (`from phi.logging import get_logger`) for production modules; avoid `print(...)` outside intentional CLI UX output.
+## Documentation Responsibilities
 
+When changing behavior, also update relevant docs:
 
-## Writing Unit Tests
+- `README.md` for top-level UX changes,
+- `Architecture.md` for structural changes,
+- `docs/*.md` topic guides,
+- `.env.example` for environment variable additions/removals.
 
-- Keep tests in `tests/` and prefer isolated unit tests with mocked external APIs/filesystem.
-- Use `tmp_path` for file IO and `monkeypatch`/`pytest-mock` for dependency isolation.
-- Avoid network calls; mock vendor/fetch functions at module boundaries.
+## Commit Hygiene
+
+- Use clear commit messages in imperative mood.
+- Avoid unrelated formatting-only churn.
+- Keep sensitive values out of source control and logs.
