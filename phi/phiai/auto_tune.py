@@ -6,7 +6,7 @@ import hashlib
 import json
 import warnings
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import optuna
@@ -14,6 +14,7 @@ import pandas as pd
 from optuna.samplers import TPESampler
 
 from phi.config import settings
+from phi.exceptions import OptimizationError
 from phi.logging import get_logger
 from phi.run_config import RunConfig
 
@@ -21,7 +22,7 @@ logger = get_logger(__name__)
 
 _MAXIMIZE_METRICS = {"sharpe", "roi", "cagr", "win_rate", "accuracy"}
 
-_PARAM_GRIDS_DAILY: Dict[str, Dict[str, List[Any]]] = {
+_PARAM_GRIDS_DAILY: dict[str, dict[str, list[Any]]] = {
     "RSI": {"rsi_period": [7, 14, 21], "oversold": [25, 30, 35], "overbought": [65, 70, 75]},
     "MACD": {"fast_period": [8, 12, 16], "slow_period": [21, 26, 31], "signal_period": [7, 9, 11]},
     "Bollinger": {"bb_period": [15, 20, 25], "num_std": [1.5, 2.0, 2.5]},
@@ -31,7 +32,7 @@ _PARAM_GRIDS_DAILY: Dict[str, Dict[str, List[Any]]] = {
     "VWAP": {"band_pct": [0.2, 0.5, 1.0]},
 }
 
-_PARAM_GRIDS_INTRADAY: Dict[str, Dict[str, List[Any]]] = {
+_PARAM_GRIDS_INTRADAY: dict[str, dict[str, list[Any]]] = {
     "RSI": {"rsi_period": [3, 5, 7, 9, 14], "oversold": [25, 30, 35], "overbought": [65, 70, 75]},
     "MACD": {"fast_period": [3, 5, 8], "slow_period": [12, 17, 21], "signal_period": [3, 5, 7]},
     "Bollinger": {"bb_period": [10, 14, 20], "num_std": [1.5, 2.0, 2.5]},
@@ -45,11 +46,11 @@ _PARAM_GRIDS_INTRADAY: Dict[str, Dict[str, List[Any]]] = {
 class PhiAI:
     """PhiAI orchestrator for full auto mode."""
 
-    def __init__(self, max_indicators: int = 5, allow_shorts: bool = False, risk_cap: Optional[float] = None) -> None:
+    def __init__(self, max_indicators: int = 5, allow_shorts: bool = False, risk_cap: float | None = None) -> None:
         self.max_indicators = max_indicators
         self.allow_shorts = allow_shorts
         self.risk_cap = risk_cap
-        self.changes: List[Dict[str, str]] = []
+        self.changes: list[dict[str, str]] = []
 
     def explain(self) -> str:
         lines = [
@@ -69,7 +70,7 @@ def _is_intraday(timeframe: str) -> bool:
     return timeframe in {"1m", "5m", "15m", "30m", "1H"}
 
 
-def _grid_for(indicator_name: str, timeframe: str, config: Dict[str, Any]) -> Optional[Dict[str, List[Any]]]:
+def _grid_for(indicator_name: str, timeframe: str, config: dict[str, Any]) -> dict[str, list[Any]] | None:
     configured_grid = config.get("param_grid")
     if isinstance(configured_grid, dict) and configured_grid:
         return {k: list(v) for k, v in configured_grid.items() if isinstance(v, list) and v}
@@ -105,7 +106,7 @@ def _infer_periods_per_year(index: pd.Index, default: float = 252.0) -> float:
     return max(1.0, trading_minutes_per_year / minutes)
 
 
-def _metric_from_returns(strategy_returns: pd.Series, metric: str, periods_per_year: Optional[float] = None) -> float:
+def _metric_from_returns(strategy_returns: pd.Series, metric: str, periods_per_year: float | None = None) -> float:
     """Compute optimization metric from strategy returns."""
     clean = strategy_returns.replace([np.inf, -np.inf], np.nan).fillna(0.0)
     if clean.empty:
@@ -134,15 +135,15 @@ def _metric_from_returns(strategy_returns: pd.Series, metric: str, periods_per_y
 
 def _evaluate_indicator_set(
     ohlcv: pd.DataFrame,
-    indicators_config: Dict[str, Dict[str, Any]],
+    indicators_config: dict[str, dict[str, Any]],
     metric: str,
-    periods_per_year: Optional[float] = None,
+    periods_per_year: float | None = None,
 ) -> float:
     from phi.indicators.simple import compute_indicator
 
     close = ohlcv["close"].astype(float)
     returns = close.pct_change().fillna(0.0)
-    signals: List[pd.Series] = []
+    signals: list[pd.Series] = []
 
     for name, cfg in indicators_config.items():
         if not cfg.get("enabled", False):
@@ -161,7 +162,7 @@ def _evaluate_indicator_set(
 
 def _walk_forward_score(
     ohlcv: pd.DataFrame,
-    indicators_config: Dict[str, Dict[str, Any]],
+    indicators_config: dict[str, dict[str, Any]],
     walk_forward_windows: int,
     metric: str,
 ) -> float:
@@ -184,7 +185,7 @@ def _walk_forward_score(
             periods_per_year=periods_per_year,
         )
 
-    fold_scores: List[float] = []
+    fold_scores: list[float] = []
     for window_idx in range(1, walk_forward_windows + 1):
         start = window_idx * fold_size
         stop = start + fold_size if window_idx < walk_forward_windows else n_rows
@@ -211,7 +212,7 @@ def _walk_forward_score(
     return float(np.mean(fold_scores))
 
 
-def _build_dataset_id(ohlcv: pd.DataFrame, run_config: Optional[RunConfig]) -> str:
+def _build_dataset_id(ohlcv: pd.DataFrame, run_config: RunConfig | None) -> str:
     if run_config and run_config.dataset_id:
         return run_config.dataset_id
 
@@ -228,7 +229,7 @@ def _best_params_dir() -> Path:
     return root
 
 
-def save_best_params(best_params: Dict[str, Dict[str, Any]], dataset_id: str, best_value: float, metric: str) -> Path:
+def save_best_params(best_params: dict[str, dict[str, Any]], dataset_id: str, best_value: float, metric: str) -> Path:
     """Persist optimized indicator params and score for later reuse."""
     payload = {
         "dataset_id": dataset_id,
@@ -242,24 +243,27 @@ def save_best_params(best_params: Dict[str, Dict[str, Any]], dataset_id: str, be
     return out_path
 
 
-def load_best_params(dataset_id: str) -> Optional[Dict[str, Any]]:
+def load_best_params(dataset_id: str) -> dict[str, Any] | None:
     """Load previously saved optimized params for a dataset id."""
     path = _best_params_dir() / f"{dataset_id}.json"
     if not path.exists():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise OptimizationError(f"Failed loading saved params for {dataset_id}: {exc}") from exc
 
 
 def run_phiai_optimization(
     ohlcv: pd.DataFrame,
-    indicators_config: Dict[str, Dict[str, Any]],
-    run_config: Optional[RunConfig] = None,
-    n_trials: Optional[int] = None,
-    walk_forward_windows: Optional[int] = None,
-    parallel_jobs: Optional[int] = None,
+    indicators_config: dict[str, dict[str, Any]],
+    run_config: RunConfig | None = None,
+    n_trials: int | None = None,
+    walk_forward_windows: int | None = None,
+    parallel_jobs: int | None = None,
     metric: str = "sharpe",
     seed: int = 42,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run Bayesian optimization to tune indicator parameters."""
     if ohlcv is None or ohlcv.empty:
         return {
@@ -319,7 +323,7 @@ def run_phiai_optimization(
 
     def objective(trial: optuna.Trial) -> float:
         trial_indicators = {name: dict(cfg) for name, cfg in indicators_config.items()}
-        best_for_trial: Dict[str, Dict[str, Any]] = {}
+        best_for_trial: dict[str, dict[str, Any]] = {}
 
         for name in tuned_names:
             cfg = trial_indicators[name]
@@ -343,11 +347,14 @@ def run_phiai_optimization(
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     sampler = TPESampler(seed=seed)
     study = optuna.create_study(direction=direction, sampler=sampler)
-    study.optimize(objective, n_trials=max(1, resolved_trials), n_jobs=max(1, resolved_jobs))
+    try:
+        study.optimize(objective, n_trials=max(1, resolved_trials), n_jobs=max(1, resolved_jobs))
+    except (RuntimeError, ValueError) as exc:
+        raise OptimizationError(f"PhiAI optimization failed: {exc}") from exc
 
-    best_params: Dict[str, Dict[str, Any]] = study.best_trial.user_attrs.get("best_params", {})
+    best_params: dict[str, dict[str, Any]] = study.best_trial.user_attrs.get("best_params", {})
     optimized_indicators = {name: dict(cfg) for name, cfg in indicators_config.items()}
-    changes: List[str] = []
+    changes: list[str] = []
 
     for name, params in best_params.items():
         current = dict(optimized_indicators.get(name, {}))

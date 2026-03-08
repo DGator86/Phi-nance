@@ -23,9 +23,14 @@ try:
 except ImportError:  # pragma: no cover
     load_dotenv = None
 
-from phinence.store.parquet_store import ParquetBarStore, check_no_gap_more_than_n_bars
-from phi.data import DataFetchError, fetch_and_cache
-from phi.logging import get_logger, setup_logging
+from phi.data import DataFetchError, fetch_and_cache  # noqa: E402
+from phi.exceptions import ValidationError  # noqa: E402
+from phi.logging import get_logger, setup_logging  # noqa: E402
+from phi.utils.validation import sanitize_ticker, validate_positive_number  # noqa: E402
+from phinence.store.parquet_store import (  # noqa: E402
+    ParquetBarStore,
+    check_no_gap_more_than_n_bars,
+)
 
 LOGGER = get_logger(__name__)
 
@@ -42,6 +47,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--verbose", action="store_true", help="Enable debug logs")
     return parser.parse_args()
 
+
+
+
+def _sanitize_args(args: argparse.Namespace) -> argparse.Namespace:
+    args.tickers = [sanitize_ticker(t) for t in args.tickers]
+    args.years = int(validate_positive_number(args.years, name="years"))
+    args.max_gap = int(validate_positive_number(args.max_gap, name="max_gap"))
+    args.phase2_retries = int(validate_positive_number(args.phase2_retries, name="phase2_retries", allow_zero=True))
+    return args
 
 def _load_env() -> None:
     env_path = REPO_ROOT / ".env"
@@ -165,12 +179,17 @@ def _prefetch_daily_cache(tickers: list[str], sample_only: bool) -> None:
                 )
             else:
                 LOGGER.warning("Prefetch failed for %s: %s", ticker.upper(), exc)
-        except Exception as exc:  # noqa: BLE001
+        except OSError:
             LOGGER.exception("Unexpected prefetch error for %s", ticker.upper())
 
 
 def main() -> int:
     args = parse_args()
+    try:
+        args = _sanitize_args(args)
+    except ValidationError as exc:
+        LOGGER.error("Invalid input arguments: %s", exc)
+        return 2
     setup_logging(log_level="DEBUG" if args.verbose else None)
 
     _load_env()

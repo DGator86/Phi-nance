@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from phi.logging import get_logger
-
-logger = get_logger(__name__)
-
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import streamlit as st
+from pydantic import ValidationError as PydanticValidationError
 
 from app_streamlit.config import (
     BLEND_METHOD_OPTIONS,
@@ -28,7 +25,10 @@ from app_streamlit.config import (
     VENDOR_OPTIONS,
 )
 from phi.config import settings
+from phi.logging import get_logger
 from phi.run_config import RunConfig, RunHistory
+
+logger = get_logger(__name__)
 
 
 def render_indicator_selector(selected_names: list[str]) -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
@@ -181,7 +181,7 @@ def render_loaded_config_summary(config_payload: dict[str, Any] | None) -> None:
         return
     try:
         cfg = RunConfig.model_validate(config_payload)
-    except Exception:  # noqa: BLE001
+    except PydanticValidationError:
         return
     st.caption(
         f"{cfg.symbols[0]} | {cfg.start_date} → {cfg.end_date} | {cfg.timeframe} | {cfg.trading_mode}"

@@ -4,20 +4,28 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any
 
 import fasteners
 import pandas as pd
 import pandera as pa
 import requests
-from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
-import logging
 from phi.config import settings
+from phi.exceptions import CacheCorruptedError, DataFetchError
 from phi.logging import get_logger
 
 logger = get_logger(__name__)
@@ -27,14 +35,6 @@ DATA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Compatibility aliases used by other modules.
 DATA_CACHE_ROOT = DATA_CACHE_DIR
 _DATA_CACHE_ROOT = DATA_CACHE_DIR
-
-
-class DataFetchError(RuntimeError):
-    """Raised when vendor fetch or cache persistence fails."""
-
-
-class CacheCorruptedError(DataFetchError):
-    """Raised when cached parquet/metadata payload is missing or malformed."""
 
 
 OHLCV_SCHEMA = pa.DataFrameSchema(
@@ -114,7 +114,7 @@ def _file_lock(lock_path: Path, timeout: int = _LOCK_TIMEOUT_SECONDS) -> Generat
 class DataCache:
     """Parquet cache manager for OHLCV and options-chain datasets."""
 
-    def __init__(self, root: Optional[Path] = None) -> None:
+    def __init__(self, root: Path | None = None) -> None:
         self.root = root or DATA_CACHE_DIR
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -148,7 +148,7 @@ class DataCache:
         start: str,
         end: str,
         check_staleness: bool = False,
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame | None:
         path = self._parquet_path(vendor, symbol, timeframe, start, end)
         meta_path = self._meta_path(vendor, symbol, timeframe, start, end)
         if not path.exists():
@@ -180,7 +180,7 @@ class DataCache:
         timeframe: str,
         start: str,
         end: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Path:
         path = self._parquet_path(vendor, symbol, timeframe, start, end)
         meta_path = _meta_path_from_cache(path)
@@ -214,13 +214,13 @@ class DataCache:
         logger.info("Saved cache dataset %s and metadata %s", path, meta_path)
         return path
 
-    def list_datasets(self) -> List[Dict[str, Any]]:
-        out: List[Dict[str, Any]] = []
+    def list_datasets(self) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
         if not self.root.exists():
             return out
         for parquet in self.root.rglob("*.parquet"):
             meta_path = _meta_path_from_cache(parquet)
-            meta: Dict[str, Any] = {}
+            meta: dict[str, Any] = {}
             if meta_path.exists():
                 try:
                     meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -236,7 +236,7 @@ def _parse_fetch_timestamp(raw_ts: str) -> datetime:
     return datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
 
 
-def is_cache_stale(cache_path: Path, timeframe: str, max_age_hours: Optional[float] = None) -> bool:
+def is_cache_stale(cache_path: Path, timeframe: str, max_age_hours: float | None = None) -> bool:
     """Return whether cache should be considered stale using metadata fetch timestamp."""
     meta_path = _meta_path_from_cache(cache_path)
     if not cache_path.exists() or not meta_path.exists():
@@ -371,7 +371,7 @@ def auto_fetch_and_cache(
     return fetch_and_cache("yfinance", symbol, timeframe, str(start), str(end)), "yfinance"
 
 
-def get_cached_dataset(vendor: str, symbol: str, timeframe: str, start: str, end: str) -> Optional[pd.DataFrame]:
+def get_cached_dataset(vendor: str, symbol: str, timeframe: str, start: str, end: str) -> pd.DataFrame | None:
     """Load a cached OHLCV dataset without calling a data vendor."""
     try:
         return DataCache().load(vendor, symbol.upper(), timeframe, start, end)
@@ -380,7 +380,7 @@ def get_cached_dataset(vendor: str, symbol: str, timeframe: str, start: str, end
         return None
 
 
-def load_metadata(vendor: str, symbol: str, timeframe: str, start: str, end: str) -> Optional[Dict[str, Any]]:
+def load_metadata(vendor: str, symbol: str, timeframe: str, start: str, end: str) -> dict[str, Any] | None:
     """Load metadata for a cached OHLCV dataset if present."""
     path = DataCache()._meta_path(vendor, symbol.upper(), timeframe, start, end)
     if not path.exists():
@@ -391,14 +391,14 @@ def load_metadata(vendor: str, symbol: str, timeframe: str, start: str, end: str
         return None
 
 
-def list_cached_datasets() -> List[Dict[str, Any]]:
+def list_cached_datasets() -> list[dict[str, Any]]:
     """List all cached OHLCV datasets."""
     return DataCache().list_datasets()
 
 
 # ---- Options-chain cache (Phase 1) ----
 
-def _normalize_option_date(requested: Optional[str], expirations: List[str]) -> str:
+def _normalize_option_date(requested: str | None, expirations: list[str]) -> str:
     if not expirations:
         raise ValueError("No options expirations available for symbol")
     if requested is None:
@@ -409,7 +409,7 @@ def _normalize_option_date(requested: Optional[str], expirations: List[str]) -> 
     return expirations[0]
 
 
-def fetch_options_chain(symbol: str, date: Optional[str] = None, vendor: str = "yfinance") -> pd.DataFrame:
+def fetch_options_chain(symbol: str, date: str | None = None, vendor: str = "yfinance") -> pd.DataFrame:
     """Fetch and cache options chain for a symbol and expiration date.
 
     Cached at: ``{DATA_CACHE_DIR}/options/{symbol}/{date}/chain.parquet``.
@@ -439,7 +439,7 @@ def fetch_options_chain(symbol: str, date: Optional[str] = None, vendor: str = "
     return combined
 
 
-def get_cached_options(symbol: str, date: str) -> Optional[pd.DataFrame]:
+def get_cached_options(symbol: str, date: str) -> pd.DataFrame | None:
     """Load cached options chain for ``symbol`` and expiration ``date``."""
     path = DATA_CACHE_DIR / "options" / symbol.upper() / str(date) / "chain.parquet"
     if not path.exists():
