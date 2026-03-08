@@ -19,6 +19,7 @@ class ClusteringRegimeDetector(RegimeDetector):
     """KMeans/GMM detector that assigns regime cluster per bar."""
 
     def __init__(self, n_clusters: int = 3, method: Literal["kmeans", "gmm"] = "kmeans", random_state: int = 42) -> None:
+        """Initialize clustering detector and metadata container."""
         self.n_clusters = int(n_clusters)
         self.method = method
         self.random_state = random_state
@@ -33,7 +34,16 @@ class ClusteringRegimeDetector(RegimeDetector):
             },
         }
 
-    def fit(self, ohlcv: pd.DataFrame, **kwargs: Any) -> "ClusteringRegimeDetector":
+    def fit(self, ohlcv: pd.DataFrame, **kwargs: Any) -> ClusteringRegimeDetector:
+        """Fit the configured clustering model on regime features.
+
+        Args:
+            ohlcv: Historical bars for training.
+            **kwargs: Optional fit settings including ``window``.
+
+        Returns:
+            The fitted detector instance.
+        """
         window = int(kwargs.get("window", 20))
         features = extract_features(ohlcv, window=window)
         x = features.to_numpy()
@@ -59,6 +69,7 @@ class ClusteringRegimeDetector(RegimeDetector):
         return self
 
     def predict(self, ohlcv: pd.DataFrame) -> pd.Series:
+        """Predict cluster labels (``cluster_{i}``) for each eligible bar."""
         if self.model is None:
             raise ValueError("ClusteringRegimeDetector must be fit before predict")
         features = extract_features(ohlcv, window=int(self.metadata.get("window", 20)))
@@ -67,6 +78,7 @@ class ClusteringRegimeDetector(RegimeDetector):
         return pd.Series([f"cluster_{int(c)}" for c in labels], index=features.index, name="regime")
 
     def save(self, path: str | Path) -> None:
+        """Persist fitted clustering model and JSON metadata sidecar."""
         if self.model is None:
             raise ValueError("Cannot save an unfitted ClusteringRegimeDetector")
         model_path = Path(path)
@@ -85,7 +97,8 @@ class ClusteringRegimeDetector(RegimeDetector):
         model_path.with_suffix(".json").write_text(json.dumps(self.metadata, indent=2), encoding="utf-8")
 
     @classmethod
-    def load(cls, path: str | Path) -> "ClusteringRegimeDetector":
+    def load(cls, path: str | Path) -> ClusteringRegimeDetector:
+        """Load a previously saved clustering detector from disk."""
         payload = joblib.load(Path(path))
         inst = cls(
             n_clusters=int(payload["n_clusters"]),

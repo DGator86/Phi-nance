@@ -202,3 +202,75 @@ def test_handle_load_run_rejects_unsafe_run_id(monkeypatch):
 
     assert result is None
     assert "Run ID" in sink["error"][0]
+
+
+
+def test_handle_train_regime_detector_unknown_method_warns_and_falls_back(monkeypatch):
+    class FakeSt:
+        session_state = {}
+
+    captured: dict[str, object] = {}
+
+    class FakeDetector:
+        def predict(self, data):
+            return pd.Series(["state_0"] * len(data), index=data.index)
+
+    monkeypatch.setattr(ui_handlers, "st", FakeSt)
+    monkeypatch.setattr(ui_handlers.logger, "warning", lambda *args, **kwargs: captured.setdefault("warned", True))
+
+    def fake_train(data, method, n_regimes, window, save):
+        captured["method"] = method
+        return FakeDetector(), None
+
+    monkeypatch.setattr(ui_handlers, "train_regime_detector", fake_train)
+
+    payload = _base_payload()
+    payload["regime_method"] = "UnknownLabel"
+    payload["regime_n_states"] = 3
+    payload["regime_window"] = 20
+
+    detector, regimes, path = ui_handlers.handle_train_regime_detector(
+        payload,
+        load_data_fn=lambda *_a, **_k: _sample_data(),
+    )
+
+    assert detector is not None
+    assert not regimes.empty
+    assert path is None
+    assert captured["method"] == "kmeans"
+    assert captured.get("warned") is True
+
+
+def test_handle_run_backtest_passes_regime_label_map(monkeypatch):
+    sink = _patch_state(monkeypatch)
+    _fake_history(monkeypatch)
+
+    class FakeDetector:
+        def predict(self, data):
+            return pd.Series(["state_0"] * len(data), index=data.index)
+
+    class FakeSt:
+        session_state = {"regime_detector": FakeDetector()}
+
+    monkeypatch.setattr(ui_handlers, "st", FakeSt)
+
+    seen: dict[str, object] = {}
+
+    def fake_equity(**kwargs):
+        seen["regime_label_map"] = kwargs.get("regime_label_map")
+        return {"total_return": 0.1}, None
+
+    payload = _base_payload("equities")
+    payload["regime_enabled"] = True
+    payload["regime_label_map"] = {"state_0": "bull"}
+
+    result = ui_handlers.handle_run_backtest(
+        payload,
+        load_data_fn=lambda *_a, **_k: _sample_data(),
+        run_equity_fn=fake_equity,
+        run_options_fn=lambda *_a, **_k: {"total_return": 0.0},
+    )
+
+    assert result is not None
+    assert seen["regime_label_map"] == {"state_0": "bull"}
+    assert sink["results"]["run_id"] == "run_1"
