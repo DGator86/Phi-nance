@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from phi.run_config import RunConfig
+
 logger = logging.getLogger(__name__)
 
 # Default indicators to use when Ollama unavailable
@@ -102,6 +104,7 @@ def run_fully_automated(
     ollama_host: str = "http://localhost:11434",
     ollama_model: str = "llama3.2",
     use_ollama: bool = True,
+    run_config: Optional[RunConfig] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Dict], str, str, pd.DataFrame]:
     """
     Fully automated pipeline: data → indicators → params → blend.
@@ -148,10 +151,25 @@ def run_fully_automated(
         indicators[name] = {"enabled": True, "auto_tune": True, "params": params.copy()}
 
     # 4. PhiAI optimize params using timeframe-aware grids
+    optimization_config = run_config
+    if optimization_config is None:
+        equal_weight = 1.0 / max(1, len(indicators))
+        optimization_config = RunConfig(
+            symbols=[symbol],
+            start_date=start_date,
+            end_date=end_date,
+            timeframe=timeframe,
+            vendor=vendor,
+            initial_capital=initial_capital,
+            indicators={name: {"enabled": True, "params": indicators[name].get("params", {})} for name in indicators},
+            blend_method="weighted_sum",
+            blend_weights={name: equal_weight for name in indicators},
+        )
+
     opt_result = run_phiai_optimization(
         ohlcv=ohlcv,
         indicators_config=indicators,
-        n_trials=12,
+        run_config=optimization_config,
         metric="sharpe",
     )
     indicators = opt_result.get("optimized_indicators", indicators)

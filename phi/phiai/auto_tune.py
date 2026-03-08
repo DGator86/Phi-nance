@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -76,7 +77,36 @@ def _grid_for(indicator_name: str, timeframe: str, config: Dict[str, Any]) -> Op
     return grid_source.get(indicator_name)
 
 
-def _metric_from_returns(strategy_returns: pd.Series, metric: str) -> float:
+
+
+def _infer_periods_per_year(index: pd.Index, default: float = 252.0) -> float:
+    """Infer annualization periods from a DatetimeIndex frequency when possible."""
+    if not isinstance(index, pd.DatetimeIndex) or len(index) < 3:
+        return default
+
+    freq = index.freqstr or pd.infer_freq(index)
+    if not freq:
+        return default
+
+    try:
+        offset = pd.tseries.frequencies.to_offset(freq)
+    except ValueError:
+        return default
+
+    nanos = getattr(offset, "nanos", 0)
+    if nanos <= 0:
+        return default
+
+    minutes = nanos / (60 * 1e9)
+    if minutes <= 0:
+        return default
+
+    trading_minutes_per_year = 252.0 * 6.5 * 60.0
+    return max(1.0, trading_minutes_per_year / minutes)
+
+
+def _metric_from_returns(strategy_returns: pd.Series, metric: str, periods_per_year: Optional[float] = None) -> float:
+    """Compute optimization metric from strategy returns."""
     clean = strategy_returns.replace([np.inf, -np.inf], np.nan).fillna(0.0)
     if clean.empty:
         return -1e9
@@ -87,7 +117,14 @@ def _metric_from_returns(strategy_returns: pd.Series, metric: str) -> float:
         std = float(clean.std())
         if std <= 1e-12:
             return 0.0
-        return float((clean.mean() / std) * np.sqrt(252))
+        if periods_per_year is None:
+            periods_per_year = 252.0
+            warnings.warn(
+                "Could not infer annualization periods for Sharpe; defaulting to 252.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        return float((clean.mean() / std) * np.sqrt(periods_per_year))
     if metric == "max_drawdown":
         curve = (1.0 + clean).cumprod()
         drawdown = curve / curve.cummax() - 1.0
@@ -95,7 +132,12 @@ def _metric_from_returns(strategy_returns: pd.Series, metric: str) -> float:
     return float((1.0 + clean).prod() - 1.0)
 
 
-def _evaluate_indicator_set(ohlcv: pd.DataFrame, indicators_config: Dict[str, Dict[str, Any]], metric: str) -> float:
+def _evaluate_indicator_set(
+    ohlcv: pd.DataFrame,
+    indicators_config: Dict[str, Dict[str, Any]],
+    metric: str,
+    periods_per_year: Optional[float] = None,
+) -> float:
     from phi.indicators.simple import compute_indicator
 
     close = ohlcv["close"].astype(float)
@@ -114,7 +156,7 @@ def _evaluate_indicator_set(ohlcv: pd.DataFrame, indicators_config: Dict[str, Di
 
     composite_signal = pd.concat(signals, axis=1).mean(axis=1).clip(-1.0, 1.0)
     strategy_returns = composite_signal.shift(1).fillna(0.0) * returns
-    return _metric_from_returns(strategy_returns, metric=metric)
+    return _metric_from_returns(strategy_returns, metric=metric, periods_per_year=periods_per_year)
 
 
 def _walk_forward_score(
@@ -124,12 +166,23 @@ def _walk_forward_score(
     metric: str,
 ) -> float:
     n_rows = len(ohlcv)
+    periods_per_year = _infer_periods_per_year(ohlcv.index)
     if walk_forward_windows <= 1 or n_rows < (walk_forward_windows + 1) * 10:
-        return _evaluate_indicator_set(ohlcv=ohlcv, indicators_config=indicators_config, metric=metric)
+        return _evaluate_indicator_set(
+            ohlcv=ohlcv,
+            indicators_config=indicators_config,
+            metric=metric,
+            periods_per_year=periods_per_year,
+        )
 
     fold_size = n_rows // (walk_forward_windows + 1)
     if fold_size <= 0:
-        return _evaluate_indicator_set(ohlcv=ohlcv, indicators_config=indicators_config, metric=metric)
+        return _evaluate_indicator_set(
+            ohlcv=ohlcv,
+            indicators_config=indicators_config,
+            metric=metric,
+            periods_per_year=periods_per_year,
+        )
 
     fold_scores: List[float] = []
     for window_idx in range(1, walk_forward_windows + 1):
@@ -138,10 +191,22 @@ def _walk_forward_score(
         validation = ohlcv.iloc[start:stop]
         if len(validation) < 10:
             continue
-        fold_scores.append(_evaluate_indicator_set(validation, indicators_config, metric=metric))
+        fold_scores.append(
+            _evaluate_indicator_set(
+                validation,
+                indicators_config,
+                metric=metric,
+                periods_per_year=periods_per_year,
+            )
+        )
 
     if not fold_scores:
-        return _evaluate_indicator_set(ohlcv=ohlcv, indicators_config=indicators_config, metric=metric)
+        return _evaluate_indicator_set(
+            ohlcv=ohlcv,
+            indicators_config=indicators_config,
+            metric=metric,
+            periods_per_year=periods_per_year,
+        )
 
     return float(np.mean(fold_scores))
 
@@ -275,6 +340,7 @@ def run_phiai_optimization(
         trial.set_user_attr("best_params", best_for_trial)
         return score
 
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
     sampler = TPESampler(seed=seed)
     study = optuna.create_study(direction=direction, sampler=sampler)
     study.optimize(objective, n_trials=max(1, resolved_trials), n_jobs=max(1, resolved_jobs))

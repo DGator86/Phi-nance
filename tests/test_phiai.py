@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -38,7 +39,7 @@ def test_run_phiai_optimization_returns_best_params(tmp_path: Path, monkeypatch)
 
     assert isinstance(result["best_params"], dict)
     assert "optimized_indicators" in result
-    assert result["best_value"] == result["best_value"]  # not NaN
+    assert not math.isnan(result["best_value"]), "best_value should not be NaN"
     assert (tmp_path / f"{result['dataset_id']}.json").exists()
 
 
@@ -97,3 +98,12 @@ def test_run_config_overrides_are_applied(tmp_path: Path, monkeypatch):
     assert captured["n_trials"] == 4
     assert captured["n_jobs"] == 2
     assert result["dataset_id"] == "cfg_ds"
+
+
+def test_infer_periods_per_year_intraday_index() -> None:
+    from phi.phiai import auto_tune as at
+
+    idx = pd.date_range("2024-01-02 09:30", periods=60, freq="1min")
+    periods = at._infer_periods_per_year(idx)
+
+    assert periods > 252.0
