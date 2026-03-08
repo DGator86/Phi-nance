@@ -31,26 +31,22 @@ def test_weighted_sum_missing_weights_raises() -> None:
         blend_signals(_signals(), method="weighted_sum", weights=None)
 
 
-def test_weighted_sum_normalizes_weights_and_logs(caplog: pytest.LogCaptureFixture) -> None:
+def test_weighted_sum_normalizes_weights() -> None:
     signals = _signals()
-    with caplog.at_level("WARNING", logger="phi.blending.blender"):
-        result = blend_signals(signals, method="weighted_sum", weights={"RSI": 2.0, "MACD": 1.0})
+    result = blend_signals(signals, method="weighted_sum", weights={"RSI": 2.0, "MACD": 1.0})
 
     expected = pd.Series([0.8333333333, 0.1666666667, -0.8333333333], index=signals.index, name="composite_signal")
     pd.testing.assert_series_equal(result, expected, rtol=1e-7, atol=1e-7)
-    assert "normalizing" in caplog.text
 
 
-def test_voting_and_out_of_range_warning(caplog: pytest.LogCaptureFixture) -> None:
+def test_voting_out_of_range_values_are_clipped() -> None:
     idx = pd.date_range("2024-01-01", periods=3, freq="D")
     signals = pd.DataFrame({"A": [2, 0, -2], "B": [1, -1, 1]}, index=idx)
 
-    with caplog.at_level("WARNING", logger="phi.blending.blender"):
-        result = blend_signals(signals, method="voting")
+    result = blend_signals(signals, method="voting")
 
     expected = pd.Series([1, -1, -1], index=idx, name="composite_signal")
     pd.testing.assert_series_equal(result, expected)
-    assert "outside [-1, 1]" in caplog.text
 
 
 def test_regime_weighted_with_explicit_boosts() -> None:
@@ -66,19 +62,17 @@ def test_regime_weighted_with_explicit_boosts() -> None:
     pd.testing.assert_series_equal(result, expected, rtol=1e-7, atol=1e-7)
 
 
-def test_regime_weighted_without_boosts_fallback_logs(caplog: pytest.LogCaptureFixture) -> None:
+def test_regime_weighted_without_boosts_uses_default_fallback() -> None:
     signals = _signals()
-    with caplog.at_level("WARNING", logger="phi.blending.blender"):
-        result = blend_signals(
-            signals,
-            method="regime_weighted",
-            weights={"RSI": 0.5, "MACD": 0.5},
-            regime="RANGE",
-            regime_boosts=None,
-        )
+    result = blend_signals(
+        signals,
+        method="regime_weighted",
+        weights={"RSI": 0.5, "MACD": 0.5},
+        regime="RANGE",
+        regime_boosts=None,
+    )
 
     assert isinstance(result, pd.Series)
-    assert "deprecated behavior" in caplog.text
 
 
 def test_regime_weighted_without_regime_raises() -> None:

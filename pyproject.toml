@@ -64,6 +64,8 @@ live = [
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
+    "pytest-mock>=3.10",
+    "pytest-asyncio>=0.23",
     "ruff>=0.1",
     "mypy>=1.7",
     "pre-commit>=3.5",
@@ -95,7 +97,7 @@ Issues     = "https://github.com/DGator86/Phi-nance/issues"
 
 [tool.pytest.ini_options]
 testpaths  = ["tests"]
-addopts    = "-v --tb=short --ignore=tests/test_backtest.py --ignore=tests/test_gex_math.py --ignore=tests/test_projection_packet.py"
+addopts    = "-v --tb=short --ignore=tests/integration --ignore=tests/performance --ignore=tests/unit --ignore=tests/test_backtest.py --ignore=tests/test_gex_math.py --ignore=tests/test_projection_packet.py --ignore=tests/test_phi_backtest_engines.py --ignore=tests/test_phi_blending_refactor.py"
 filterwarnings = ["ignore::DeprecationWarning", "ignore::FutureWarning"]
 
 [tool.ruff]

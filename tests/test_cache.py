@@ -1,102 +1,95 @@
-"""Unit tests for phi/data/cache.py."""
-
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+import json
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import pytest
 
-from phi.data.cache import (
-    DataCache,
-    _normalize_ohlcv,
-    _ohlcv_sanity_check,
-    fetch_and_cache,
-)
+from phi.data import cache as cache_mod
+from phi.data.cache import CacheCorruptedError, DataCache, DataFetchError, fetch_and_cache, is_cache_stale
 
 
-def _make_ohlcv(n: int = 5, negative: bool = False) -> pd.DataFrame:
-    """Build a minimal OHLCV DataFrame."""
-    close = [100.0 + i for i in range(n)]
-    if negative:
-        close[2] = -1.0
-    idx = pd.date_range("2023-01-01", periods=n, freq="D")
+def _make_ohlcv(rows: int = 5) -> pd.DataFrame:
+    idx = pd.date_range("2024-01-01", periods=rows, freq="D")
+    base = [100.0 + i for i in range(rows)]
     return pd.DataFrame(
-        {"open": close, "high": close, "low": close, "close": close, "volume": [1000] * n},
+        {
+            "open": base,
+            "high": [v + 1 for v in base],
+            "low": [v - 1 for v in base],
+            "close": base,
+            "volume": [1_000.0] * rows,
+        },
         index=idx,
     )
 
 
-# ── _normalize_ohlcv ─────────────────────────────────────────────────────────
-
-def test_normalize_ohlcv_valid():
-    df = _make_ohlcv()
-    result = _normalize_ohlcv(df)
-    assert list(result.columns) == ["open", "high", "low", "close", "volume"]
-    assert len(result) == 5
-
-
-def test_normalize_ohlcv_missing_columns():
-    df = pd.DataFrame({"close": [1, 2, 3]})
-    with pytest.raises(ValueError, match="missing required columns"):
-        _normalize_ohlcv(df)
-
-
-# ── DataCache save / load ────────────────────────────────────────────────────
-
-def test_datacache_save_and_load(tmp_path):
+def test_fetch_and_cache_cache_hit_skips_vendor(monkeypatch, tmp_path):
     cache = DataCache(root=tmp_path)
     df = _make_ohlcv()
-    cache.save(df, "yfinance", "SPY", "1D", "2023-01-01", "2023-01-10")
-    loaded = cache.load("yfinance", "SPY", "1D", "2023-01-01", "2023-01-10")
-    assert loaded is not None
-    assert len(loaded) == len(df)
-    assert list(loaded.columns) == list(df.columns)
+    cache.save(df, "yfinance", "SPY", "1D", "2024-01-01", "2024-01-05")
+
+    monkeypatch.setattr(cache_mod, "DataCache", lambda: DataCache(root=tmp_path))
+    called = {"fetch": 0}
+
+    def fake_fetch(*_args, **_kwargs):
+        called["fetch"] += 1
+        return _make_ohlcv()
+
+    monkeypatch.setattr(cache_mod, "_fetch_with_retry", fake_fetch)
+
+    out = fetch_and_cache("yfinance", "SPY", "1D", "2024-01-01", "2024-01-05")
+
+    assert called["fetch"] == 0
+    pd.testing.assert_frame_equal(out, df, check_freq=False)
 
 
-def test_datacache_exists(tmp_path):
+def test_fetch_and_cache_stale_cache_refetches(monkeypatch, tmp_path):
     cache = DataCache(root=tmp_path)
-    assert not cache.exists("yfinance", "SPY", "1D", "2023-01-01", "2023-01-10")
-    df = _make_ohlcv()
-    cache.save(df, "yfinance", "SPY", "1D", "2023-01-01", "2023-01-10")
-    assert cache.exists("yfinance", "SPY", "1D", "2023-01-01", "2023-01-10")
+    old = _make_ohlcv(3)
+    cache.save(old, "yfinance", "SPY", "1D", "2024-01-01", "2024-01-03")
+
+    cache_path = cache._parquet_path("yfinance", "SPY", "1D", "2024-01-01", "2024-01-03")
+    meta_path = cache_path.with_suffix(".meta.json")
+    meta = json.loads(meta_path.read_text())
+    meta["fetch_timestamp"] = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat().replace("+00:00", "Z")
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+    monkeypatch.setattr(cache_mod, "DataCache", lambda: DataCache(root=tmp_path))
+    new_df = _make_ohlcv(4)
+    monkeypatch.setattr(cache_mod, "_fetch_with_retry", lambda *_a, **_k: new_df)
+
+    out = fetch_and_cache("yfinance", "SPY", "1D", "2024-01-01", "2024-01-03")
+    assert len(out) == 4
 
 
-# ── fetch_and_cache uses cache ───────────────────────────────────────────────
-
-def test_fetch_and_cache_uses_cache(monkeypatch, tmp_path):
-    """When a cache hit exists, no external fetch should be called."""
+def test_cache_load_raises_corrupted_for_bad_parquet(tmp_path):
     cache = DataCache(root=tmp_path)
-    df = _make_ohlcv()
-    cache.save(df, "yfinance", "SPY", "1D", "2023-01-01", "2023-01-10")
+    path = cache._parquet_path("yfinance", "SPY", "1D", "2024-01-01", "2024-01-05")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("not-a-parquet", encoding="utf-8")
+    path.with_suffix(".meta.json").write_text('{"fetch_timestamp":"2024-01-01T00:00:00Z"}', encoding="utf-8")
 
-    mock_fetch = MagicMock(side_effect=AssertionError("Should not call fetch"))
-    monkeypatch.setattr("phi.data.cache._fetch_from_yfinance", mock_fetch)
-
-    # Temporarily redirect DataCache root
-    monkeypatch.setattr("phi.data.cache.DATA_CACHE_DIR", tmp_path)
-    monkeypatch.setattr("phi.data.cache.DATA_CACHE_ROOT", tmp_path)
-    monkeypatch.setattr("phi.data.cache._DATA_CACHE_ROOT", tmp_path)
-
-    result = fetch_and_cache("yfinance", "SPY", "1D", "2023-01-01", "2023-01-10")
-    assert result is not None
-    mock_fetch.assert_not_called()
+    with pytest.raises(CacheCorruptedError):
+        cache.load("yfinance", "SPY", "1D", "2024-01-01", "2024-01-05")
 
 
-# ── OHLCV sanity checks ──────────────────────────────────────────────────────
+def test_is_cache_stale_true_for_invalid_metadata(tmp_path):
+    path = tmp_path / "demo.parquet"
+    path.write_text("dummy", encoding="utf-8")
+    path.with_suffix(".meta.json").write_text("{invalid json", encoding="utf-8")
 
-def test_ohlcv_sanity_no_negative_prices(caplog):
-    import logging
-    df = _make_ohlcv(negative=True)
-    with caplog.at_level(logging.WARNING, logger="phi.data.cache"):
-        _ohlcv_sanity_check(df, symbol="TEST")
-    assert any("negative" in m.lower() for m in caplog.messages)
+    assert is_cache_stale(path, "1D") is True
 
 
-def test_ohlcv_sanity_non_chronological(caplog):
-    import logging
-    df = _make_ohlcv()
-    df = df.iloc[::-1]  # Reverse the index → not monotonic increasing
-    with caplog.at_level(logging.WARNING, logger="phi.data.cache"):
-        _ohlcv_sanity_check(df, symbol="TEST")
-    assert any("chronological" in m.lower() for m in caplog.messages)
+def test_fetch_and_cache_wraps_fetch_failures(monkeypatch, tmp_path):
+    monkeypatch.setattr(cache_mod, "DataCache", lambda: DataCache(root=tmp_path))
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("vendor down")
+
+    monkeypatch.setattr(cache_mod, "_fetch_with_retry", boom)
+
+    with pytest.raises(DataFetchError, match="Failed to fetch data"):
+        fetch_and_cache("yfinance", "SPY", "1D", "2024-01-01", "2024-01-05", force_refresh=True)
