@@ -22,6 +22,14 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional
 
+from phi.indicators.orderflow import (
+    compute_cumulative_delta_signal,
+    compute_liquidity_signal,
+    compute_volume_profile_signal,
+    compute_vwap_signal,
+    get_order_flow_provider,
+)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Utility helpers
@@ -271,6 +279,37 @@ def _compute_range_pos(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     return _to_signal(signal)
 
 
+
+def _compute_orderflow_vwap(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    atr_period = int(params.get("atr_period", 14))
+    clip_value = float(params.get("clip_value", 2.0))
+    return compute_vwap_signal(ohlcv, atr_period=atr_period, clip_value=clip_value)
+
+
+def _compute_orderflow_volume_profile(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    window = int(params.get("window", 20))
+    bins = int(params.get("bins", 16))
+    near_poc_threshold = float(params.get("near_poc_threshold", 0.002))
+    _poc, signal = compute_volume_profile_signal(ohlcv, window=window, bins=bins, near_poc_threshold=near_poc_threshold)
+    return signal
+
+
+def _compute_orderflow_cumulative_delta(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    provider = get_order_flow_provider()
+    flow = provider.get_order_flow(ohlcv)
+    window = int(params.get("window", 20))
+    clip_value = float(params.get("clip_value", 1.0))
+    return compute_cumulative_delta_signal(flow, ohlcv["volume"], window=window, clip_value=clip_value)
+
+
+def _compute_orderflow_liquidity(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    provider = get_order_flow_provider()
+    flow = provider.get_order_flow(ohlcv)
+    amihud_scale = float(params.get("amihud_scale", 1e6))
+    window = int(params.get("window", 20))
+    return compute_liquidity_signal(ohlcv, flow, amihud_scale=amihud_scale, window=window)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Registry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -422,6 +461,52 @@ INDICATOR_REGISTRY: Dict[str, Dict[str, Any]] = {
             "period": {"label": "Period", "default": 20, "min": 5, "max": 100, "step": 1, "type": "int"},
         },
         "tune_ranges": {"period": (10, 50)},
+    },
+
+    "orderflow_vwap": {
+        "display_name": "Order Flow VWAP",
+        "description": "VWAP deviation normalized by ATR.",
+        "type": "orderflow",
+        "compute": _compute_orderflow_vwap,
+        "params": {
+            "atr_period": {"label": "ATR Period", "default": 14, "min": 5, "max": 50, "step": 1, "type": "int"},
+            "clip_value": {"label": "Clip", "default": 2.0, "min": 0.5, "max": 5.0, "step": 0.5, "type": "float"},
+        },
+        "tune_ranges": {"atr_period": (7, 28), "clip_value": (1.0, 3.0)},
+    },
+    "volume_profile": {
+        "display_name": "Volume Profile",
+        "description": "Rolling point-of-control proximity signal.",
+        "type": "orderflow",
+        "compute": _compute_orderflow_volume_profile,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 120, "step": 1, "type": "int"},
+            "bins": {"label": "Bins", "default": 16, "min": 4, "max": 40, "step": 1, "type": "int"},
+            "near_poc_threshold": {"label": "Near POC %", "default": 0.002, "min": 0.0005, "max": 0.02, "step": 0.0005, "type": "float"},
+        },
+        "tune_ranges": {"window": (10, 60), "bins": (8, 24), "near_poc_threshold": (0.001, 0.01)},
+    },
+    "cumulative_delta": {
+        "display_name": "Cumulative Delta",
+        "description": "Rolling buy vs sell pressure from estimated order flow.",
+        "type": "orderflow",
+        "compute": _compute_orderflow_cumulative_delta,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 100, "step": 1, "type": "int"},
+            "clip_value": {"label": "Clip", "default": 1.0, "min": 0.2, "max": 3.0, "step": 0.1, "type": "float"},
+        },
+        "tune_ranges": {"window": (10, 50), "clip_value": (0.5, 2.0)},
+    },
+    "liquidity": {
+        "display_name": "Liquidity Metrics",
+        "description": "Spread/Amihud-based liquidity signal.",
+        "type": "orderflow",
+        "compute": _compute_orderflow_liquidity,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 100, "step": 1, "type": "int"},
+            "amihud_scale": {"label": "Amihud Scale", "default": 1000000.0, "min": 1000.0, "max": 10000000.0, "step": 1000.0, "type": "float"},
+        },
+        "tune_ranges": {"window": (10, 50), "amihud_scale": (1e4, 1e7)},
     },
     "phi_mft": {
         "display_name": "Phi-Bot (MFT)",

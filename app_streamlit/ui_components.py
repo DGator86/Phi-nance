@@ -34,12 +34,26 @@ logger = get_logger(__name__)
 
 def render_indicator_selector(selected_names: list[str]) -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
     """Render indicator multiselect and per-indicator parameter controls."""
+    categories: dict[str, list[str]] = {}
+    for indicator_name, spec in INDICATOR_SPECS.items():
+        categories.setdefault(spec.category, []).append(indicator_name)
+
+    ordered_options: list[str] = []
+    for category in sorted(categories.keys()):
+        ordered_options.extend(sorted(categories[category]))
+
     selected_names = st.multiselect(
         "Indicators",
-        options=list(INDICATOR_SPECS.keys()),
+        options=ordered_options,
         default=selected_names,
         key="selected_indicators",
     )
+
+    category_labels = []
+    for category in sorted(categories.keys()):
+        names = ", ".join(sorted(categories[category]))
+        category_labels.append(f"**{category}:** {names}")
+    st.caption(" | ".join(category_labels))
     indicators: dict[str, dict[str, Any]] = {}
     blend_weights: dict[str, float] = {}
 

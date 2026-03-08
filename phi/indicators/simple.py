@@ -14,6 +14,14 @@ from typing import Any, Callable, Dict
 import numpy as np
 import pandas as pd
 
+from phi.indicators.orderflow import (
+    compute_cumulative_delta_signal,
+    compute_liquidity_signal,
+    compute_volume_profile_signal,
+    compute_vwap_signal,
+    get_order_flow_provider,
+)
+
 
 def _normalize_signal(s: pd.Series) -> pd.Series:
     """Clip and scale to roughly [-1, 1]."""
@@ -153,6 +161,31 @@ def compute_vwap(df: pd.DataFrame, band_pct: float = 0.5) -> pd.Series:
     return signal.fillna(0.0)
 
 
+def compute_orderflow_vwap(df: pd.DataFrame, atr_period: int = 14, clip_value: float = 2.0) -> pd.Series:
+    """Order flow VWAP deviation normalized by ATR."""
+    return compute_vwap_signal(df, atr_period=atr_period, clip_value=clip_value)
+
+
+def compute_volume_profile(df: pd.DataFrame, window: int = 20, bins: int = 16, near_poc_threshold: float = 0.002) -> pd.Series:
+    """Rolling volume profile signal using point of control proximity."""
+    _poc, signal = compute_volume_profile_signal(df, window=window, bins=bins, near_poc_threshold=near_poc_threshold)
+    return signal
+
+
+def compute_cumulative_delta(df: pd.DataFrame, window: int = 20, clip_value: float = 1.0) -> pd.Series:
+    """Rolling cumulative delta signal from the configured order flow provider."""
+    provider = get_order_flow_provider()
+    flow = provider.get_order_flow(df)
+    return compute_cumulative_delta_signal(flow, df["volume"], window=window, clip_value=clip_value)
+
+
+def compute_liquidity_metrics(df: pd.DataFrame, window: int = 20, amihud_scale: float = 1e6) -> pd.Series:
+    """Liquidity signal based on spread proxy and Amihud illiquidity."""
+    provider = get_order_flow_provider()
+    flow = provider.get_order_flow(df)
+    return compute_liquidity_signal(df, flow, amihud_scale=amihud_scale, window=window)
+
+
 INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "RSI": compute_rsi,
     "MACD": compute_macd,
@@ -162,6 +195,10 @@ INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "Breakout": compute_breakout,
     "Buy & Hold": compute_buy_hold,
     "VWAP": compute_vwap,
+    "Orderflow VWAP": compute_orderflow_vwap,
+    "Volume Profile": compute_volume_profile,
+    "Cumulative Delta": compute_cumulative_delta,
+    "Liquidity Metrics": compute_liquidity_metrics,
 }
 
 
@@ -173,6 +210,10 @@ _PARAM_MAP = {
     "Mean Reversion": {"sma_period": "period"},
     "Breakout": {"channel_period": "period"},
     "VWAP": {"band_pct": "band_pct"},
+    "Orderflow VWAP": {"atr_period": "atr_period", "clip_value": "clip_value"},
+    "Volume Profile": {"window": "window", "bins": "bins", "near_poc_threshold": "near_poc_threshold"},
+    "Cumulative Delta": {"window": "window", "clip_value": "clip_value"},
+    "Liquidity Metrics": {"window": "window", "amihud_scale": "amihud_scale"},
 }
 
 

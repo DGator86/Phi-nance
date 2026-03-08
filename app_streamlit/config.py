@@ -31,6 +31,7 @@ class IndicatorSpec:
 
     description: str
     params: Dict[str, Tuple[float, float, float, float]]
+    category: str = "Core"
 
 
 INDICATOR_SPECS: Dict[str, IndicatorSpec] = {
@@ -70,5 +71,26 @@ INDICATOR_SPECS: Dict[str, IndicatorSpec] = {
     "VWAP": IndicatorSpec(
         description="VWAP deviation mean reversion (intraday).",
         params={"band_pct": (0.1, 3.0, 0.5, 0.1)},
+    ),
+
+    "Orderflow VWAP": IndicatorSpec(
+        description="Order-flow VWAP deviation normalized by ATR.",
+        params={"atr_period": (5, 50, 14, 1), "clip_value": (0.5, 5.0, 2.0, 0.5)},
+        category="Order Flow & Liquidity",
+    ),
+    "Volume Profile": IndicatorSpec(
+        description="Rolling point-of-control proximity from volume profile.",
+        params={"window": (5, 120, 20, 1), "bins": (4, 40, 16, 1), "near_poc_threshold": (0.0005, 0.02, 0.002, 0.0005)},
+        category="Order Flow & Liquidity",
+    ),
+    "Cumulative Delta": IndicatorSpec(
+        description="Estimated buy-sell pressure from candle-direction volume split.",
+        params={"window": (5, 100, 20, 1), "clip_value": (0.2, 3.0, 1.0, 0.1)},
+        category="Order Flow & Liquidity",
+    ),
+    "Liquidity Metrics": IndicatorSpec(
+        description="Spread proxy and Amihud illiquidity based signal.",
+        params={"window": (5, 100, 20, 1), "amihud_scale": (1000, 10000000, 1000000, 1000)},
+        category="Order Flow & Liquidity",
     ),
 }
