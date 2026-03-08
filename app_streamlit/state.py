@@ -31,6 +31,9 @@ DEFAULT_STATE: dict[str, Any] = {
     "loaded_data": None,
     "last_run_id": None,
     "form_errors": [],
+    "regime_detector": None,
+    "regime_series": None,
+    "regime_model_path": None,
 }
 
 
@@ -44,6 +47,10 @@ CONFIG_INPUT_KEYS = [
     "trading_mode",
     "selected_indicators",
     "blend_method",
+    "regime_enabled",
+    "regime_method",
+    "regime_n_states",
+    "regime_window",
     "option_type",
     "option_strike",
     "option_expiry",

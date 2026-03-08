@@ -22,6 +22,7 @@ yfinance>=0.2.40
 
 # ML Frameworks (Tier 1 — required for ML strategies)
 scikit-learn>=1.3.0
+hmmlearn>=0.3.2
 lightgbm>=4.0.0
 joblib>=1.3.0
 
