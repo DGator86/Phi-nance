@@ -35,6 +35,12 @@ from phi.utils.validation import (
 
 logger = get_logger(__name__)
 
+METHOD_MAP: dict[str, str] = {
+    "HMM": "hmm",
+    "Clustering (KMeans)": "kmeans",
+    "GMM": "gmm",
+}
+
 
 def validate_config_payload(payload: dict[str, Any]) -> list[str]:
     """Return human-friendly config validation errors."""
@@ -120,10 +126,24 @@ def handle_train_regime_detector(
     payload: dict[str, Any],
     *,
     load_data_fn: Callable[..., pd.DataFrame] = load_historical_data,
-) -> tuple[Any, pd.Series, str | None] | None:
-    """Train selected regime detector and cache detector+predictions in session state."""
+) -> tuple[Any, pd.Series, str | None]:
+    """Train selected regime detector and cache detector+predictions in session state.
+
+    Args:
+        payload: UI payload containing symbol, date range, and regime training controls.
+        load_data_fn: Injectable loader used to fetch historical OHLCV data.
+
+    Returns:
+        Tuple of trained detector, predicted regime series, and optional saved model path.
+
+    Raises:
+        BacktestError: If data loading returns no rows for the selected range.
+    """
     method_label = str(payload.get("regime_method", "HMM"))
-    method = "hmm" if method_label == "HMM" else "kmeans"
+    method = METHOD_MAP.get(method_label)
+    if method is None:
+        logger.warning("Unknown regime method label %r from UI; falling back to 'kmeans'.", method_label)
+        method = "kmeans"
 
     data = load_data_fn(
         sanitize_ticker(payload["symbol"]),
@@ -156,7 +176,7 @@ def handle_run_backtest(
     run_equity_fn: Callable[..., tuple[dict[str, Any], Any]] = run_direct_backtest,
     run_options_fn: Callable[..., dict[str, Any]] = run_options_backtest,
 ) -> dict[str, Any] | None:
-    """Validate inputs, run selected backtest mode, and update state machine."""
+    """Validate payload, execute the chosen backtest flow, and update UI state."""
     errors = validate_config_payload(payload)
     set_form_errors(errors)
     if errors:
@@ -198,6 +218,7 @@ def handle_run_backtest(
                 blend_method=cfg.blend_method,
                 initial_capital=cfg.initial_capital,
                 regime_series=regime_series,
+                regime_label_map=payload.get("regime_label_map"),
             )
             if regime_series is not None:
                 results["regime_series"] = regime_series

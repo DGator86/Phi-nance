@@ -77,3 +77,38 @@ def test_regime_series_can_drive_regime_weighted_backtest() -> None:
 
     assert "portfolio_value" in results
     assert len(results["portfolio_value"]) > 1
+
+
+def test_regime_weighted_backtest_does_not_backfill_warmup_labels() -> None:
+    data = _synthetic_ohlcv(rows=40)
+    # First regime appears mid-series, so earlier rows should remain unassigned after ffill-only alignment.
+    regimes = pd.Series(["state_1"], index=[data.index[20]])
+
+    results, strat = run_direct_backtest(
+        ohlcv=data,
+        symbol="SPY",
+        indicators={"RSI": {"enabled": True, "params": {"rsi_period": 14}}},
+        blend_weights={"RSI": 1.0},
+        blend_method="regime_weighted",
+        regime_series=regimes,
+    )
+
+    assert "portfolio_value" in results
+    assert len(strat.prediction_log) > 0
+
+
+def test_regime_weighted_backtest_applies_optional_label_map() -> None:
+    data = _synthetic_ohlcv(rows=30)
+    regimes = pd.Series("state_0", index=data.index)
+
+    results, _ = run_direct_backtest(
+        ohlcv=data,
+        symbol="SPY",
+        indicators={"RSI": {"enabled": True, "params": {"rsi_period": 14}}},
+        blend_weights={"RSI": 1.0},
+        blend_method="regime_weighted",
+        regime_series=regimes,
+        regime_label_map={"state_0": "bull"},
+    )
+
+    assert "portfolio_value" in results

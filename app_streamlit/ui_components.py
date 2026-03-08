@@ -136,7 +136,7 @@ def render_regime_detection_panel() -> dict[str, Any]:
         regime_enabled = st.checkbox("Enable regime-aware blending", value=False, key="regime_enabled")
         method_label = st.selectbox(
             "Method",
-            options=["HMM", "Clustering (KMeans)"],
+            options=["HMM", "Clustering (KMeans)", "GMM"],
             key="regime_method",
         )
         n_states = st.slider("Number of regimes", min_value=2, max_value=8, value=3, key="regime_n_states")
@@ -162,7 +162,21 @@ def render_regime_chart(price_data: pd.DataFrame, regime_series: pd.Series) -> N
     if close_col is None:
         return
 
-    aligned = regime_series.reindex(df.index).ffill().bfill().astype(str)
+    original = regime_series.reindex(df.index)
+    aligned = original.ffill().bfill()
+    filled_mask = original.isna() & aligned.notna()
+    filled_count = int(filled_mask.sum())
+    total_rows = max(len(df.index), 1)
+    filled_ratio = filled_count / total_rows
+    if filled_ratio > 0.05:
+        warning = (
+            f"Regime labels were filled for {filled_count}/{total_rows} rows "
+            f"({filled_ratio:.1%}) during index alignment. Check date ranges and frequency."
+        )
+        logger.warning(warning)
+        st.warning(warning)
+
+    aligned = aligned.astype(str)
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df[close_col], mode="lines", name="Close", line={"color": "#4ea1ff"}))
 

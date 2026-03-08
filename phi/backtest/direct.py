@@ -49,9 +49,27 @@ def run_direct_backtest(
     initial_capital: float = 100_000,
     position_size_pct: float = 0.95,
     regime_series: pd.Series | None = None,
+    regime_label_map: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """
-    Run backtest directly on OHLCV. Returns (results_dict, strat_like_object).
+    Run a vectorized equity backtest directly on OHLCV bars.
+
+    Args:
+        ohlcv: Input price bars with open/high/low/close/volume columns.
+        symbol: Symbol identifier used in prediction logs.
+        indicators: Enabled indicators and their parameter payloads.
+        blend_weights: Indicator blend weights.
+        blend_method: Blending method name from ``phi.blending.blend_signals``.
+        signal_threshold: Absolute threshold required to open/close positions.
+        initial_capital: Starting account value.
+        position_size_pct: Fraction of available cash used per entry.
+        regime_series: Optional per-bar regime labels for regime-weighted blending.
+        regime_label_map: Optional mapping from detector labels (for example ``state_0``)
+            to canonical regime keys used by ``regime_boosts``.
+
+    Returns:
+        Tuple of ``(results_dict, strat_like_object)`` where results contain
+        ``total_return``, ``cagr``, ``max_drawdown``, ``sharpe``, and ``portfolio_value``.
 
     results_dict: total_return, cagr, max_drawdown, sharpe, portfolio_value
     strat_like: object with .prediction_log for accuracy display
@@ -94,15 +112,20 @@ def run_direct_backtest(
     if blend_method == "regime_weighted":
         if regime_series is None:
             raise BacktestError("regime_series is required when blend_method='regime_weighted'")
-        aligned_regimes = regime_series.reindex(df.index).ffill().bfill()
+        aligned_regimes = regime_series.reindex(df.index).ffill()
         composite = pd.Series(index=signals_df.index, dtype=float, name="composite_signal")
         for idx in signals_df.index:
+            regime_value = aligned_regimes.loc[idx] if idx in aligned_regimes.index else np.nan
+            if pd.isna(regime_value):
+                composite.loc[idx] = 0.0
+                continue
+            mapped_regime = regime_label_map.get(str(regime_value), str(regime_value)) if regime_label_map else str(regime_value)
             composite.loc[idx] = float(
                 blend_signals(
                     signals_df.loc[[idx]],
                     method=blend_method,
                     weights=blend_weights,
-                    regime=str(aligned_regimes.loc[idx]),
+                    regime=mapped_regime,
                     regime_boosts={},
                 ).iloc[0]
             )

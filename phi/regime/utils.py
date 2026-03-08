@@ -7,6 +7,17 @@ import pandas as pd
 
 
 def _normalize_ohlcv_columns(ohlcv: pd.DataFrame) -> pd.DataFrame:
+    """Normalize OHLCV column names to lowercase canonical names.
+
+    Args:
+        ohlcv: Raw OHLCV DataFrame.
+
+    Returns:
+        A copy of ``ohlcv`` with canonical column names.
+
+    Raises:
+        ValueError: If required OHLCV columns are missing.
+    """
     cols = {c.lower(): c for c in ohlcv.columns}
     required = ("open", "high", "low", "close", "volume")
     missing = [c for c in required if c not in cols]
@@ -16,9 +27,20 @@ def _normalize_ohlcv_columns(ohlcv: pd.DataFrame) -> pd.DataFrame:
 
 
 def extract_features(ohlcv: pd.DataFrame, window: int = 20) -> pd.DataFrame:
-    """Build a simple, robust feature matrix from OHLCV bars.
+    """Build a robust feature matrix from OHLCV bars.
 
-    Features: simple return, log return, rolling volatility, ATR ratio, volume change.
+    Features include simple return, log return, rolling volatility, ATR ratio,
+    and log volume change.
+
+    Args:
+        ohlcv: Input bars with OHLCV columns.
+        window: Rolling window used for volatility and ATR statistics.
+
+    Returns:
+        Feature DataFrame indexed by input timestamps with NaN/inf rows removed.
+
+    Raises:
+        ValueError: If ``window < 2`` or no usable feature rows remain.
     """
     if window < 2:
         raise ValueError("window must be >= 2")
