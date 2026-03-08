@@ -162,7 +162,23 @@ def render_regime_chart(price_data: pd.DataFrame, regime_series: pd.Series) -> N
     if close_col is None:
         return
 
-    aligned = regime_series.reindex(df.index).ffill().bfill().astype(str)
+    original = regime_series.reindex(df.index)
+    aligned = original.ffill().bfill()
+
+    filled_count = int(aligned.isna().sum())
+    if filled_count > 0:
+        st.warning(f"Regime series could not be fully aligned; {filled_count} bars have no regime.")
+    else:
+        filled_rows = int((original != aligned).fillna(False).sum())
+        total_rows = len(df)
+        if total_rows > 0 and filled_rows > total_rows * 0.05:
+            st.warning(
+                f"Large regime alignment: {filled_rows} out of {total_rows} bars "
+                f"({filled_rows/total_rows:.1%}) were filled to match price data. "
+                "Check that the training date range matches the backtest range."
+            )
+
+    aligned = aligned.astype(str)
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df[close_col], mode="lines", name="Close", line={"color": "#4ea1ff"}))
 

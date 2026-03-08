@@ -35,6 +35,13 @@ from phi.utils.validation import (
 
 logger = get_logger(__name__)
 
+REGIME_METHOD_MAP = {
+    "HMM": "hmm",
+    "KMeans": "kmeans",
+    "Clustering (KMeans)": "kmeans",
+    "GMM": "gmm",
+}
+
 
 def validate_config_payload(payload: dict[str, Any]) -> list[str]:
     """Return human-friendly config validation errors."""
@@ -120,10 +127,13 @@ def handle_train_regime_detector(
     payload: dict[str, Any],
     *,
     load_data_fn: Callable[..., pd.DataFrame] = load_historical_data,
-) -> tuple[Any, pd.Series, str | None] | None:
+) -> tuple[Any, pd.Series, str | None]:
     """Train selected regime detector and cache detector+predictions in session state."""
     method_label = str(payload.get("regime_method", "HMM"))
-    method = "hmm" if method_label == "HMM" else "kmeans"
+    method = REGIME_METHOD_MAP.get(method_label)
+    if method is None:
+        logger.warning("Unknown regime method %r, falling back to kmeans", method_label)
+        method = "kmeans"
 
     data = load_data_fn(
         sanitize_ticker(payload["symbol"]),
@@ -198,6 +208,7 @@ def handle_run_backtest(
                 blend_method=cfg.blend_method,
                 initial_capital=cfg.initial_capital,
                 regime_series=regime_series,
+                regime_label_map=None,
             )
             if regime_series is not None:
                 results["regime_series"] = regime_series

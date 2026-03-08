@@ -10,12 +10,20 @@ import pandas as pd
 
 
 class RegimeDetector(ABC):
-    """Abstract contract for regime detector implementations."""
+    """Abstract base class for regime detectors.
+
+    Subclasses must implement ``fit``, ``predict``, ``save``, and ``load``.
+    Implementations should maintain a ``metadata`` dictionary containing at least:
+    - ``type``: detector key (for example ``hmm`` or ``kmeans``)
+    - ``params``: training/model parameters
+    - ``features``: feature column names used during training
+    - ``training_start`` and ``training_end``: training period boundaries
+    """
 
     metadata: dict[str, Any]
 
     @abstractmethod
-    def fit(self, ohlcv: pd.DataFrame, **kwargs: Any) -> "RegimeDetector":
+    def fit(self, ohlcv: pd.DataFrame, **kwargs: Any) -> RegimeDetector:
         """Train detector on historical OHLCV data and return ``self``."""
 
     @abstractmethod
@@ -28,5 +36,5 @@ class RegimeDetector(ABC):
 
     @classmethod
     @abstractmethod
-    def load(cls, path: str | Path) -> "RegimeDetector":
+    def load(cls, path: str | Path) -> RegimeDetector:
         """Load detector instance from disk."""
