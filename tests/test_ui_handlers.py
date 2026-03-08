@@ -182,3 +182,23 @@ def test_handle_load_run_sets_config_and_results(monkeypatch):
     assert result["run_id"] == "run_2"
     assert sink["config"]["symbols"] == ["SPY"]
     assert sink["results"]["total_return"] == 0.15
+
+
+def test_validate_config_payload_rejects_invalid_symbol_and_numbers():
+    payload = _base_payload()
+    payload["symbol"] = "../spy"
+    payload["initial_capital"] = -1
+
+    errors = ui_handlers.validate_config_payload(payload)
+
+    assert any("Ticker symbol" in msg for msg in errors)
+    assert any("Initial capital" in msg for msg in errors)
+
+
+def test_handle_load_run_rejects_unsafe_run_id(monkeypatch):
+    sink = _patch_state(monkeypatch)
+
+    result = ui_handlers.handle_load_run("../bad")
+
+    assert result is None
+    assert "Run ID" in sink["error"][0]

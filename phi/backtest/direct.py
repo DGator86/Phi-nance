@@ -5,17 +5,15 @@ Uses OHLCV DataFrame directly. Guaranteed to work with pipeline data.
 
 from __future__ import annotations
 
-from phi.logging import get_logger
-
-logger = get_logger(__name__)
-
-import logging
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from phi.exceptions import BacktestError
+from phi.logging import get_logger
 
+logger = get_logger(__name__)
 
 _TRADING_MINUTES_PER_YEAR = 252 * 390  # US equity market
 
@@ -44,13 +42,13 @@ def _bars_per_year(df: pd.DataFrame) -> float:
 def run_direct_backtest(
     ohlcv: pd.DataFrame,
     symbol: str,
-    indicators: Dict[str, Dict[str, Any]],
-    blend_weights: Dict[str, float],
+    indicators: dict[str, dict[str, Any]],
+    blend_weights: dict[str, float],
     blend_method: str = "weighted_sum",
     signal_threshold: float = 0.15,
     initial_capital: float = 100_000,
     position_size_pct: float = 0.95,
-) -> tuple[Dict[str, Any], Any]:
+) -> tuple[dict[str, Any], Any]:
     """
     Run backtest directly on OHLCV. Returns (results_dict, strat_like_object).
 
@@ -58,7 +56,7 @@ def run_direct_backtest(
     strat_like: object with .prediction_log for accuracy display
     """
     if initial_capital <= 0:
-        raise ValueError(f"initial_capital must be > 0, got {initial_capital}")
+        raise BacktestError(f"initial_capital must be > 0, got {initial_capital}")
     position_size_pct = float(np.clip(position_size_pct, 0.01, 1.0))
 
     df = ohlcv.copy()
@@ -66,11 +64,11 @@ def run_direct_backtest(
     required = ["open", "high", "low", "close", "volume"]
     for r in required:
         if r not in cols:
-            raise ValueError(f"OHLCV missing column: {r}")
+            raise BacktestError(f"OHLCV missing column: {r}")
     df = df.rename(columns={cols[r]: r for r in required})[required]
 
     # Compute indicators
-    from phi.indicators.simple import compute_indicator, INDICATOR_COMPUTERS
+    from phi.indicators.simple import INDICATOR_COMPUTERS, compute_indicator
 
     signals_dict = {}
     for name, cfg in indicators.items():
@@ -105,8 +103,8 @@ def run_direct_backtest(
     # Simulate bar-by-bar
     cap = float(initial_capital)
     position = 0  # shares
-    portfolio_values: List[float] = [cap]
-    prediction_log: List[Dict] = []
+    portfolio_values: list[float] = [cap]
+    prediction_log: list[dict] = []
     closes = df["close"].values
 
     for i in range(len(composite)):
@@ -179,7 +177,7 @@ def run_direct_backtest(
     return results, strat
 
 
-def _empty_results(cap: float) -> Dict[str, Any]:
+def _empty_results(cap: float) -> dict[str, Any]:
     return {
         "total_return": 0,
         "cagr": 0,
