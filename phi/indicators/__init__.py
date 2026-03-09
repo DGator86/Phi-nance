@@ -26,6 +26,14 @@ from .simple import (
 )
 
 logger = get_logger(__name__)
+from .information import (
+    compute_entropy_signal,
+    compute_fisher_information_signal,
+    compute_kld_signal,
+    compute_mutual_info_signal,
+)
+from .simple import compute_bollinger, compute_breakout, compute_dual_sma, compute_macd, compute_mean_reversion, compute_rsi
+from .simple import INDICATOR_COMPUTERS
 
 __all__ = [
     "compute_rsi",
@@ -44,4 +52,8 @@ __all__ = [
     "OHLCVOrderFlowProvider",
     "set_order_flow_provider",
     "get_order_flow_provider",
+    "compute_entropy_signal",
+    "compute_mutual_info_signal",
+    "compute_fisher_information_signal",
+    "compute_kld_signal",
 ]

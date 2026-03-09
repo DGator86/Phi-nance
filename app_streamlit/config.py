@@ -154,4 +154,24 @@ INDICATOR_SPECS: dict[str, IndicatorSpec] = {
         },
         category="Market Field Theory",
     ),
+    "Return Entropy": IndicatorSpec(
+        description="Rolling Shannon entropy of returns (uncertainty/choppiness).",
+        params={"window": (5, 200, 20, 1), "bins": (5, 60, 20, 1), "base": (2, 10, 2, 1)},
+        category="Information Theory",
+    ),
+    "Mutual Information": IndicatorSpec(
+        description="Dependency between returns and volume changes (or lagged returns).",
+        params={"window": (5, 200, 20, 1), "bins": (5, 60, 20, 1)},
+        category="Information Theory",
+    ),
+    "Fisher Information": IndicatorSpec(
+        description="Inverse-variance stability proxy; higher implies more stable regimes.",
+        params={"window": (5, 200, 20, 1), "clip_percentile": (50, 99.9, 95, 0.1)},
+        category="Information Theory",
+    ),
+    "KL Divergence": IndicatorSpec(
+        description="Distribution shift between recent and prior return windows.",
+        params={"recent_window": (5, 120, 20, 1), "reference_window": (10, 240, 60, 1), "bins": (5, 60, 20, 1), "sigmoid_scale": (0.5, 10, 3, 0.1)},
+        category="Information Theory",
+    ),
 }
