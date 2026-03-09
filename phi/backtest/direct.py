@@ -12,6 +12,7 @@ import pandas as pd
 
 from phi.exceptions import BacktestError
 from phi.logging import get_logger
+from phi.regime import create_detector_from_params
 
 logger = get_logger(__name__)
 
@@ -52,6 +53,7 @@ def run_direct_backtest(
     regime_label_map: dict[str, str] | None = None,
     regime_boosts: dict[str, dict[str, float]] | None = None,
     regime_detector: Any | None = None,
+    regime_detector_params: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """
     Run a vectorized equity backtest directly on OHLCV bars.
@@ -71,6 +73,9 @@ def run_direct_backtest(
         regime_boosts: Optional per-regime per-indicator boost multipliers.
         regime_detector: Optional detector instance used to compute ``regime_series``
             when series is not precomputed. Must expose ``predict(ohlcv)``.
+        regime_detector_params: Optional detector config payload with shape
+            ``{"type": "hmm|kmeans|gmm", "params": {...}}``. When supplied and
+            ``regime_detector`` is omitted, the detector is created and fit on ``ohlcv``.
 
     Returns:
         Tuple of ``(results_dict, strat_like_object)`` where results contain
@@ -113,6 +118,13 @@ def run_direct_backtest(
     signals_df = signals_df.reindex(df.index).ffill().bfill()
 
     from phi.blending import blend_signals
+
+    if regime_detector is None and regime_detector_params:
+        detector_type = str(regime_detector_params.get("type", "")).strip().lower()
+        detector_params = dict(regime_detector_params.get("params", {}))
+        if detector_type:
+            regime_detector = create_detector_from_params(detector_type, detector_params)
+            regime_detector.fit(df, window=int(detector_params.get("feature_window", 20)))
 
     if blend_method == "regime_weighted":
         if regime_series is None and regime_detector is not None:

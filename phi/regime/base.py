@@ -46,3 +46,8 @@ class RegimeDetector(ABC):
     @abstractmethod
     def load(cls, path: str | Path) -> RegimeDetector:
         """Load a persisted detector instance from disk."""
+
+    @classmethod
+    def get_param_grid(cls) -> dict[str, list[Any]]:
+        """Optional coarse hyperparameter grid for simple search flows."""
+        return {}

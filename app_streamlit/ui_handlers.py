@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import traceback
 from collections.abc import Callable
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -41,6 +43,21 @@ METHOD_MAP: dict[str, str] = {
     "Clustering (KMeans)": "kmeans",
     "GMM": "gmm",
 }
+
+
+
+
+def load_optimized_regime_config(config_path: str) -> dict[str, Any]:
+    """Load a saved auto-training JSON and convert it to UI-friendly regime payload."""
+    payload = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    detector = payload.get("regime_detector") or {}
+    boosts = payload.get("regime_boosts") or {}
+    return {
+        "indicators": payload.get("indicators", {}),
+        "regime_detector_params": detector,
+        "regime_boost_matrix": boosts,
+        "regime_enabled": bool(detector and boosts),
+    }
 
 
 def build_regime_boosts_from_payload(payload: dict[str, Any]) -> dict[str, dict[str, float]]:
@@ -151,6 +168,8 @@ def build_run_config(payload: dict[str, Any]) -> RunConfig:
         blend_method=payload["blend_method"],
         blend_weights=blend_weights,
         option_params=option_params,
+        regime_detector_params=payload.get("regime_detector_params"),
+        regime_boosts=payload.get("regime_boosts"),
     )
 
 
@@ -196,7 +215,7 @@ def handle_train_regime_detector(
     )
     regime_series = detector.predict(data)
     st.session_state.regime_detector = detector
-    st.session_state.regime_series = regime_series
+    st.session_state["regime_series"] = regime_series
     st.session_state.regime_model_path = str(path) if path else None
     return detector, regime_series, str(path) if path else None
 
@@ -246,7 +265,7 @@ def handle_run_backtest(
                     regime_series = precomputed
                 else:
                     regime_series = detector.predict(data)
-                    st.session_state.regime_series = regime_series
+                    st.session_state["regime_series"] = regime_series
                 regime_boosts = build_regime_boosts_from_payload(payload)
                 if bool(payload.get("regime_detect_on_the_fly", True)):
                     regime_detector = detector

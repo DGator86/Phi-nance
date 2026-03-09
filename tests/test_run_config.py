@@ -87,3 +87,18 @@ def test_migration_from_v0_config(tmp_path):
     assert loaded.schema_version == 1
     assert loaded.start_date == date(2022, 1, 1)
     assert loaded.end_date == date(2022, 12, 31)
+
+
+def test_regime_params_and_boosts_must_be_provided_together():
+    with pytest.raises(ValidationError):
+        RunConfig(**_valid_payload(regime_detector_params={"type": "hmm", "n_regimes": 2}))
+
+
+def test_regime_boost_keys_must_match_n_regimes():
+    with pytest.raises(ValidationError):
+        RunConfig(
+            **_valid_payload(
+                regime_detector_params={"type": "hmm", "n_regimes": 2},
+                regime_boosts={"0": {"RSI": 1.0}},
+            )
+        )

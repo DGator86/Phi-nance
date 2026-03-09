@@ -74,6 +74,33 @@ def predict_regimes(detector: RegimeDetector, ohlcv: pd.DataFrame) -> pd.Series:
     """Predict a regime series from OHLCV bars with a loaded detector."""
     return detector.predict(ohlcv)
 
+
+def create_detector_from_params(detector_type: str, params: dict[str, Any]) -> RegimeDetector:
+    """Create an unfitted regime detector from serialized optimization params."""
+    key = detector_type.strip().lower()
+    n_regimes = int(params.get("n_regimes", 3))
+    random_state = int(params.get("random_state", 42))
+
+    if key == "hmm":
+        return HMMRegimeDetector(
+            n_states=n_regimes,
+            covariance_type=str(params.get("covariance_type", "diag")),
+            random_state=random_state,
+        )
+    if key == "kmeans":
+        return ClusteringRegimeDetector(
+            n_clusters=n_regimes,
+            method="kmeans",
+            random_state=random_state,
+        )
+    if key == "gmm":
+        return ClusteringRegimeDetector(
+            n_clusters=n_regimes,
+            method="gmm",
+            random_state=random_state,
+        )
+    raise ValueError(f"Unknown detector type: {detector_type}")
+
 __all__ = [
     "RegimeDetector",
     "HMMRegimeDetector",
@@ -83,4 +110,5 @@ __all__ = [
     "list_saved_detectors",
     "load_detector",
     "predict_regimes",
+    "create_detector_from_params",
 ]
