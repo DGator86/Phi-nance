@@ -26,6 +26,7 @@ from app_streamlit.config import (
     VENDOR_OPTIONS,
 )
 from phi.config import settings
+from phi.regime import list_saved_detectors, load_detector
 from phi.logging import get_logger
 from phi.run_config import RunConfig, RunHistory
 
@@ -134,7 +135,7 @@ def render_config_panel() -> tuple[dict[str, Any], bool]:
 
         run_clicked = st.form_submit_button("Run backtest", type="primary")
 
-    regime_payload = render_regime_detection_panel()
+    regime_payload = render_regime_detection_panel(indicators)
 
     payload = {
         "symbol": symbol,
@@ -158,9 +159,9 @@ def render_config_panel() -> tuple[dict[str, Any], bool]:
     return payload, run_clicked
 
 
-def render_regime_detection_panel() -> dict[str, Any]:
-    """Render sidebar controls for regime model training and usage."""
-    with st.expander("Regime Detection", expanded=False):
+def render_regime_detection_panel(indicators: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Render sidebar controls for regime-aware blending configuration."""
+    with st.expander("Regime-Aware Blending", expanded=False):
         regime_enabled = st.checkbox("Enable regime-aware blending", value=False, key="regime_enabled")
         method_label = st.selectbox(
             "Method",
@@ -171,12 +172,98 @@ def render_regime_detection_panel() -> dict[str, Any]:
         window = st.slider("Feature window", min_value=5, max_value=60, value=20, key="regime_window")
         train_clicked = st.button("Train on selected range", key="train_regime_model")
 
+        refresh_models = st.button("Refresh detector list", key="refresh_regime_models")
+        if refresh_models or "regime_available_models" not in st.session_state:
+            st.session_state.regime_available_models = list_saved_detectors(settings.REGIME_MODELS_DIR)
+
+        available = st.session_state.get("regime_available_models", [])
+        label_to_model: dict[str, dict[str, Any]] = {}
+        model_labels: list[str] = []
+        for model in available:
+            metadata = model.get("metadata", {})
+            detector_class = metadata.get("detector_class", "Unknown")
+            period = metadata.get("training_period", {})
+            start = period.get("start", "?")
+            end = period.get("end", "?")
+            label = f"{model['name']} | {detector_class} | {start} → {end}"
+            model_labels.append(label)
+            label_to_model[label] = model
+
+        selected_label = st.selectbox(
+            "Saved detector",
+            options=["(none)", *model_labels],
+            key="regime_selected_model_label",
+        )
+
+        selected_model_path = None
+        selected_model_meta: dict[str, Any] = {}
+        if selected_label != "(none)":
+            selected = label_to_model[selected_label]
+            selected_model_path = selected.get("path")
+            selected_model_meta = selected.get("metadata", {})
+            st.caption(f"Selected model: `{selected_model_path}`")
+            if selected_model_meta:
+                st.json(selected_model_meta)
+
+        detect_on_the_fly = st.checkbox(
+            "Use detector on-the-fly during backtest",
+            value=True,
+            key="regime_detect_on_the_fly",
+        )
+        use_precomputed = st.checkbox(
+            "Use pre-computed regime series from session (if available)",
+            value=False,
+            key="regime_use_precomputed",
+        )
+
+        regime_label_map: dict[str, str] = {}
+        regime_boost_matrix: dict[str, dict[str, float]] = {}
+        if regime_enabled and selected_model_path:
+            detector = load_detector(selected_model_path)
+            metadata = selected_model_meta or getattr(detector, "metadata", {})
+            params = metadata.get("params", {})
+            regime_count = int(params.get("n_states") or params.get("n_clusters") or n_states)
+            default_labels = [f"state_{i}" for i in range(regime_count)]
+            enabled_indicators = [name for name, cfg in indicators.items() if cfg.get("enabled")]
+            if not enabled_indicators:
+                st.caption("Enable indicators to configure regime boosts.")
+            for raw_label in default_labels:
+                friendly = st.text_input(
+                    f"Friendly name for {raw_label}",
+                    value=str(st.session_state.get(f"regime_friendly_{raw_label}", raw_label)),
+                    key=f"regime_friendly_{raw_label}",
+                )
+                regime_label_map[raw_label] = friendly.strip() or raw_label
+
+            if enabled_indicators:
+                df = pd.DataFrame(index=enabled_indicators)
+                for raw_label in default_labels:
+                    col = regime_label_map.get(raw_label, raw_label)
+                    df[col] = 1.0
+                edited = st.data_editor(
+                    df,
+                    num_rows="fixed",
+                    use_container_width=True,
+                    key="regime_boost_editor",
+                )
+                for raw_label in default_labels:
+                    friendly = regime_label_map.get(raw_label, raw_label)
+                    regime_boost_matrix[raw_label] = {
+                        indicator: float(edited.loc[indicator, friendly])
+                        for indicator in enabled_indicators
+                    }
+
     return {
         "regime_enabled": regime_enabled,
         "regime_method": method_label,
         "regime_n_states": int(n_states),
         "regime_window": int(window),
         "regime_train_clicked": bool(train_clicked),
+        "regime_selected_model_path": selected_model_path,
+        "regime_detect_on_the_fly": bool(detect_on_the_fly),
+        "regime_use_precomputed": bool(use_precomputed),
+        "regime_label_map": regime_label_map,
+        "regime_boost_matrix": regime_boost_matrix,
     }
 
 
