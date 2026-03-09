@@ -1,79 +1,44 @@
-"""Standalone live dashboard with data source health panel."""
+"""Live trading dashboard page."""
 
 from __future__ import annotations
 
-from phi.logging import get_logger
-
-logger = get_logger(__name__)
-
-import pandas as pd
 import streamlit as st
 
+from phi.live.engine import LiveEngine
 
-def render_live_dashboard(data_source_manager=None, broker=None, engine=None) -> None:
-    st.title("📡 Live Trading Dashboard")
 
-    if broker is not None:
-        st.subheader("Account")
-        try:
-            account = broker.get_account()
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Equity", f"${account.get('equity', 0):,.2f}")
-            c2.metric("Cash", f"${account.get('cash', 0):,.2f}")
-            c3.metric("Positions", account.get("num_positions", 0))
-        except Exception as exc:  # noqa: BLE001
-            st.warning(f"Unable to load account: {exc}")
+def render_live_dashboard() -> None:
+    st.title("📡 Live Trading")
+    if "live_engine" not in st.session_state:
+        st.session_state.live_engine = None
 
-    if engine is not None:
-        st.subheader("Advisor Reports")
-        latest = getattr(engine, "last_advisor_report", None)
-        if latest:
-            st.info(latest)
-        else:
-            st.caption("No advisor report yet.")
+    c1, c2 = st.columns(2)
+    if c1.button("Start Engine"):
+        engine = LiveEngine.from_settings()
+        engine.run(max_cycles=1)
+        st.session_state.live_engine = engine
+    if c2.button("Stop Engine") and st.session_state.live_engine is not None:
+        st.session_state.live_engine.stop()
 
-        symbol = st.text_input("Explanation symbol", value="SPY")
-        if st.button("Request trade explanation"):
-            quote = {"symbol": symbol, "price": 0.0}
-            report = engine.request_advisor_report(symbol=symbol, quote=quote)
-            if report:
-                st.success("Advisor response generated.")
-                st.write(report)
-            else:
-                st.warning("Advisor not enabled or unavailable.")
-
-    st.subheader("Data Sources")
-    if data_source_manager is None:
-        st.info("Data source manager not connected.")
+    engine = st.session_state.live_engine
+    if engine is None:
+        st.info("Engine not started.")
         return
 
-    snapshot = data_source_manager.usage_snapshot()
-    rows = []
-    for source, info in snapshot.items():
-        rows.append({
-            "source": source,
-            "enabled": info["enabled"],
-            "health": info["health"],
-            "calls_made": info["calls_made"],
-            "daily_used": info["daily_used"],
-            "daily_limit": info["daily_limit"],
-            "daily_remaining": info["daily_remaining"],
-            "last_error": info["last_error"],
-        })
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    acct = engine.broker.get_account()
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Cash", f"${acct.cash:,.2f}")
+    m2.metric("Equity", f"${acct.equity:,.2f}")
+    m3.metric("Buying Power", f"${acct.buying_power:,.2f}")
 
-    st.subheader("Manual Controls")
-    source_names = sorted(snapshot.keys())
-    selected = st.selectbox("Source", source_names) if source_names else None
-    if selected is not None:
-        col1, col2 = st.columns(2)
-        if col1.button("Enable source"):
-            data_source_manager.set_source_enabled(selected, True)
-            st.success(f"Enabled {selected}")
-        if col2.button("Disable source"):
-            data_source_manager.set_source_enabled(selected, False)
-            st.warning(f"Disabled {selected}")
+    st.subheader("Positions")
+    st.dataframe(engine.portfolio.snapshot_positions(), use_container_width=True)
 
+    st.subheader("Open Orders")
+    st.dataframe([o.__dict__ for o in engine.broker.get_open_orders()], use_container_width=True)
 
-if __name__ == "__main__":
-    render_live_dashboard()
+    st.subheader("Action Log")
+    st.code("\n".join(engine.action_log[-50:]) or "No actions yet")
+
+    st.subheader("Equity Curve")
+    st.line_chart(engine.portfolio.equity_curve, x="timestamp", y="equity")

@@ -18,6 +18,14 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+
+def _env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return tuple(default)
+    return tuple(item.strip().upper() for item in raw.split(",") if item.strip())
+
+
 @dataclass(frozen=True)
 class Settings:
     """Environment-driven settings for logging/runtime behavior."""
@@ -36,6 +44,14 @@ class Settings:
     PHIAI_DEFAULT_N_TRIALS: int = int(os.getenv("PHIAI_DEFAULT_N_TRIALS", "100"))
     PHIAI_PARALLEL_JOBS: int = int(os.getenv("PHIAI_PARALLEL_JOBS", "1"))
     PHIAI_WALK_FORWARD_WINDOWS: int = int(os.getenv("PHIAI_WALK_FORWARD_WINDOWS", "3"))
+
+    BROKER_API_KEY: str = os.getenv("BROKER_API_KEY", "")
+    BROKER_SECRET_KEY: str = os.getenv("BROKER_SECRET_KEY", "")
+    BROKER_BASE_URL: str = os.getenv("BROKER_BASE_URL", "https://paper-api.alpaca.markets")
+    LIVE_MODE: str = os.getenv("LIVE_MODE", "paper")
+    LIVE_SYMBOLS: tuple[str, ...] = _env_list("LIVE_SYMBOLS", ("SPY",))
+    LIVE_UPDATE_INTERVAL: int = int(os.getenv("LIVE_UPDATE_INTERVAL", "60"))
+    LIVE_CONFIG_PATH: Path = Path(os.getenv("LIVE_CONFIG_PATH", "./live_config.json"))
 
     @property
     def DATA_CACHE_ROOT(self) -> Path:

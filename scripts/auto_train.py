@@ -21,6 +21,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from phi.backtest.direct import run_direct_backtest
+from phi.config import settings
 from phi.data.cache import fetch_and_cache
 from phi.logging import get_logger
 from phi.phiai.auto_tune import run_phiai_optimization, save_best_params
@@ -54,6 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--regime-optimize", action="store_true", help="Enable regime detector + boosts optimization")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--verbose", action="store_true", help="Increase log level to DEBUG")
+    parser.add_argument("--deploy-live", action="store_true", help="Copy best config to LIVE_CONFIG_PATH")
     return parser.parse_args()
 
 
@@ -203,6 +205,14 @@ def run_regime_optimization(
     }
 
 
+
+
+def _deploy_live_config(payload: dict[str, Any]) -> None:
+    settings.LIVE_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    settings.LIVE_CONFIG_PATH.write_text(__import__("json").dumps(payload, indent=2), encoding="utf-8")
+    logger.info("Deployed live config to %s", settings.LIVE_CONFIG_PATH)
+
+
 def main() -> None:
     """Run auto-training for each requested ticker."""
     args = parse_args()
@@ -284,6 +294,16 @@ def main() -> None:
                 )
 
             saved += 1
+            if args.deploy_live:
+                deploy_payload = {
+                    "dataset_id": dataset_id,
+                    "initial_capital": 100000.0,
+                    "allocation_strategy": "equal_weight",
+                    "allocation_params": {},
+                    "indicators": result.get("best_params", {}),
+                    "metric": args.metric,
+                }
+                _deploy_live_config(deploy_payload)
             logger.info("Best params for %s: %s", ticker, result.get("explanation", "(no explanation)"))
         except Exception:
             skipped += 1
