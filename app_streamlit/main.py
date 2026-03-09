@@ -11,6 +11,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
+from app_streamlit.live_dashboard import render_live_dashboard
 from app_streamlit.state import AppState, init_session_state, reset_state
 from app_streamlit.ui_components import (
     render_config_panel,
@@ -31,6 +32,11 @@ def main() -> None:
     """Render app layout and dispatch actions based on state machine value."""
     st.set_page_config(page_title="Phi-nance Live Workbench", layout="wide")
     init_session_state()
+
+    page = st.sidebar.radio("Page", ["Backtest Workbench", "Live Trading"])
+    if page == "Live Trading":
+        render_live_dashboard()
+        return
 
     st.title("Live Backtest Workbench")
     render_loaded_config_summary(st.session_state.get("config"))
