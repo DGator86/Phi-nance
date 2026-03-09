@@ -23,6 +23,8 @@ def _args(tmp_path: Path, **overrides: object) -> argparse.Namespace:
         "vendor": "yfinance",
         "force_refresh": False,
         "verbose": False,
+        "regime_optimize": False,
+        "seed": 42,
     }
     base.update(overrides)
     return argparse.Namespace(**base)

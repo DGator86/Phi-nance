@@ -53,6 +53,8 @@ class RunConfig(BaseModel):
     phiai_walk_forward_windows: int | None = Field(default=None, ge=1)
     phiai_parallel_jobs: int | None = Field(default=None, ge=1)
     phiai_constraints: dict[str, Any] = Field(default_factory=dict)
+    regime_detector_params: dict[str, Any] | None = None
+    regime_boosts: dict[str, dict[str, float]] | None = None
     exit_rules: dict[str, Any] = Field(default_factory=dict)
     position_sizing: dict[str, Any] = Field(default_factory=dict)
     evaluation_metric: str = "roi"
@@ -125,6 +127,20 @@ class RunConfig(BaseModel):
                 if abs(total - 1.0) > 1e-6:
                     logger.warning("blend_weights sum is %.6f (expected 1.0)", total)
                     raise ValueError("blend_weights values must sum to 1.0")
+
+        if (self.regime_detector_params is None) != (self.regime_boosts is None):
+            raise ValueError("regime_detector_params and regime_boosts must both be provided together")
+        if self.regime_detector_params is not None and self.regime_boosts is not None:
+            n_regimes = int(self.regime_detector_params.get("n_regimes", 0))
+            if n_regimes <= 0:
+                raise ValueError("regime_detector_params.n_regimes must be > 0 when regime settings are provided")
+            expected = {str(i) for i in range(n_regimes)}
+            got = {str(k) for k in self.regime_boosts.keys()}
+            if got != expected:
+                raise ValueError(
+                    "regime_boosts keys must match detector n_regimes. "
+                    f"expected={sorted(expected)}, got={sorted(got)}"
+                )
 
         if self.trading_mode == "options":
             if len(self.symbols) != 1:
