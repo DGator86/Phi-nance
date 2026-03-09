@@ -34,6 +34,9 @@ DEFAULT_STATE: dict[str, Any] = {
     "regime_detector": None,
     "regime_series": None,
     "regime_model_path": None,
+    "regime_available_models": [],
+    "regime_label_map": {},
+    "regime_boost_matrix": {},
 }
 
 
@@ -51,6 +54,10 @@ CONFIG_INPUT_KEYS = [
     "regime_method",
     "regime_n_states",
     "regime_window",
+    "regime_selected_model_label",
+    "regime_selected_model_path",
+    "regime_detect_on_the_fly",
+    "regime_use_precomputed",
     "option_type",
     "option_strike",
     "option_expiry",

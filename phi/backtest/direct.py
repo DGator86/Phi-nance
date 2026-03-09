@@ -50,6 +50,8 @@ def run_direct_backtest(
     position_size_pct: float = 0.95,
     regime_series: pd.Series | None = None,
     regime_label_map: dict[str, str] | None = None,
+    regime_boosts: dict[str, dict[str, float]] | None = None,
+    regime_detector: Any | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """
     Run a vectorized equity backtest directly on OHLCV bars.
@@ -66,6 +68,9 @@ def run_direct_backtest(
         regime_series: Optional per-bar regime labels for regime-weighted blending.
         regime_label_map: Optional mapping from detector labels (for example ``state_0``)
             to canonical regime keys used by ``regime_boosts``.
+        regime_boosts: Optional per-regime per-indicator boost multipliers.
+        regime_detector: Optional detector instance used to compute ``regime_series``
+            when series is not precomputed. Must expose ``predict(ohlcv)``.
 
     Returns:
         Tuple of ``(results_dict, strat_like_object)`` where results contain
@@ -110,8 +115,10 @@ def run_direct_backtest(
     from phi.blending import blend_signals
 
     if blend_method == "regime_weighted":
+        if regime_series is None and regime_detector is not None:
+            regime_series = regime_detector.predict(df)
         if regime_series is None:
-            raise BacktestError("regime_series is required when blend_method='regime_weighted'")
+            raise BacktestError("regime_series or regime_detector is required when blend_method='regime_weighted'")
         aligned_regimes = regime_series.reindex(df.index).ffill()
         composite = pd.Series(index=signals_df.index, dtype=float, name="composite_signal")
         for idx in signals_df.index:
@@ -126,7 +133,7 @@ def run_direct_backtest(
                     method=blend_method,
                     weights=blend_weights,
                     regime=mapped_regime,
-                    regime_boosts={},
+                    regime_boosts=regime_boosts or {},
                 ).iloc[0]
             )
     else:

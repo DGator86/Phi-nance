@@ -24,6 +24,7 @@ from phi.backtest import run_direct_backtest
 from phi.exceptions import BacktestError, ValidationError
 from phi.logging import get_logger
 from phi.options import run_options_backtest
+from phi.regime import list_saved_detectors, load_detector
 from phi.regime.train import train_regime_detector
 from phi.run_config import RunConfig, RunHistory
 from phi.utils.validation import (
@@ -40,6 +41,37 @@ METHOD_MAP: dict[str, str] = {
     "Clustering (KMeans)": "kmeans",
     "GMM": "gmm",
 }
+
+
+def build_regime_boosts_from_payload(payload: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """Build canonical ``regime_boosts`` mapping from UI payload state."""
+    label_map = payload.get("regime_label_map") or {}
+    matrix = payload.get("regime_boost_matrix") or {}
+    boosts: dict[str, dict[str, float]] = {}
+
+    for raw_label, indicator_map in matrix.items():
+        mapped_label = str(label_map.get(raw_label, raw_label)).strip() or str(raw_label)
+        per_indicator = {str(ind): float(val) for ind, val in (indicator_map or {}).items()}
+        boosts[mapped_label] = per_indicator
+    return boosts
+
+
+def load_detector_from_payload(payload: dict[str, Any]) -> Any:
+    """Load selected detector model and cache it in session state."""
+    selected_path = payload.get("regime_selected_model_path")
+    if not selected_path:
+        raise BacktestError("Regime-aware blending enabled but no detector model selected.")
+
+    cached_path = st.session_state.get("regime_model_path")
+    cached_detector = st.session_state.get("regime_detector")
+    if cached_detector is not None and cached_path == selected_path:
+        return cached_detector
+
+    detector = load_detector(selected_path)
+    st.session_state.regime_detector = detector
+    st.session_state.regime_model_path = str(selected_path)
+    st.session_state.regime_available_models = list_saved_detectors()
+    return detector
 
 
 def validate_config_payload(payload: dict[str, Any]) -> list[str]:
@@ -203,12 +235,21 @@ def handle_run_backtest(
             results = run_options_fn(cfg, data)
         else:
             regime_series = None
+            regime_label_map = payload.get("regime_label_map")
+            regime_boosts = None
+            regime_detector = None
             if payload.get("regime_enabled"):
-                detector = st.session_state.get("regime_detector")
-                if detector is None:
-                    raise BacktestError("Regime detection is enabled but no trained detector is available.")
-                regime_series = detector.predict(data)
-                st.session_state.regime_series = regime_series
+                detector = load_detector_from_payload(payload)
+                use_precomputed = bool(payload.get("regime_use_precomputed"))
+                precomputed = st.session_state.get("regime_series")
+                if use_precomputed and isinstance(precomputed, pd.Series) and not precomputed.empty:
+                    regime_series = precomputed
+                else:
+                    regime_series = detector.predict(data)
+                    st.session_state.regime_series = regime_series
+                regime_boosts = build_regime_boosts_from_payload(payload)
+                if bool(payload.get("regime_detect_on_the_fly", True)):
+                    regime_detector = detector
 
             results, _ = run_equity_fn(
                 ohlcv=data,
@@ -218,7 +259,9 @@ def handle_run_backtest(
                 blend_method=cfg.blend_method,
                 initial_capital=cfg.initial_capital,
                 regime_series=regime_series,
-                regime_label_map=payload.get("regime_label_map"),
+                regime_label_map=regime_label_map,
+                regime_boosts=regime_boosts,
+                regime_detector=regime_detector,
             )
             if regime_series is not None:
                 results["regime_series"] = regime_series
