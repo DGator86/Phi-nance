@@ -102,3 +102,16 @@ def test_regime_boost_keys_must_match_n_regimes():
                 regime_boosts={"0": {"RSI": 1.0}},
             )
         )
+
+
+def test_fixed_allocation_requires_weights_sum_to_one():
+    with pytest.raises(ValidationError):
+        RunConfig(**_valid_payload(allocation_strategy="fixed_weight", allocation_params={"weights": {"SPY": 0.7}}))
+
+    cfg = RunConfig(
+        **_valid_payload(
+            allocation_strategy="fixed_weight",
+            allocation_params={"weights": {"SPY": 0.5, "QQQ": 0.5}},
+        )
+    )
+    assert cfg.allocation_strategy == "fixed_weight"

@@ -12,6 +12,8 @@ import pandas as pd
 
 from phi.exceptions import BacktestError
 from phi.logging import get_logger
+from phi.backtest.allocation import get_allocation_strategy
+from phi.backtest.portfolio import Order, Portfolio
 from phi.regime import create_detector_from_params
 
 logger = get_logger(__name__)
@@ -235,6 +237,158 @@ def run_direct_backtest(
     strat = type("Strat", (), {"prediction_log": prediction_log, "_prediction_log": prediction_log})()
 
     return results, strat
+
+
+def run_portfolio_backtest(
+    data_dict: dict[str, pd.DataFrame],
+    indicators: dict[str, dict[str, Any]],
+    blend_weights: dict[str, float],
+    blend_method: str = "weighted_sum",
+    initial_capital: float = 100_000,
+    allocation_strategy: str = "equal_weight",
+    allocation_params: dict[str, Any] | None = None,
+    rebalance_frequency: str | int | None = "M",
+    rebalance_threshold: float | None = None,
+    regime_series: pd.Series | None = None,
+) -> dict[str, Any]:
+    """Run a simple multi-asset portfolio backtest with periodic/threshold rebalancing."""
+    if not data_dict:
+        raise BacktestError("data_dict must contain at least one symbol")
+
+    allocation = get_allocation_strategy(allocation_strategy, allocation_params)
+    closes: dict[str, pd.Series] = {}
+    signal_map: dict[str, pd.Series] = {}
+    returns_df = pd.DataFrame()
+    for symbol, frame in data_dict.items():
+        cols = {c.lower(): c for c in frame.columns}
+        if "close" not in cols:
+            raise BacktestError(f"{symbol}: missing close column")
+        df = frame.rename(columns={cols["close"]: "close"})
+        closes[symbol] = df["close"].astype(float)
+        if not df.index.is_monotonic_increasing:
+            closes[symbol] = closes[symbol].sort_index()
+
+        _, _ = run_direct_backtest(
+            ohlcv=frame,
+            symbol=symbol,
+            indicators=indicators,
+            blend_weights=blend_weights,
+            blend_method=blend_method,
+            signal_threshold=0.0,
+            initial_capital=initial_capital,
+            position_size_pct=1.0,
+            regime_series=regime_series,
+        )
+        # derive low-cost signal proxy from price return when unavailable
+        signal_map[symbol] = closes[symbol].pct_change().fillna(0.0)
+        returns_df[symbol] = closes[symbol].pct_change()
+
+    common_index = None
+    for s in closes.values():
+        common_index = s.index if common_index is None else common_index.union(s.index)
+    common_index = common_index.sort_values()
+    aligned_prices = pd.DataFrame({sym: s.reindex(common_index).ffill() for sym, s in closes.items()})
+    aligned_signals = pd.DataFrame({sym: s.reindex(common_index).ffill().fillna(0.0) for sym, s in signal_map.items()})
+    aligned_returns = returns_df.reindex(common_index).ffill().fillna(0.0)
+
+    portfolio = Portfolio(initial_capital=initial_capital)
+    transactions: list[dict[str, Any]] = []
+    threshold = float(rebalance_threshold) if rebalance_threshold is not None else None
+
+    def should_rebalance(i: int, ts: pd.Timestamp, prev_ts: pd.Timestamp | None, target: dict[str, float]) -> bool:
+        if i == 0:
+            return True
+        if isinstance(rebalance_frequency, int) and rebalance_frequency > 0 and i % rebalance_frequency == 0:
+            return True
+        if isinstance(rebalance_frequency, str):
+            key = rebalance_frequency.upper()
+            if key == "D":
+                return True
+            if prev_ts is not None:
+                if key == "W" and ts.isocalendar().week != prev_ts.isocalendar().week:
+                    return True
+                if key == "M" and (ts.month != prev_ts.month or ts.year != prev_ts.year):
+                    return True
+                if key == "Q" and (ts.quarter != prev_ts.quarter or ts.year != prev_ts.year):
+                    return True
+        if threshold is not None and target:
+            total = portfolio.total_value()
+            if total <= 0:
+                return False
+            for sym, tw in target.items():
+                cw = (portfolio.positions.get(sym, 0.0) * portfolio.current_prices.get(sym, 0.0)) / total
+                if abs(cw - tw) > threshold:
+                    return True
+        return rebalance_frequency in {None, "none", "NONE"} and i == 0
+
+    prev_ts: pd.Timestamp | None = None
+    last_target_weights: dict[str, float] = {}
+    for i, ts in enumerate(common_index):
+        price_row = aligned_prices.loc[ts].dropna()
+        prices = {s: float(v) for s, v in price_row.items() if float(v) > 0}
+        if not prices:
+            continue
+        portfolio.update_prices(prices)
+
+        signal_row = aligned_signals.loc[ts].to_dict()
+        vol = aligned_returns.loc[:ts].tail(20).std().replace(0, np.nan).to_dict()
+        target_weights = allocation.allocate(
+            portfolio.total_value(),
+            {k: float(v) for k, v in signal_row.items()},
+            prices,
+            regime=regime_series.loc[ts] if isinstance(regime_series, pd.Series) and ts in regime_series.index else None,
+            volatility=vol,
+        )
+
+        if should_rebalance(i, pd.Timestamp(ts), prev_ts, target_weights):
+            last_target_weights = dict(target_weights)
+            total = portfolio.total_value()
+            for sym, tw in target_weights.items():
+                price = prices.get(sym)
+                if not price:
+                    continue
+                desired_shares = int((total * tw) // price)
+                delta = desired_shares - portfolio.positions.get(sym, 0.0)
+                if delta:
+                    order = Order(symbol=sym, shares=float(delta), price=float(price), timestamp=ts)
+                    portfolio.execute_order(order)
+                    transactions.append(portfolio.transactions[-1])
+
+        portfolio.record_equity(pd.Timestamp(ts))
+        prev_ts = pd.Timestamp(ts)
+
+    if portfolio.positions:
+        last_ts = common_index[-1]
+        for sym, shares in list(portfolio.positions.items()):
+            px = portfolio.current_prices.get(sym)
+            if px and shares:
+                portfolio.execute_order(Order(symbol=sym, shares=-shares, price=px, timestamp=last_ts))
+        portfolio.record_equity(pd.Timestamp(last_ts))
+
+    eq = pd.Series([v for _, v in portfolio.equity_curve], index=[t for t, _ in portfolio.equity_curve], dtype=float)
+    ret = eq.pct_change().dropna()
+    total_return = (eq.iloc[-1] - initial_capital) / initial_capital if not eq.empty else 0.0
+    bpy = _bars_per_year(pd.DataFrame(index=eq.index))
+    years = len(eq) / bpy if len(eq) else 1.0
+    cagr = (1 + total_return) ** (1 / years) - 1 if years > 0 else 0.0
+    dd = (eq.cummax() - eq) / eq.cummax().replace(0, np.nan) if not eq.empty else pd.Series(dtype=float)
+    sharpe = float(ret.mean() / ret.std() * np.sqrt(bpy)) if len(ret) > 1 and ret.std() > 0 else 0.0
+
+    contributions: dict[str, float] = {}
+    for sym in aligned_prices.columns:
+        series = aligned_prices[sym].pct_change().fillna(0.0)
+        contributions[sym] = float(series.sum())
+
+    return {
+        "total_return": float(total_return),
+        "cagr": float(cagr),
+        "max_drawdown": float(dd.max()) if not dd.empty else 0.0,
+        "sharpe": sharpe,
+        "portfolio_value": eq.tolist(),
+        "transactions": transactions,
+        "symbol_contributions": contributions,
+        "final_weights": last_target_weights or {s: 0.0 for s in aligned_prices.columns},
+    }
 
 
 def _empty_results(cap: float) -> dict[str, Any]:

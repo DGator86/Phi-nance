@@ -42,6 +42,11 @@ DEFAULT_STATE: dict[str, Any] = {
 
 CONFIG_INPUT_KEYS = [
     "symbol",
+    "symbols",
+    "allocation_strategy",
+    "rebalance_frequency",
+    "rebalance_threshold_enabled",
+    "rebalance_threshold",
     "start_date",
     "end_date",
     "timeframe",

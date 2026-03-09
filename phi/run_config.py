@@ -58,6 +58,10 @@ class RunConfig(BaseModel):
     exit_rules: dict[str, Any] = Field(default_factory=dict)
     position_sizing: dict[str, Any] = Field(default_factory=dict)
     evaluation_metric: str = "roi"
+    allocation_strategy: str = "equal_weight"
+    allocation_params: dict[str, Any] = Field(default_factory=dict)
+    rebalance_frequency: str | int | None = "M"
+    rebalance_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     schema_version: int = Field(default=1, frozen=True)
 
     @field_validator("symbols")
@@ -92,6 +96,16 @@ class RunConfig(BaseModel):
                 raise ValueError(f"indicator '{name}' params must be a dict")
             validated[name] = payload
         return validated
+
+
+    @field_validator("allocation_strategy")
+    @classmethod
+    def validate_allocation_strategy(cls, value: str) -> str:
+        key = str(value).strip().lower()
+        allowed = {"equal_weight", "equal", "fixed_weight", "fixed", "signal_weighted", "signal", "risk_parity"}
+        if key not in allowed:
+            raise ValueError(f"allocation_strategy must be one of {sorted(allowed)}")
+        return key
 
     @model_validator(mode="after")
     def validate_cross_field_rules(self) -> RunConfig:
@@ -141,6 +155,14 @@ class RunConfig(BaseModel):
                     "regime_boosts keys must match detector n_regimes. "
                     f"expected={sorted(expected)}, got={sorted(got)}"
                 )
+
+        if self.allocation_strategy in {"fixed_weight", "fixed"}:
+            weights = self.allocation_params.get("weights", {}) if isinstance(self.allocation_params, dict) else {}
+            if not isinstance(weights, dict) or not weights:
+                raise ValueError("allocation_params.weights is required for fixed allocation")
+            total = sum(float(v) for v in weights.values())
+            if abs(total - 1.0) > 1e-6:
+                raise ValueError("allocation_params.weights must sum to 1.0")
 
         if self.trading_mode == "options":
             if len(self.symbols) != 1:
