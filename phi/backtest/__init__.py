@@ -6,7 +6,7 @@ from phi.logging import get_logger
 
 logger = get_logger(__name__)
 
-from phi.backtest.direct import run_direct_backtest
+from phi.backtest.direct import run_direct_backtest, run_portfolio_backtest
 from phi.backtest.options_engine import OptionsBacktestEngine
 from phi.backtest.vectorized_engine import VectorizedEngine
 
@@ -20,4 +20,4 @@ def get_engine(name: str):
     raise ValueError(f"Unknown backtest engine: {name}")
 
 
-__all__ = ["run_direct_backtest", "OptionsBacktestEngine", "VectorizedEngine", "get_engine"]
+__all__ = ["run_direct_backtest", "run_portfolio_backtest", "OptionsBacktestEngine", "VectorizedEngine", "get_engine"]

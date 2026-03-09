@@ -274,3 +274,38 @@ def test_handle_run_backtest_passes_regime_label_map(monkeypatch):
     assert result is not None
     assert seen["regime_label_map"] == {"state_0": "bull"}
     assert sink["results"]["run_id"] == "run_1"
+
+
+def test_handle_run_backtest_multi_symbol_uses_portfolio_engine(monkeypatch):
+    sink = _patch_state(monkeypatch)
+    _fake_history(monkeypatch)
+
+    called = {"portfolio": 0, "equity": 0}
+
+    def fake_portfolio(**_kwargs):
+        called["portfolio"] += 1
+        return {"total_return": 0.3, "portfolio_value": [100000, 101000], "final_weights": {"SPY": 0.5, "QQQ": 0.5}}
+
+    def fake_equity(**_kwargs):
+        called["equity"] += 1
+        return {"total_return": 0.1}, None
+
+    monkeypatch.setattr(ui_handlers, "run_portfolio_backtest", fake_portfolio)
+
+    payload = _base_payload("equities")
+    payload["symbols"] = ["SPY", "QQQ"]
+    payload["allocation_strategy"] = "equal_weight"
+    payload["allocation_params"] = {}
+    payload["rebalance_frequency"] = "W"
+    payload["rebalance_threshold"] = None
+
+    result = ui_handlers.handle_run_backtest(
+        payload,
+        load_data_fn=lambda *_a, **_k: _sample_data(),
+        run_equity_fn=fake_equity,
+        run_options_fn=lambda *_a, **_k: {"total_return": 0.0},
+    )
+
+    assert result is not None
+    assert called == {"portfolio": 1, "equity": 0}
+    assert sink["results"]["run_id"] == "run_1"

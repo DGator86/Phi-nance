@@ -22,7 +22,7 @@ from app_streamlit.state import (
     set_results,
     transition_to,
 )
-from phi.backtest import run_direct_backtest
+from phi.backtest import run_direct_backtest, run_portfolio_backtest
 from phi.exceptions import BacktestError, ValidationError
 from phi.logging import get_logger
 from phi.options import run_options_backtest
@@ -94,10 +94,16 @@ def load_detector_from_payload(payload: dict[str, Any]) -> Any:
 def validate_config_payload(payload: dict[str, Any]) -> list[str]:
     """Return human-friendly config validation errors."""
     errors: list[str] = []
-    try:
-        payload["symbol"] = sanitize_ticker(payload.get("symbol", ""))
-    except ValidationError as exc:
-        errors.append(str(exc))
+    symbols = payload.get("symbols") or [payload.get("symbol", "")]
+    cleaned_symbols: list[str] = []
+    for sym in symbols:
+        try:
+            cleaned_symbols.append(sanitize_ticker(sym))
+        except ValidationError as exc:
+            errors.append(str(exc))
+    if cleaned_symbols:
+        payload["symbols"] = cleaned_symbols
+        payload["symbol"] = cleaned_symbols[0]
 
     start_date = payload.get("start_date")
     end_date = payload.get("end_date")
@@ -157,7 +163,7 @@ def build_run_config(payload: dict[str, Any]) -> RunConfig:
         }
 
     return RunConfig(
-        symbols=[sanitize_ticker(payload["symbol"])],
+        symbols=payload.get("symbols") or [sanitize_ticker(payload["symbol"])],
         start_date=payload["start_date"],
         end_date=payload["end_date"],
         timeframe=payload["timeframe"],
@@ -170,6 +176,10 @@ def build_run_config(payload: dict[str, Any]) -> RunConfig:
         option_params=option_params,
         regime_detector_params=payload.get("regime_detector_params"),
         regime_boosts=payload.get("regime_boosts"),
+        allocation_strategy=payload.get("allocation_strategy", "equal_weight"),
+        allocation_params=payload.get("allocation_params", {}),
+        rebalance_frequency=payload.get("rebalance_frequency", "M"),
+        rebalance_threshold=payload.get("rebalance_threshold"),
     )
 
 
@@ -239,19 +249,21 @@ def handle_run_backtest(
         set_config(cfg.model_dump())
         transition_to(AppState.RUNNING)
 
-        data = load_data_fn(
-            cfg.symbols[0],
-            cfg.start_date.isoformat(),
-            cfg.end_date.isoformat(),
-            cfg.timeframe,
-            cfg.vendor,
-        )
-
-        if data is None or data.empty:
-            raise BacktestError("No data returned for selected configuration.")
+        data_map: dict[str, pd.DataFrame] = {}
+        for sym in cfg.symbols:
+            data = load_data_fn(
+                sym,
+                cfg.start_date.isoformat(),
+                cfg.end_date.isoformat(),
+                cfg.timeframe,
+                cfg.vendor,
+            )
+            if data is None or data.empty:
+                raise BacktestError(f"No data returned for symbol {sym}.")
+            data_map[sym] = data
 
         if cfg.trading_mode == "options":
-            results = run_options_fn(cfg, data)
+            results = run_options_fn(cfg, data_map[cfg.symbols[0]])
         else:
             regime_series = None
             regime_label_map = payload.get("regime_label_map")
@@ -270,21 +282,35 @@ def handle_run_backtest(
                 if bool(payload.get("regime_detect_on_the_fly", True)):
                     regime_detector = detector
 
-            results, _ = run_equity_fn(
-                ohlcv=data,
-                symbol=cfg.symbols[0],
-                indicators=cfg.indicators,
-                blend_weights=cfg.blend_weights,
-                blend_method=cfg.blend_method,
-                initial_capital=cfg.initial_capital,
-                regime_series=regime_series,
-                regime_label_map=regime_label_map,
-                regime_boosts=regime_boosts,
-                regime_detector=regime_detector,
-            )
-            if regime_series is not None:
+            if len(cfg.symbols) > 1:
+                results = run_portfolio_backtest(
+                    data_dict=data_map,
+                    indicators=cfg.indicators,
+                    blend_weights=cfg.blend_weights,
+                    blend_method=cfg.blend_method,
+                    initial_capital=cfg.initial_capital,
+                    allocation_strategy=cfg.allocation_strategy,
+                    allocation_params=cfg.allocation_params,
+                    rebalance_frequency=cfg.rebalance_frequency,
+                    rebalance_threshold=cfg.rebalance_threshold,
+                    regime_series=regime_series,
+                )
+            else:
+                results, _ = run_equity_fn(
+                    ohlcv=data_map[cfg.symbols[0]],
+                    symbol=cfg.symbols[0],
+                    indicators=cfg.indicators,
+                    blend_weights=cfg.blend_weights,
+                    blend_method=cfg.blend_method,
+                    initial_capital=cfg.initial_capital,
+                    regime_series=regime_series,
+                    regime_label_map=regime_label_map,
+                    regime_boosts=regime_boosts,
+                    regime_detector=regime_detector,
+                )
+            if regime_series is not None and len(cfg.symbols) == 1:
                 results["regime_series"] = regime_series
-                results["ohlcv"] = data
+                results["ohlcv"] = data_map[cfg.symbols[0]]
 
         history = RunHistory()
         run_id = history.create_run(cfg)

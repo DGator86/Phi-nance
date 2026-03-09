@@ -114,7 +114,9 @@ def render_date_picker(default_start: date, default_end: date) -> tuple[date, da
 def render_config_panel() -> tuple[dict[str, Any], bool]:
     """Render sidebar configuration form and return payload + run click state."""
     with st.form("run_config_form", clear_on_submit=False):
-        symbol = st.text_input("Symbol", value=DEFAULT_SYMBOL, key="symbol").strip().upper()
+        symbols_raw = st.text_input("Symbols (comma-separated)", value=DEFAULT_SYMBOL, key="symbols").strip().upper()
+        symbols = [s.strip() for s in symbols_raw.split(",") if s.strip()]
+        symbol = symbols[0] if symbols else DEFAULT_SYMBOL
         timeframe = st.selectbox("Timeframe", TIMEFRAME_OPTIONS, index=TIMEFRAME_OPTIONS.index(DEFAULT_TIMEFRAME), key="timeframe")
         vendor = st.selectbox("Data vendor", VENDOR_OPTIONS, index=VENDOR_OPTIONS.index(DEFAULT_VENDOR), key="vendor")
         start_date, end_date = render_date_picker(DEFAULT_START_DATE, DEFAULT_END_DATE)
@@ -133,12 +135,14 @@ def render_config_panel() -> tuple[dict[str, Any], bool]:
             option_rate = st.number_input("Risk-free rate", min_value=0.0, max_value=0.5, value=0.02, step=0.005, key="option_rate")
             option_qty = st.number_input("Contracts", min_value=1, max_value=1000, value=1, step=1, key="option_qty")
 
+        portfolio_payload = render_portfolio_panel(symbols)
         run_clicked = st.form_submit_button("Run backtest", type="primary")
 
     regime_payload = render_regime_detection_panel(indicators)
 
     payload = {
         "symbol": symbol,
+        "symbols": symbols,
         "start_date": start_date,
         "end_date": end_date,
         "timeframe": timeframe,
@@ -154,10 +158,55 @@ def render_config_panel() -> tuple[dict[str, Any], bool]:
         "option_iv": option_iv,
         "option_rate": option_rate,
         "option_qty": option_qty,
+        **portfolio_payload,
         **regime_payload,
     }
     return payload, run_clicked
 
+
+
+
+def render_portfolio_panel(symbols: list[str]) -> dict[str, Any]:
+    """Render portfolio allocation + rebalance controls."""
+    st.markdown("#### Portfolio Configuration")
+    allocation_strategy = st.selectbox(
+        "Allocation strategy",
+        options=["equal_weight", "fixed_weight", "signal_weighted", "risk_parity"],
+        key="allocation_strategy",
+    )
+
+    fixed_weights: dict[str, float] = {}
+    if allocation_strategy == "fixed_weight":
+        st.caption("Fixed weights (should sum to 1.0)")
+        default_weight = 1.0 / max(len(symbols), 1)
+        for sym in symbols:
+            fixed_weights[sym] = st.number_input(
+                f"Weight {sym}",
+                min_value=0.0,
+                max_value=1.0,
+                value=float(default_weight),
+                step=0.01,
+                key=f"fixed_weight_{sym}",
+            )
+
+    rebalance_frequency = st.selectbox(
+        "Rebalance frequency",
+        options=["none", "D", "W", "M", "Q", 5, 20],
+        key="rebalance_frequency",
+    )
+    rebalance_threshold_enabled = st.checkbox("Enable threshold rebalance", value=False, key="rebalance_threshold_enabled")
+    rebalance_threshold = st.slider("Threshold", min_value=0.0, max_value=0.5, value=0.05, step=0.01, key="rebalance_threshold")
+
+    allocation_params: dict[str, Any] = {}
+    if fixed_weights:
+        allocation_params["weights"] = fixed_weights
+
+    return {
+        "allocation_strategy": allocation_strategy,
+        "allocation_params": allocation_params,
+        "rebalance_frequency": rebalance_frequency,
+        "rebalance_threshold": rebalance_threshold if rebalance_threshold_enabled else None,
+    }
 
 def render_regime_detection_panel(indicators: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Render sidebar controls for regime-aware blending configuration."""
@@ -345,9 +394,18 @@ def render_results(results: dict[str, Any]) -> None:
         st.line_chart(pd.Series(pv, name="Portfolio Value"))
 
     trades = results.get("trades", [])
+    transactions = results.get("transactions", [])
     if trades:
         st.subheader("Trades")
         st.dataframe(pd.DataFrame(trades), use_container_width=True)
+    if transactions:
+        st.subheader("Transaction Log")
+        st.dataframe(pd.DataFrame(transactions), use_container_width=True)
+
+    contributions = results.get("symbol_contributions", {})
+    if contributions:
+        st.subheader("Per-Symbol Contribution")
+        st.dataframe(pd.DataFrame([{"symbol": k, "contribution": v} for k, v in contributions.items()]), use_container_width=True)
 
     regime_preview = results.get("regime_series")
     ohlcv_preview = results.get("ohlcv")
