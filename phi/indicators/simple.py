@@ -5,11 +5,8 @@ Returns normalized signal series (-1 to 1 scale) for blending.
 
 from __future__ import annotations
 
-from phi.logging import get_logger
-
-logger = get_logger(__name__)
-
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -21,6 +18,10 @@ from phi.indicators.orderflow import (
     compute_vwap_signal,
     get_order_flow_provider,
 )
+from phi.logging import get_logger
+from phi.mft.signals import mft_energy_signal, mft_signal
+
+logger = get_logger(__name__)
 
 from phi.indicators.information import (
     compute_entropy_signal,
@@ -224,7 +225,109 @@ def compute_kld_regime_shift(
     )
 
 
-INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
+def compute_rolling_entropy(df: pd.DataFrame, window: int = 20, bins: int = 10) -> pd.Series:
+    """Shannon entropy of rolling return distributions."""
+    returns = df["close"].pct_change().fillna(0.0)
+
+    def _entropy(x: np.ndarray) -> float:
+        hist, _ = np.histogram(x, bins=max(2, int(bins)), density=True)
+        probs = hist / (hist.sum() + 1e-12)
+        probs = probs[probs > 0]
+        return float(-(probs * np.log(probs)).sum())
+
+    ent = returns.rolling(int(window), min_periods=max(5, int(window) // 2)).apply(_entropy, raw=True)
+    return _normalize_signal(ent.fillna(0.0))
+
+
+def compute_mutual_information(df: pd.DataFrame, window: int = 30, bins: int = 8, lag: int = 1) -> pd.Series:
+    """Rolling mutual information between returns and lagged returns."""
+    returns = df["close"].pct_change().fillna(0.0)
+    shifted = returns.shift(int(lag)).fillna(0.0)
+
+    def _mi(x: np.ndarray, y: np.ndarray) -> float:
+        joint_hist, _, _ = np.histogram2d(x, y, bins=max(2, int(bins)))
+        pxy = joint_hist / (joint_hist.sum() + 1e-12)
+        px = pxy.sum(axis=1, keepdims=True)
+        py = pxy.sum(axis=0, keepdims=True)
+        expected = px @ py
+        mask = pxy > 0
+        return float((pxy[mask] * np.log((pxy[mask] + 1e-12) / (expected[mask] + 1e-12))).sum())
+
+    vals = np.full(len(returns), np.nan)
+    w = int(window)
+    for i in range(w - 1, len(returns)):
+        x = returns.iloc[i - w + 1 : i + 1].to_numpy(dtype=float)
+        y = shifted.iloc[i - w + 1 : i + 1].to_numpy(dtype=float)
+        vals[i] = _mi(x, y)
+    mi = pd.Series(vals, index=df.index)
+    return _normalize_signal(mi.fillna(0.0))
+
+
+def compute_fisher_information(df: pd.DataFrame, window: int = 20) -> pd.Series:
+    """Fisher-like information proxy using squared standardized return slopes."""
+    returns = df["close"].pct_change().fillna(0.0)
+    z = (returns - returns.rolling(window, min_periods=max(5, window // 2)).mean())
+    z = z / returns.rolling(window, min_periods=max(5, window // 2)).std().replace(0.0, np.nan)
+    fisher = z.diff().pow(2).rolling(window, min_periods=max(5, window // 2)).mean()
+    return _normalize_signal(fisher.fillna(0.0))
+
+
+def compute_kl_divergence(df: pd.DataFrame, window: int = 30, bins: int = 10) -> pd.Series:
+    """KL divergence between consecutive rolling return distributions."""
+    returns = df["close"].pct_change().fillna(0.0)
+    values = np.full(len(returns), np.nan)
+    w = int(window)
+    b = max(2, int(bins))
+    for i in range(2 * w - 1, len(returns)):
+        prev = returns.iloc[i - 2 * w + 1 : i - w + 1].to_numpy(dtype=float)
+        curr = returns.iloc[i - w + 1 : i + 1].to_numpy(dtype=float)
+        low = float(min(prev.min(), curr.min()))
+        high = float(max(prev.max(), curr.max()))
+        if low == high:
+            values[i] = 0.0
+            continue
+        p_hist, _ = np.histogram(prev, bins=b, range=(low, high), density=True)
+        q_hist, _ = np.histogram(curr, bins=b, range=(low, high), density=True)
+        p_dist = p_hist / (p_hist.sum() + 1e-12)
+        q_dist = q_hist / (q_hist.sum() + 1e-12)
+        values[i] = float(np.sum(p_dist * np.log((p_dist + 1e-12) / (q_dist + 1e-12))))
+    kl = pd.Series(values, index=df.index)
+    return _normalize_signal(kl.fillna(0.0))
+
+
+def compute_mft_signal(
+    df: pd.DataFrame,
+    kernel: str = "gaussian",
+    sigma: float = 10.0,
+    threshold: float = 0.0,
+    smooth_window: int = 1,
+) -> pd.Series:
+    """Simplified MFT directional signal from field-potential gradient."""
+    return mft_signal(
+        close=df["close"],
+        kernel=kernel,
+        sigma=sigma,
+        threshold=threshold,
+        smooth_window=smooth_window,
+    )
+
+
+def compute_mft_energy(
+    df: pd.DataFrame,
+    kernel: str = "gaussian",
+    sigma: float = 10.0,
+    energy_window: int = 20,
+) -> pd.Series:
+    """MFT energy-derived signal based on relative field activity."""
+    return mft_energy_signal(
+        close=df["close"],
+        kernel=kernel,
+        sigma=sigma,
+        energy_window=energy_window,
+    )
+
+
+INDICATOR_COMPUTERS: dict[str, Callable[..., pd.Series]] = {
     "RSI": compute_rsi,
     "MACD": compute_macd,
     "Bollinger": compute_bollinger,
@@ -237,6 +340,13 @@ INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "Volume Profile": compute_volume_profile,
     "Cumulative Delta": compute_cumulative_delta,
     "Liquidity Metrics": compute_liquidity_metrics,
+    "Rolling Entropy": compute_rolling_entropy,
+    "Mutual Information": compute_mutual_information,
+    "Fisher Information": compute_fisher_information,
+    "KL Divergence": compute_kl_divergence,
+    "MFT Signal": compute_mft_signal,
+    "MFT Energy": compute_mft_energy,
+    "Phi-Bot (MFT)": compute_mft_signal,
     "Return Entropy": compute_return_entropy,
     "Mutual Information": compute_mutual_information,
     "Fisher Information": compute_fisher_information,
@@ -256,6 +366,13 @@ _PARAM_MAP = {
     "Volume Profile": {"window": "window", "bins": "bins", "near_poc_threshold": "near_poc_threshold"},
     "Cumulative Delta": {"window": "window", "clip_value": "clip_value"},
     "Liquidity Metrics": {"window": "window", "amihud_scale": "amihud_scale"},
+    "Rolling Entropy": {"window": "window", "bins": "bins"},
+    "Mutual Information": {"window": "window", "bins": "bins", "lag": "lag"},
+    "Fisher Information": {"window": "window"},
+    "KL Divergence": {"window": "window", "bins": "bins"},
+    "MFT Signal": {"kernel": "kernel", "sigma": "sigma", "threshold": "threshold", "smooth_window": "smooth_window"},
+    "MFT Energy": {"kernel": "kernel", "sigma": "sigma", "energy_window": "energy_window"},
+    "Phi-Bot (MFT)": {},
     "Return Entropy": {"window": "window", "bins": "bins", "base": "base"},
     "Mutual Information": {"window": "window", "bins": "bins", "mode": "mode"},
     "Fisher Information": {"window": "window", "clip_percentile": "clip_percentile"},
@@ -263,7 +380,7 @@ _PARAM_MAP = {
 }
 
 
-def compute_indicator(name: str, df: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+def compute_indicator(name: str, df: pd.DataFrame, params: dict[str, Any]) -> pd.Series:
     """Compute indicator signal by name with params."""
     fn = INDICATOR_COMPUTERS.get(name)
     if fn is None:
