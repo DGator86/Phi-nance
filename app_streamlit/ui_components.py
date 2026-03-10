@@ -214,12 +214,28 @@ def render_regime_detection_panel(indicators: dict[str, dict[str, Any]]) -> dict
         regime_enabled = st.checkbox("Enable regime-aware blending", value=False, key="regime_enabled")
         method_label = st.selectbox(
             "Method",
-            options=["HMM", "Clustering (KMeans)", "GMM"],
+            options=["HMM", "Clustering (KMeans)", "GMM", "Deep Learning (LSTM)", "Deep Learning (Transformer)"],
             key="regime_method",
         )
         n_states = st.slider("Number of regimes", min_value=2, max_value=8, value=3, key="regime_n_states")
         window = st.slider("Feature window", min_value=5, max_value=60, value=20, key="regime_window")
         train_clicked = st.button("Train on selected range", key="train_regime_model")
+
+        deep_seq_length = st.slider("Sequence length", min_value=5, max_value=120, value=20, key="regime_deep_seq_length")
+        deep_hidden_size = st.slider("Hidden size", min_value=16, max_value=256, value=64, step=16, key="regime_deep_hidden_size")
+        deep_num_layers = st.slider("Layers", min_value=1, max_value=6, value=2, key="regime_deep_num_layers")
+        deep_epochs = st.slider("Epochs", min_value=1, max_value=200, value=50, key="regime_deep_epochs")
+        deep_batch_size = st.slider("Batch size", min_value=8, max_value=256, value=32, step=8, key="regime_deep_batch_size")
+        deep_lr = st.number_input("Learning rate", min_value=0.0001, max_value=0.1, value=0.001, step=0.0001, format="%.4f", key="regime_deep_lr")
+
+        uploaded_deep_model = None
+        if method_label.startswith("Deep Learning"):
+            st.info("Deep model training is done via `python -m phi.regime.train_deep`; use the uploader to load a trained model.")
+            uploaded_deep_model = st.file_uploader(
+                "Upload pre-trained deep detector (.pkl)",
+                type=["pkl"],
+                key="regime_deep_model_upload",
+            )
 
         refresh_models = st.button("Refresh detector list", key="refresh_regime_models")
         if refresh_models or "regime_available_models" not in st.session_state:
@@ -264,6 +280,16 @@ def render_regime_detection_panel(indicators: dict[str, dict[str, Any]]) -> dict
             value=False,
             key="regime_use_precomputed",
         )
+
+        selected_model_source = "saved"
+        if uploaded_deep_model is not None:
+            uploads_dir = settings.REGIME_MODELS_DIR / "uploads"
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            upload_path = uploads_dir / uploaded_deep_model.name
+            upload_path.write_bytes(uploaded_deep_model.getbuffer())
+            selected_model_path = str(upload_path)
+            selected_model_source = "uploaded"
+            st.caption(f"Uploaded model ready: `{selected_model_path}`")
 
         regime_label_map: dict[str, str] = {}
         regime_boost_matrix: dict[str, dict[str, float]] = {}
@@ -311,6 +337,13 @@ def render_regime_detection_panel(indicators: dict[str, dict[str, Any]]) -> dict
         "regime_selected_model_path": selected_model_path,
         "regime_detect_on_the_fly": bool(detect_on_the_fly),
         "regime_use_precomputed": bool(use_precomputed),
+        "regime_model_source": selected_model_source,
+        "regime_deep_seq_length": int(deep_seq_length),
+        "regime_deep_hidden_size": int(deep_hidden_size),
+        "regime_deep_num_layers": int(deep_num_layers),
+        "regime_deep_epochs": int(deep_epochs),
+        "regime_deep_batch_size": int(deep_batch_size),
+        "regime_deep_lr": float(deep_lr),
         "regime_label_map": regime_label_map,
         "regime_boost_matrix": regime_boost_matrix,
     }

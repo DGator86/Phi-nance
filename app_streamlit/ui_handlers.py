@@ -42,6 +42,8 @@ METHOD_MAP: dict[str, str] = {
     "HMM": "hmm",
     "Clustering (KMeans)": "kmeans",
     "GMM": "gmm",
+    "Deep Learning (LSTM)": "deep_lstm",
+    "Deep Learning (Transformer)": "deep_transformer",
 }
 
 
@@ -205,6 +207,10 @@ def handle_train_regime_detector(
     if method is None:
         logger.warning("Unknown regime method label %r from UI; falling back to 'kmeans'.", method_label)
         method = "kmeans"
+    if method.startswith("deep"):
+        raise BacktestError(
+            "Deep learning detectors are trained via CLI (`python -m phi.regime.train_deep`) and then loaded in the UI."
+        )
 
     data = load_data_fn(
         sanitize_ticker(payload["symbol"]),
