@@ -19,8 +19,22 @@ class SelectParamSpec(TypedDict):
     default: str
 
 
+class TextParamSpec(TypedDict):
+    """Text-input parameter metadata used by Streamlit controls."""
+
+    type: str
+    default: str
+
+
+class BoolParamSpec(TypedDict):
+    """Boolean parameter metadata used by Streamlit controls."""
+
+    type: str
+    default: bool
+
+
 ParamRange: TypeAlias = tuple[float, float, float, float]
-IndicatorParamSpec: TypeAlias = ParamRange | SelectParamSpec
+IndicatorParamSpec: TypeAlias = ParamRange | SelectParamSpec | TextParamSpec | BoolParamSpec
 
 DEFAULT_SYMBOL = "SPY"
 DEFAULT_TIMEFRAME = "1D"
@@ -51,6 +65,16 @@ class IndicatorSpec:
 def _select_param(options: list[str], default: str) -> SelectParamSpec:
     """Convenience helper for selectbox parameter specs."""
     return {"type": "select", "options": options, "default": default}
+
+
+def _text_param(default: str) -> TextParamSpec:
+    """Convenience helper for text-input parameter specs."""
+    return {"type": "text", "default": default}
+
+
+def _bool_param(default: bool) -> BoolParamSpec:
+    """Convenience helper for boolean parameter specs."""
+    return {"type": "bool", "default": default}
 
 
 INDICATOR_SPECS: dict[str, IndicatorSpec] = {
@@ -173,5 +197,28 @@ INDICATOR_SPECS: dict[str, IndicatorSpec] = {
         description="Distribution shift between recent and prior return windows.",
         params={"recent_window": (5, 120, 20, 1), "reference_window": (10, 240, 60, 1), "bins": (5, 60, 20, 1), "sigmoid_scale": (0.5, 10, 3, 0.1)},
         category="Information Theory",
+    ),
+    "Transfer Entropy": IndicatorSpec(
+        description="Directional information flow from one symbol to another.",
+        params={
+            "window": (20, 200, 50, 1),
+            "from_symbol": _text_param("SPY"),
+            "to_symbol": _text_param("QQQ"),
+            "bins": (2, 5, 3, 1),
+            "normalize": _bool_param(True),
+        },
+        category="Information Flow",
+    ),
+    "Granger Causality": IndicatorSpec(
+        description="Rolling Granger causality test from one symbol to another.",
+        params={
+            "window": (20, 200, 50, 1),
+            "from_symbol": _text_param("SPY"),
+            "to_symbol": _text_param("QQQ"),
+            "maxlags": (1, 5, 2, 1),
+            "threshold": (0.001, 0.2, 0.05, 0.001),
+            "output": _select_param(["pvalue", "binary", "confidence"], "pvalue"),
+        },
+        category="Information Flow",
     ),
 }

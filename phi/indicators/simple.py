@@ -29,6 +29,7 @@ from phi.indicators.information import (
     compute_kld_signal,
     compute_mutual_info_signal,
 )
+from phi.indicators.information_flow import rolling_granger_causality, rolling_transfer_entropy
 
 
 def _normalize_signal(s: pd.Series) -> pd.Series:
@@ -327,6 +328,60 @@ def compute_mft_energy(
     )
 
 
+def _extract_information_flow_prices(df: pd.DataFrame) -> pd.DataFrame:
+    """Build a symbol->close matrix from single or multi-symbol inputs."""
+    if {"open", "high", "low", "close", "volume"}.issubset(df.columns):
+        return pd.DataFrame({"SYMBOL": df["close"].astype(float)}, index=df.index)
+    if isinstance(df.columns, pd.MultiIndex):
+        if "close" in df.columns.get_level_values(1):
+            return df.xs("close", axis=1, level=1).astype(float)
+        if "close" in df.columns.get_level_values(0):
+            return df["close"].astype(float)
+    return df.astype(float)
+
+
+def compute_transfer_entropy(
+    df: pd.DataFrame,
+    window: int = 50,
+    from_symbol: str = "SYMBOL",
+    to_symbol: str = "SYMBOL",
+    bins: int = 3,
+    normalize: bool = True,
+) -> pd.Series:
+    """Compute rolling transfer entropy for selected pair."""
+    prices = _extract_information_flow_prices(df)
+    return rolling_transfer_entropy(
+        prices=prices,
+        from_symbol=from_symbol,
+        to_symbol=to_symbol,
+        window=window,
+        bins=bins,
+        normalize=normalize,
+    ).fillna(0.0)
+
+
+def compute_granger_causality(
+    df: pd.DataFrame,
+    window: int = 50,
+    from_symbol: str = "SYMBOL",
+    to_symbol: str = "SYMBOL",
+    maxlags: int = 2,
+    threshold: float = 0.05,
+    output: str = "pvalue",
+) -> pd.Series:
+    """Compute rolling Granger-causality output for selected pair."""
+    prices = _extract_information_flow_prices(df)
+    return rolling_granger_causality(
+        prices=prices,
+        from_symbol=from_symbol,
+        to_symbol=to_symbol,
+        window=window,
+        maxlags=maxlags,
+        threshold=threshold,
+        output=output,
+    ).fillna(0.0)
+
+
 INDICATOR_COMPUTERS: dict[str, Callable[..., pd.Series]] = {
     "RSI": compute_rsi,
     "MACD": compute_macd,
@@ -351,6 +406,8 @@ INDICATOR_COMPUTERS: dict[str, Callable[..., pd.Series]] = {
     "Mutual Information": compute_mutual_information,
     "Fisher Information": compute_fisher_information,
     "KL Divergence": compute_kld_regime_shift,
+    "Transfer Entropy": compute_transfer_entropy,
+    "Granger Causality": compute_granger_causality,
 }
 
 
@@ -377,6 +434,8 @@ _PARAM_MAP = {
     "Mutual Information": {"window": "window", "bins": "bins", "mode": "mode"},
     "Fisher Information": {"window": "window", "clip_percentile": "clip_percentile"},
     "KL Divergence": {"recent_window": "recent_window", "reference_window": "reference_window", "bins": "bins", "sigmoid_scale": "sigmoid_scale"},
+    "Transfer Entropy": {"window": "window", "from_symbol": "from_symbol", "to_symbol": "to_symbol", "bins": "bins", "normalize": "normalize"},
+    "Granger Causality": {"window": "window", "from_symbol": "from_symbol", "to_symbol": "to_symbol", "maxlags": "maxlags", "threshold": "threshold", "output": "output"},
 }
 
 
