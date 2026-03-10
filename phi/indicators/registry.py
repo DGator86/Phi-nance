@@ -27,7 +27,10 @@ from phi.indicators.orderflow import (
     get_order_flow_provider,
 )
 from phi.logging import get_logger
+from phi.mft.complex import complex_potential
+from phi.mft.fourier import rolling_spectral_power
 from phi.mft.signals import mft_energy_signal, mft_signal
+from phi.mft.volume_field import volume_price_interaction
 
 logger = get_logger(__name__)
 
@@ -370,6 +373,47 @@ def _compute_mft_energy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     energy_window = int(params.get("energy_window", 20))
     return mft_energy_signal(close=close, kernel=kernel, sigma=sigma, energy_window=energy_window)
 
+
+
+
+def _compute_mft_complex_amplitude(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT complex potential amplitude, mapped to [-1, 1]."""
+    amplitude = complex_potential(ohlcv["close"].astype(float))["amplitude"].fillna(0.0)
+    return _to_signal(_safe_zscore(amplitude, 60).fillna(0.0))
+
+
+def _compute_mft_complex_phase(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT complex potential phase, mapped to [-1, 1]."""
+    phase = complex_potential(ohlcv["close"].astype(float))["phase"].fillna(0.0)
+    return _to_signal(_safe_zscore(phase, 60).fillna(0.0))
+
+
+def _compute_mft_phase_change(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT phase-change feature, mapped to [-1, 1]."""
+    phase_change = complex_potential(ohlcv["close"].astype(float))["phase_change"].fillna(0.0)
+    return _to_signal(_safe_zscore(phase_change, 60).fillna(0.0))
+
+
+def _compute_mft_price_volume_interaction(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT interaction feature between price and volume fields."""
+    interaction = volume_price_interaction(
+        price_series=ohlcv["close"].astype(float),
+        volume_series=ohlcv["volume"].astype(float),
+        kernel=str(params.get("kernel", "gaussian")),
+        sigma=float(params.get("sigma", 10.0)),
+        corr_window=int(params.get("corr_window", 20)),
+    ).fillna(0.0)
+    return _to_signal(_safe_zscore(interaction, 60).fillna(0.0))
+
+
+def _compute_mft_spectral_power(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """Relative FFT spectral power for selected band."""
+    window = int(params.get("window", 64))
+    band = str(params.get("band", "low")).lower()
+    band_map = {"low": (0.0, 0.2), "mid": (0.2, 0.5), "high": (0.5, 1.0)}
+    bounds = band_map.get(band, band_map["low"])
+    power = rolling_spectral_power(ohlcv["close"].astype(float), window=window, bands=[bounds]).iloc[:, 0]
+    return power.fillna(0.0).clip(0.0, 1.0)
 
 def _compute_wyckoff(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     """Simplified Wyckoff: accumulation/distribution proxy."""
@@ -737,6 +781,53 @@ INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
             "energy_window": {"label": "Energy Window", "default": 20, "min": 3, "max": 120, "step": 1, "type": "int"},
         },
         "tune_ranges": {"sigma": (3.0, 20.0), "energy_window": (10, 60)},
+    },
+    "mft_complex_amplitude": {
+        "display_name": "MFT Complex Amplitude",
+        "description": "Hilbert analytic-signal amplitude of close.",
+        "type": "MFT",
+        "compute": _compute_mft_complex_amplitude,
+        "params": {},
+        "tune_ranges": {},
+    },
+    "mft_complex_phase": {
+        "display_name": "MFT Complex Phase",
+        "description": "Hilbert analytic-signal phase of close.",
+        "type": "MFT",
+        "compute": _compute_mft_complex_phase,
+        "params": {},
+        "tune_ranges": {},
+    },
+    "mft_phase_change": {
+        "display_name": "MFT Phase Change",
+        "description": "First difference of unwrapped analytic phase.",
+        "type": "MFT",
+        "compute": _compute_mft_phase_change,
+        "params": {},
+        "tune_ranges": {},
+    },
+    "mft_price_volume_interaction": {
+        "display_name": "MFT Price-Volume Interaction",
+        "description": "Interaction term between price and volume fields.",
+        "type": "MFT",
+        "compute": _compute_mft_price_volume_interaction,
+        "params": {
+            "kernel": {"label": "Kernel", "default": "gaussian", "type": "str"},
+            "sigma": {"label": "Sigma", "default": 10.0, "min": 1.0, "max": 50.0, "step": 1.0, "type": "float"},
+            "corr_window": {"label": "Corr Window", "default": 20, "min": 5, "max": 120, "step": 1, "type": "int"},
+        },
+        "tune_ranges": {"sigma": (3.0, 20.0), "corr_window": (10, 60)},
+    },
+    "mft_spectral_power": {
+        "display_name": "MFT Spectral Power",
+        "description": "Rolling FFT relative power in selected frequency band.",
+        "type": "MFT",
+        "compute": _compute_mft_spectral_power,
+        "params": {
+            "window": {"label": "Window", "default": 64, "min": 8, "max": 256, "step": 1, "type": "int"},
+            "band": {"label": "Band", "default": "low", "type": "str"},
+        },
+        "tune_ranges": {"window": (32, 128)},
     },
 
     "return_entropy": {
