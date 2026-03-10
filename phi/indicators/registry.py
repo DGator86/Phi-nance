@@ -37,6 +37,7 @@ from phi.indicators.information import (
     compute_kld_signal,
     compute_mutual_info_signal,
 )
+from phi.indicators.information_flow import rolling_granger_causality, rolling_transfer_entropy
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -312,6 +313,44 @@ def _compute_kl_divergence(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     kl = pd.Series(values, index=ohlcv.index)
     return _to_signal(_safe_zscore(kl.fillna(0.0), max(30, window)))
 
+
+
+
+def _extract_flow_prices(ohlcv: pd.DataFrame) -> pd.DataFrame:
+    """Build symbol->close matrix from single/multi symbol frames."""
+    if {"open", "high", "low", "close", "volume"}.issubset(ohlcv.columns):
+        return pd.DataFrame({"SYMBOL": ohlcv["close"].astype(float)}, index=ohlcv.index)
+    if isinstance(ohlcv.columns, pd.MultiIndex):
+        if "close" in ohlcv.columns.get_level_values(1):
+            return ohlcv.xs("close", axis=1, level=1).astype(float)
+        if "close" in ohlcv.columns.get_level_values(0):
+            return ohlcv["close"].astype(float)
+    return ohlcv.astype(float)
+
+
+def _compute_transfer_entropy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    prices = _extract_flow_prices(ohlcv)
+    return rolling_transfer_entropy(
+        prices=prices,
+        from_symbol=str(params.get("from_symbol", "SYMBOL")),
+        to_symbol=str(params.get("to_symbol", "SYMBOL")),
+        window=int(params.get("window", 50)),
+        bins=int(params.get("bins", 3)),
+        normalize=bool(params.get("normalize", True)),
+    ).fillna(0.0)
+
+
+def _compute_granger_causality(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    prices = _extract_flow_prices(ohlcv)
+    return rolling_granger_causality(
+        prices=prices,
+        from_symbol=str(params.get("from_symbol", "SYMBOL")),
+        to_symbol=str(params.get("to_symbol", "SYMBOL")),
+        window=int(params.get("window", 50)),
+        maxlags=int(params.get("maxlags", 2)),
+        threshold=float(params.get("threshold", 0.05)),
+        output=str(params.get("output", "pvalue")),
+    ).fillna(0.0)
 
 def _compute_mft_signal(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     """Simplified MFT directional signal based on potential gradient."""
@@ -747,6 +786,36 @@ INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
             "sigmoid_scale": {"label": "Sigmoid Scale", "default": 3.0, "min": 0.5, "max": 10.0, "step": 0.1, "type": "float"},
         },
         "tune_ranges": {"recent_window": (10, 40), "reference_window": (30, 120), "bins": (10, 30)},
+    },
+
+    "transfer_entropy": {
+        "display_name": "Transfer Entropy",
+        "description": "Rolling transfer entropy from one symbol to another.",
+        "type": "information_flow",
+        "compute": _compute_transfer_entropy,
+        "params": {
+            "window": {"label": "Window", "default": 50, "min": 20, "max": 200, "step": 1, "type": "int"},
+            "from_symbol": {"label": "From Symbol", "default": "SPY", "type": "str"},
+            "to_symbol": {"label": "To Symbol", "default": "QQQ", "type": "str"},
+            "bins": {"label": "Bins", "default": 3, "min": 2, "max": 5, "step": 1, "type": "int"},
+            "normalize": {"label": "Normalize", "default": True, "type": "bool"},
+        },
+        "tune_ranges": {"window": (30, 120), "bins": (2, 5)},
+    },
+    "granger_causality": {
+        "display_name": "Granger Causality",
+        "description": "Rolling Granger-causality significance from one symbol to another.",
+        "type": "information_flow",
+        "compute": _compute_granger_causality,
+        "params": {
+            "window": {"label": "Window", "default": 50, "min": 20, "max": 200, "step": 1, "type": "int"},
+            "from_symbol": {"label": "From Symbol", "default": "SPY", "type": "str"},
+            "to_symbol": {"label": "To Symbol", "default": "QQQ", "type": "str"},
+            "maxlags": {"label": "Max Lags", "default": 2, "min": 1, "max": 5, "step": 1, "type": "int"},
+            "threshold": {"label": "Significance Threshold", "default": 0.05, "min": 0.001, "max": 0.2, "step": 0.001, "type": "float"},
+            "output": {"label": "Output", "default": "pvalue", "type": "str"},
+        },
+        "tune_ranges": {"window": (30, 120), "maxlags": (1, 5), "threshold": (0.01, 0.1)},
     },
     "phi_mft": {
         "display_name": "Phi-Bot (MFT)",
