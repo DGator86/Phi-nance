@@ -178,6 +178,38 @@ INDICATOR_SPECS: dict[str, IndicatorSpec] = {
         },
         category="Market Field Theory",
     ),
+    "MFT Complex Amplitude": IndicatorSpec(
+        description="Hilbert analytic-signal amplitude for close prices.",
+        params={},
+        category="Market Field Theory",
+    ),
+    "MFT Complex Phase": IndicatorSpec(
+        description="Hilbert analytic-signal phase for close prices.",
+        params={},
+        category="Market Field Theory",
+    ),
+    "MFT Phase Change": IndicatorSpec(
+        description="Unwrapped phase change (instantaneous frequency proxy).",
+        params={},
+        category="Market Field Theory",
+    ),
+    "MFT Price-Volume Interaction": IndicatorSpec(
+        description="Coupling feature between price and volume fields.",
+        params={
+            "kernel": _select_param(["gaussian", "exp", "linear"], "gaussian"),
+            "sigma": (1, 50, 10, 1),
+            "corr_window": (5, 120, 20, 1),
+        },
+        category="Market Field Theory",
+    ),
+    "MFT Spectral Power": IndicatorSpec(
+        description="Rolling FFT relative power in a selected frequency band.",
+        params={
+            "window": (8, 256, 64, 1),
+            "band": _select_param(["low", "mid", "high"], "low"),
+        },
+        category="Market Field Theory",
+    ),
     "Return Entropy": IndicatorSpec(
         description="Rolling Shannon entropy of returns (uncertainty/choppiness).",
         params={"window": (5, 200, 20, 1), "bins": (5, 60, 20, 1), "base": (2, 10, 2, 1)},

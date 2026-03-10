@@ -19,7 +19,10 @@ from phi.indicators.orderflow import (
     get_order_flow_provider,
 )
 from phi.logging import get_logger
+from phi.mft.complex import complex_potential
+from phi.mft.fourier import rolling_spectral_power
 from phi.mft.signals import mft_energy_signal, mft_signal
+from phi.mft.volume_field import volume_price_interaction
 
 logger = get_logger(__name__)
 
@@ -328,6 +331,59 @@ def compute_mft_energy(
     )
 
 
+
+
+def compute_mft_complex_amplitude(df: pd.DataFrame) -> pd.Series:
+    """Instantaneous amplitude from Hilbert analytic signal of close."""
+    out = complex_potential(df["close"].astype(float))["amplitude"]
+    return _normalize_signal(out.fillna(0.0))
+
+
+def compute_mft_complex_phase(df: pd.DataFrame) -> pd.Series:
+    """Instantaneous phase from Hilbert analytic signal of close."""
+    out = complex_potential(df["close"].astype(float))["phase"]
+    return _normalize_signal(out.fillna(0.0))
+
+
+def compute_mft_phase_change(df: pd.DataFrame) -> pd.Series:
+    """Phase-difference proxy for instantaneous frequency shifts."""
+    out = complex_potential(df["close"].astype(float))["phase_change"]
+    return _normalize_signal(out.fillna(0.0))
+
+
+def compute_mft_price_volume_interaction(
+    df: pd.DataFrame,
+    kernel: str = "gaussian",
+    sigma: float = 10.0,
+    corr_window: int = 20,
+) -> pd.Series:
+    """Price/volume field interaction using potential and gradient coupling."""
+    return _normalize_signal(
+        volume_price_interaction(
+            price_series=df["close"].astype(float),
+            volume_series=df["volume"].astype(float),
+            kernel=kernel,
+            sigma=sigma,
+            corr_window=corr_window,
+        ).fillna(0.0)
+    )
+
+
+def compute_mft_spectral_power(
+    df: pd.DataFrame,
+    window: int = 64,
+    band: str = "low",
+) -> pd.Series:
+    """Rolling relative FFT power for a selected frequency band."""
+    band_map = {
+        "low": (0.0, 0.2),
+        "mid": (0.2, 0.5),
+        "high": (0.5, 1.0),
+    }
+    bounds = band_map.get(str(band).lower(), band_map["low"])
+    power = rolling_spectral_power(df["close"].astype(float), window=int(window), bands=[bounds])
+    return power.iloc[:, 0].fillna(0.0).clip(0.0, 1.0)
+
 def _extract_information_flow_prices(df: pd.DataFrame) -> pd.DataFrame:
     """Build a symbol->close matrix from single or multi-symbol inputs."""
     if {"open", "high", "low", "close", "volume"}.issubset(df.columns):
@@ -401,6 +457,11 @@ INDICATOR_COMPUTERS: dict[str, Callable[..., pd.Series]] = {
     "KL Divergence": compute_kl_divergence,
     "MFT Signal": compute_mft_signal,
     "MFT Energy": compute_mft_energy,
+    "MFT Complex Amplitude": compute_mft_complex_amplitude,
+    "MFT Complex Phase": compute_mft_complex_phase,
+    "MFT Phase Change": compute_mft_phase_change,
+    "MFT Price-Volume Interaction": compute_mft_price_volume_interaction,
+    "MFT Spectral Power": compute_mft_spectral_power,
     "Phi-Bot (MFT)": compute_mft_signal,
     "Return Entropy": compute_return_entropy,
     "Mutual Information": compute_mutual_information,
@@ -429,6 +490,11 @@ _PARAM_MAP = {
     "KL Divergence": {"window": "window", "bins": "bins"},
     "MFT Signal": {"kernel": "kernel", "sigma": "sigma", "threshold": "threshold", "smooth_window": "smooth_window"},
     "MFT Energy": {"kernel": "kernel", "sigma": "sigma", "energy_window": "energy_window"},
+    "MFT Complex Amplitude": {},
+    "MFT Complex Phase": {},
+    "MFT Phase Change": {},
+    "MFT Price-Volume Interaction": {"kernel": "kernel", "sigma": "sigma", "corr_window": "corr_window"},
+    "MFT Spectral Power": {"window": "window", "band": "band"},
     "Phi-Bot (MFT)": {},
     "Return Entropy": {"window": "window", "bins": "bins", "base": "base"},
     "Mutual Information": {"window": "window", "bins": "bins", "mode": "mode"},
