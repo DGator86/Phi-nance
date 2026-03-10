@@ -382,7 +382,8 @@ def compute_mft_spectral_power(
     }
     bounds = band_map.get(str(band).lower(), band_map["low"])
     power = rolling_spectral_power(df["close"].astype(float), window=int(window), bands=[bounds])
-    return power.iloc[:, 0].fillna(0.0).clip(0.0, 1.0)
+    signed = 2.0 * power.iloc[:, 0] - 1.0
+    return signed.fillna(0.0).clip(-1.0, 1.0)
 
 def _extract_information_flow_prices(df: pd.DataFrame) -> pd.DataFrame:
     """Build a symbol->close matrix from single or multi-symbol inputs."""

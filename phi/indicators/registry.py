@@ -413,7 +413,8 @@ def _compute_mft_spectral_power(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     band_map = {"low": (0.0, 0.2), "mid": (0.2, 0.5), "high": (0.5, 1.0)}
     bounds = band_map.get(band, band_map["low"])
     power = rolling_spectral_power(ohlcv["close"].astype(float), window=window, bands=[bounds]).iloc[:, 0]
-    return power.fillna(0.0).clip(0.0, 1.0)
+    signed = 2.0 * power - 1.0
+    return signed.fillna(0.0).clip(-1.0, 1.0)
 
 def _compute_wyckoff(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     """Simplified Wyckoff: accumulation/distribution proxy."""
