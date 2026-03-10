@@ -37,6 +37,7 @@ DEFAULT_STATE: dict[str, Any] = {
     "regime_available_models": [],
     "regime_label_map": {},
     "regime_boost_matrix": {},
+    "deep_regime_detector": None,
 }
 
 
@@ -63,6 +64,13 @@ CONFIG_INPUT_KEYS = [
     "regime_selected_model_path",
     "regime_detect_on_the_fly",
     "regime_use_precomputed",
+    "regime_deep_seq_length",
+    "regime_deep_hidden_size",
+    "regime_deep_num_layers",
+    "regime_deep_epochs",
+    "regime_deep_batch_size",
+    "regime_deep_lr",
+    "regime_model_source",
     "option_type",
     "option_strike",
     "option_expiry",

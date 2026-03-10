@@ -11,6 +11,7 @@ import pandas as pd
 from phi.config import settings
 from phi.regime.base import RegimeDetector
 from phi.regime.models.clustering import ClusteringRegimeDetector
+from phi.regime.models.deep import DeepRegimeDetector
 from phi.regime.models.hmm import HMMRegimeDetector
 from phi.regime.train import train_regime_detector
 from phi.regime.utils import extract_features
@@ -23,6 +24,8 @@ def _resolve_detector_class(detector_class: str) -> type[RegimeDetector]:
         return HMMRegimeDetector
     if key == "clusteringregimedetector":
         return ClusteringRegimeDetector
+    if key == "deepregimedetector":
+        return DeepRegimeDetector
     raise ValueError(f"Unsupported detector_class '{detector_class}'")
 
 
@@ -63,6 +66,8 @@ def load_detector(path: str | Path) -> RegimeDetector:
         stem = model_path.stem.lower()
         if stem.startswith("hmm"):
             detector_class = "HMMRegimeDetector"
+        elif model_path.with_suffix(".scaler.pkl").exists() or "deep" in stem or "lstm" in stem or "transformer" in stem:
+            detector_class = "DeepRegimeDetector"
         else:
             detector_class = "ClusteringRegimeDetector"
 
@@ -99,12 +104,17 @@ def create_detector_from_params(detector_type: str, params: dict[str, Any]) -> R
             method="gmm",
             random_state=random_state,
         )
+    if key in {"deep_lstm", "lstm"}:
+        return DeepRegimeDetector(model_type="lstm", **params)
+    if key in {"deep_transformer", "transformer"}:
+        return DeepRegimeDetector(model_type="transformer", **params)
     raise ValueError(f"Unknown detector type: {detector_type}")
 
 __all__ = [
     "RegimeDetector",
     "HMMRegimeDetector",
     "ClusteringRegimeDetector",
+    "DeepRegimeDetector",
     "extract_features",
     "train_regime_detector",
     "list_saved_detectors",
