@@ -502,6 +502,40 @@ def _compute_fisher_information(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     return compute_fisher_information_signal(ohlcv, window=window, clip_percentile=clip_percentile)
 
 
+
+def _compute_tick_order_flow_imbalance(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    bid_volume = ohlcv.get("bid_volume", pd.Series(0.0, index=ohlcv.index)).astype(float)
+    ask_volume = ohlcv.get("ask_volume", pd.Series(0.0, index=ohlcv.index)).astype(float)
+    total = (bid_volume + ask_volume).replace(0, np.nan)
+    imbalance = ((bid_volume - ask_volume) / total).fillna(0.0)
+    return imbalance.clip(-1.0, 1.0)
+
+
+def _compute_tick_depth_ratio(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    bid_volume = ohlcv.get("bid_volume", pd.Series(1.0, index=ohlcv.index)).astype(float)
+    ask_volume = ohlcv.get("ask_volume", pd.Series(1.0, index=ohlcv.index)).astype(float)
+    ratio = bid_volume / ask_volume.clip(lower=1e-10)
+    return _to_signal(_safe_zscore(ratio, int(params.get("window", 60))))
+
+
+def _compute_tick_spread(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    bid = ohlcv.get("bid", ohlcv.get("close", pd.Series(0.0, index=ohlcv.index))).astype(float)
+    ask = ohlcv.get("ask", ohlcv.get("close", pd.Series(0.0, index=ohlcv.index))).astype(float)
+    spread = (ask - bid).clip(lower=0.0)
+    return _to_signal(-_safe_zscore(spread, int(params.get("window", 60))))
+
+
+def _compute_tick_microprice(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    bid = ohlcv.get("bid", ohlcv.get("close", pd.Series(0.0, index=ohlcv.index))).astype(float)
+    ask = ohlcv.get("ask", ohlcv.get("close", pd.Series(0.0, index=ohlcv.index))).astype(float)
+    bid_volume = ohlcv.get("bid_volume", pd.Series(1.0, index=ohlcv.index)).astype(float)
+    ask_volume = ohlcv.get("ask_volume", pd.Series(1.0, index=ohlcv.index)).astype(float)
+    total = (bid_volume + ask_volume).clip(lower=1e-10)
+    microprice = (ask * bid_volume + bid * ask_volume) / total
+    ref = ohlcv.get("close", (bid + ask) / 2.0).astype(float)
+    delta = (microprice - ref) / ref.replace(0, np.nan)
+    return _to_signal(delta.fillna(0.0) * 100.0)
+
 def _compute_kld(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     recent_window = int(params.get("recent_window", 20))
     reference_window = int(params.get("reference_window", 60))
@@ -908,6 +942,42 @@ INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
             "output": {"label": "Output", "default": "pvalue", "type": "str"},
         },
         "tune_ranges": {"window": (30, 120), "maxlags": (1, 5), "threshold": (0.01, 0.1)},
+    },
+    "tick_order_flow_imbalance": {
+        "display_name": "Tick Order Flow Imbalance",
+        "description": "(Bid volume - Ask volume)/(Bid+Ask) from tick/LOB data.",
+        "type": "tick",
+        "compute": _compute_tick_order_flow_imbalance,
+        "params": {},
+        "tune_ranges": {},
+    },
+    "tick_depth_ratio": {
+        "display_name": "Tick Depth Ratio",
+        "description": "Bid/ask depth ratio standardized over rolling window.",
+        "type": "tick",
+        "compute": _compute_tick_depth_ratio,
+        "params": {
+            "window": {"label": "Window", "default": 60, "min": 5, "max": 300, "step": 1, "type": "int"},
+        },
+        "tune_ranges": {"window": (20, 120)},
+    },
+    "tick_spread": {
+        "display_name": "Tick Spread",
+        "description": "Top-of-book spread transformed into a normalized signal.",
+        "type": "tick",
+        "compute": _compute_tick_spread,
+        "params": {
+            "window": {"label": "Window", "default": 60, "min": 5, "max": 300, "step": 1, "type": "int"},
+        },
+        "tune_ranges": {"window": (20, 120)},
+    },
+    "tick_microprice": {
+        "display_name": "Tick Microprice",
+        "description": "Volume-weighted mid-price deviation from reference price.",
+        "type": "tick",
+        "compute": _compute_tick_microprice,
+        "params": {},
+        "tune_ranges": {},
     },
     "phi_mft": {
         "display_name": "Phi-Bot (MFT)",
