@@ -19,9 +19,18 @@ def volume_price_interaction(
 
     The interaction combines (a) potential-product alignment, (b) gradient coupling,
     and (c) rolling correlation between field potentials.
+
+    Inputs are aligned on the intersection of indices before computation.
     """
-    price_potential = field_potential(price_series, kernel=kernel, sigma=sigma)
-    volume_potential = field_potential(volume_series, kernel=kernel, sigma=sigma)
+    aligned = pd.concat([price_series.astype(float), volume_series.astype(float)], axis=1, join="inner").dropna()
+    if aligned.empty:
+        raise ValueError("No overlapping non-NaN index points between price_series and volume_series")
+
+    price_aligned = aligned.iloc[:, 0]
+    volume_aligned = aligned.iloc[:, 1]
+
+    price_potential = field_potential(price_aligned, kernel=kernel, sigma=sigma)
+    volume_potential = field_potential(volume_aligned, kernel=kernel, sigma=sigma)
 
     price_gradient = field_gradient(price_potential)
     volume_gradient = field_gradient(volume_potential)
@@ -36,4 +45,4 @@ def volume_price_interaction(
         + correlation_term.fillna(0.0)
     ) / 3.0
 
-    return interaction.replace([np.inf, -np.inf], np.nan).fillna(0.0).rename("mft_price_volume_interaction")
+    return interaction.replace([np.inf, -np.inf], np.nan).fillna(0.0).rename("mft_price_volume_interaction").reindex(price_series.index)

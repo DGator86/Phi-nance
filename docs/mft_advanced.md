@@ -7,7 +7,7 @@ This document describes the advanced MFT indicators added on top of the baseline
 Price can be represented as an analytic signal:
 
 - Real part: original series.
-- Imaginary part: Hilbert transform (quadrature component).
+- Imaginary part: causal rolling-window Hilbert transform (quadrature component).
 
 From this representation we derive:
 
@@ -37,7 +37,7 @@ Current advanced indicator exposes **relative spectral band power** using band l
 
 - low: `[0.0, 0.2)`
 - mid: `[0.2, 0.5)`
-- high: `[0.5, 1.0)`
+- high: `[0.5, 1.0]` (includes Nyquist bin)
 
 This helps differentiate trend-like low-frequency regimes from noisy high-frequency regimes.
 
