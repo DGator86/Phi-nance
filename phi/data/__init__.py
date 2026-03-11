@@ -18,6 +18,8 @@ from .cache import (
     list_cached_datasets,
 )
 
+from .vendor_postgres import PostgresOptionsVendor
+
 setup_logging("phi")
 logger = get_logger(__name__)
 
@@ -30,5 +32,6 @@ __all__ = [
     "get_cached_dataset",
     "is_cache_stale",
     "list_cached_datasets",
+    "PostgresOptionsVendor",
     "logger",
 ]

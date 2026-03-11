@@ -45,6 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample-only", action="store_true", help="Skip API runs and write sample data only")
     parser.add_argument("--skip-sample", action="store_true", help="Do not write sample data fallback")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logs")
+    parser.add_argument("--include-options", action="store_true", help="Also fetch options data from PostgreSQL")
     return parser.parse_args()
 
 
@@ -183,6 +184,23 @@ def _prefetch_daily_cache(tickers: list[str], sample_only: bool) -> None:
             LOGGER.exception("Unexpected prefetch error for %s", ticker.upper())
 
 
+
+def _prefetch_options_cache(tickers: list[str], start: str, end: str) -> None:
+    """Best-effort PostgreSQL options prefetch used for local research caches."""
+    for ticker in tickers:
+        try:
+            df_op = fetch_and_cache(
+                vendor="postgres",
+                symbol=ticker.upper(),
+                timeframe="1m",
+                start=start,
+                end=end,
+            )
+            LOGGER.info("Fetched options for %s: %d rows", ticker.upper(), len(df_op))
+        except (DataFetchError, ValueError) as exc:
+            LOGGER.warning("Failed to fetch options for %s: %s", ticker.upper(), exc)
+
+
 def main() -> int:
     args = parse_args()
     try:
@@ -229,6 +247,11 @@ def main() -> int:
             _write_sample_bars(bars_root, args.tickers)
         if not short_has_data:
             _write_sample_short_volume(short_root)
+
+    if args.include_options:
+        end = pd.Timestamp.utcnow().date()
+        start = end - pd.Timedelta(days=30 * args.years)
+        _prefetch_options_cache(args.tickers, str(start), str(end))
 
     verified = _verify_data(bars_root, args.tickers, args.max_gap)
     return 0 if verified else 1

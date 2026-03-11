@@ -41,6 +41,7 @@ fredapi>=0.5.2
 thetadata>=0.9.11
 cachetools>=5.3.3
 sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
 financialmodelingprep>=0.0.2
 
 # Phase 4: genetic programming
