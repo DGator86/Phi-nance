@@ -34,3 +34,7 @@ fetch_and_cache(
 ## Backtesting adapter
 
 Use `phi.options.data_adapter.adapt_for_backtesting` (or `fetch_options_data`) to normalize raw options fields into a strategy-friendly frame with datetime index and expected columns.
+
+## Next step
+
+For a detailed path to full research/backtesting integration after vendor setup, see `docs/options_full_integration_guide.md`.
