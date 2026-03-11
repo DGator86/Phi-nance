@@ -44,6 +44,14 @@ class BaseOptionsStrategy(ABC):
     def generate_signals(self, current_date, options_df: pd.DataFrame, underlying_price: float) -> list[dict[str, Any]]:
         """Return order dictionaries that conform to the options backtest engine."""
 
+    def get_params(self) -> dict[str, Any]:
+        """Return strategy parameters for experiment tracking."""
+        return {
+            key: value
+            for key, value in self.__dict__.items()
+            if not key.startswith("_") and not callable(value)
+        }
+
     @staticmethod
     def _normalized(options_df: pd.DataFrame) -> pd.DataFrame:
         if options_df is None or options_df.empty:

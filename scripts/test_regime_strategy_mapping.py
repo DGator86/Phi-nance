@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     strategy = RegimeMappedStrategy(symbol=args.symbol)
-    portfolio = run_options_backtest(
+    result = run_options_backtest(
         strategy=strategy,
         symbols=[args.symbol],
         start_date=args.start,
@@ -51,8 +51,9 @@ def main() -> None:
         initial_cash=args.initial_cash,
     )
 
+    portfolio = result["portfolio"]
     closed = portfolio.trade_log
-    pnl = sum(trade.pnl for trade in closed)
+    pnl = sum(float(trade.get("pnl", 0.0)) for trade in closed)
     print(f"Closed trades: {len(closed)}")
     print(f"Realized PnL: {pnl:.2f}")
     print(f"Final cash: {portfolio.cash:.2f}")

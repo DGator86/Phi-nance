@@ -13,10 +13,12 @@ def main() -> None:
     initial_cash = 100_000
 
     strategy = BasicOptionsStrategy(symbol, threshold_delta=0.6)
-    portfolio = run_options_backtest(strategy, [symbol], start, end, initial_cash)
+    result = run_options_backtest(strategy, [symbol], start, end, initial_cash)
+    portfolio = result["portfolio"]
 
     open_positions = [p for p in portfolio.option_positions if p.exit_date is None]
     print(f"Final cash: {portfolio.cash:.2f}")
+    print(f"Metrics: {result['metrics']}")
     print(f"Open options: {len(open_positions)}")
 
 
