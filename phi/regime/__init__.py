@@ -10,6 +10,7 @@ import pandas as pd
 
 from phi.config import settings
 from phi.regime.base import RegimeDetector
+from phi.regime.custom import get_detailed_regime_for_symbol, get_iv_regime
 from phi.regime.models.clustering import ClusteringRegimeDetector
 from phi.regime.models.deep import DeepRegimeDetector
 from phi.regime.models.hmm import HMMRegimeDetector
@@ -138,6 +139,8 @@ __all__ = [
     "get_current_regime",
     "get_detailed_regime",
     "get_detailed_regime_probabilities",
+    "get_iv_regime",
+    "get_detailed_regime_for_symbol",
     "APPROVED_STRATEGIES",
     "REGIME_STRATEGY_MAP",
     "strategies_for_regime",
