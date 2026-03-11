@@ -10,6 +10,13 @@ from .data_adapter import adapt_for_backtesting, fetch_options_data
 from .market import fetch_options_market_data
 from .position import OptionPosition
 from .pricing import black_scholes_price, delta, gamma, theta, vega
+from .regime_strategy_map import (
+    APPROVED_STRATEGIES,
+    REGIME_STRATEGY_MAP,
+    is_approved_strategy,
+    map_regime_probabilities_to_strategies,
+    strategies_for_regime,
+)
 
 __all__ = [
     "OptionType",
@@ -25,4 +32,9 @@ __all__ = [
     "fetch_options_market_data",
     "adapt_for_backtesting",
     "fetch_options_data",
+    "APPROVED_STRATEGIES",
+    "REGIME_STRATEGY_MAP",
+    "strategies_for_regime",
+    "map_regime_probabilities_to_strategies",
+    "is_approved_strategy",
 ]
