@@ -93,3 +93,72 @@ def test_fetch_and_cache_wraps_fetch_failures(monkeypatch, tmp_path):
 
     with pytest.raises(DataFetchError, match="Failed to fetch data"):
         fetch_and_cache("yfinance", "SPY", "1D", "2024-01-01", "2024-01-05", force_refresh=True)
+
+
+def test_fetch_and_cache_uses_fallback_when_primary_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(cache_mod, "DataCache", lambda: DataCache(root=tmp_path))
+
+    def fake_get_fetcher(vendor):
+        if vendor == "yfinance":
+            return "yf"
+        if vendor == "alphavantage":
+            return "av"
+        raise ValueError(vendor)
+
+    def fake_fetch(fetcher, *_args, **_kwargs):
+        if fetcher == "yf":
+            raise RuntimeError("yfinance unavailable")
+        return _make_ohlcv(2)
+
+    monkeypatch.setattr(cache_mod, "_get_fetcher", fake_get_fetcher)
+    monkeypatch.setattr(cache_mod, "_fetch_with_retry", fake_fetch)
+    monkeypatch.setattr(cache_mod.time, "sleep", lambda *_args, **_kwargs: None)
+
+    out = fetch_and_cache(
+        "yfinance",
+        "SPY",
+        "1D",
+        "2024-01-01",
+        "2024-01-05",
+        force_refresh=True,
+        fallback_vendors=["alphavantage"],
+    )
+
+    assert len(out) == 2
+    meta = cache_mod.load_metadata("yfinance", "SPY", "1D", "2024-01-01", "2024-01-05")
+    assert meta is not None
+    assert meta["vendors_used"] == ["yfinance", "alphavantage"]
+
+
+def test_fetch_and_cache_fills_missing_dates_with_fallback(monkeypatch, tmp_path):
+    monkeypatch.setattr(cache_mod, "DataCache", lambda: DataCache(root=tmp_path))
+
+    primary = _make_ohlcv(5).drop(pd.Timestamp("2024-01-03"))
+    fallback = _make_ohlcv(1).set_index(pd.DatetimeIndex([pd.Timestamp("2024-01-03")]))
+
+    def fake_get_fetcher(vendor):
+        return vendor
+
+    def fake_fetch(fetcher, _symbol, start_s, _end_s):
+        if fetcher == "yfinance":
+            return primary
+        if fetcher == "alphavantage" and start_s == "2024-01-03":
+            return fallback
+        return pd.DataFrame()
+
+    monkeypatch.setattr(cache_mod, "_get_fetcher", fake_get_fetcher)
+    monkeypatch.setattr(cache_mod, "_fetch_with_retry", fake_fetch)
+    monkeypatch.setattr(cache_mod.time, "sleep", lambda *_args, **_kwargs: None)
+
+    out = fetch_and_cache(
+        "yfinance",
+        "SPY",
+        "1D",
+        "2024-01-01",
+        "2024-01-05",
+        force_refresh=True,
+        fallback_vendors=["alphavantage"],
+    )
+
+    assert pd.Timestamp("2024-01-03") in out.index
+    assert len(out) == 5
