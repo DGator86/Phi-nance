@@ -14,6 +14,10 @@ def adapt_for_backtesting(df: pd.DataFrame, timestamp_unit: str = "ms") -> pd.Da
         out["timestamp"] = pd.to_datetime(out["quote_time"], unit=timestamp_unit)
         out = out.set_index("timestamp").sort_index()
 
+    if not isinstance(out.index, pd.DatetimeIndex):
+        out.index = pd.to_datetime(out.index, errors="coerce")
+        out = out[~out.index.isna()].sort_index()
+
     mapping = {
         "last": "close",
         "total_volume": "volume",
@@ -25,6 +29,20 @@ def adapt_for_backtesting(df: pd.DataFrame, timestamp_unit: str = "ms") -> pd.Da
         out = out.rename(columns=rename)
 
     for col, default in {"close": 0.0, "volume": 0.0}.items():
+        if col not in out.columns:
+            out[col] = default
+
+    expected_option_fields = {
+        "delta": pd.NA,
+        "gamma": pd.NA,
+        "theta": pd.NA,
+        "vega": pd.NA,
+        "rho": pd.NA,
+        "open_interest": 0.0,
+        "strike": pd.NA,
+        "expiration": pd.NaT,
+    }
+    for col, default in expected_option_fields.items():
         if col not in out.columns:
             out[col] = default
 

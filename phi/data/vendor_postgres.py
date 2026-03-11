@@ -33,6 +33,13 @@ class PostgresOptionsVendor:
             raise ValueError("symbol must resolve to a non-empty table name")
         return cleaned
 
+    @staticmethod
+    def _safe_identifier(identifier: str, field_name: str) -> str:
+        cleaned = re.sub(r"[^a-zA-Z0-9_]", "", identifier)
+        if not cleaned:
+            raise ValueError(f"{field_name} must be a valid SQL identifier")
+        return cleaned
+
     def fetch(self, symbol: str, start: str, end: str, **kwargs) -> pd.DataFrame:
         """Fetch rows between start/end from the symbol-named table.
 
@@ -40,17 +47,17 @@ class PostgresOptionsVendor:
         Override via ``timestamp_column`` or ``timestamp_unit`` kwargs.
         """
         table_name = self._safe_table_name(symbol)
-        ts_col = kwargs.get("timestamp_column", "quote_time")
+        ts_col = self._safe_identifier(kwargs.get("timestamp_column", "quote_time"), "timestamp_column")
         ts_unit = kwargs.get("timestamp_unit", "ms")
 
         start_ts = int(pd.Timestamp(start).timestamp())
         end_ts = int(pd.Timestamp(end).timestamp())
-        if ts_unit == "ms":
-            start_ts *= 1000
-            end_ts *= 1000
-        elif ts_unit == "ns":
-            start_ts *= 1_000_000_000
-            end_ts *= 1_000_000_000
+        multipliers = {"s": 1, "ms": 1_000, "us": 1_000_000, "ns": 1_000_000_000}
+        if ts_unit not in multipliers:
+            raise ValueError("timestamp_unit must be one of: s, ms, us, ns")
+
+        start_ts *= multipliers[ts_unit]
+        end_ts *= multipliers[ts_unit]
 
         query = text(
             f"""
