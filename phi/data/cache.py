@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
@@ -305,15 +306,132 @@ def _get_fetcher(vendor: str) -> Any:
     return fetchers[vendor_key]
 
 
-def fetch_and_cache(
-    vendor: str,
+def _timeframe_to_pandas_freq(timeframe: str) -> str:
+    """Convert timeframe string into a pandas-compatible frequency."""
+    mapping = {
+        "1d": "B",
+        "1h": "h",
+        "4h": "4h",
+        "1m": "min",
+        "5m": "5min",
+        "15m": "15min",
+        "30m": "30min",
+    }
+    return mapping.get(timeframe.lower(), "B")
+
+
+def _find_contiguous_segments(index: pd.DatetimeIndex, freq: str) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Group missing timestamps into contiguous segments based on expected frequency."""
+    if index.empty:
+        return []
+
+    ordered = index.sort_values()
+    expected_step = pd.tseries.frequencies.to_offset(freq)
+    segments: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+
+    seg_start = ordered[0]
+    prev = ordered[0]
+    for current in ordered[1:]:
+        if current != (prev + expected_step):
+            segments.append((seg_start, prev))
+            seg_start = current
+        prev = current
+    segments.append((seg_start, prev))
+    return segments
+
+
+def _is_alphavantage_vendor(vendor: str) -> bool:
+    vendor_key = vendor.lower().replace("-", "_").replace(" ", "")
+    return vendor_key in {"alphavantage", "alpha_vantage"}
+
+
+def _fetch_with_fallback(
     symbol: str,
     timeframe: str,
-    start: str,
-    end: str,
+    start_s: str,
+    end_s: str,
+    primary_vendor: str,
+    fallback_vendors: list[str] | None,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Fetch OHLCV from a primary vendor and fill gaps with fallback vendors."""
+    attempted_vendors: list[str] = [primary_vendor]
+    fallback_vendors = fallback_vendors or []
+
+    primary_fetcher = _get_fetcher(primary_vendor)
+    try:
+        primary_df = _fetch_with_retry(primary_fetcher, symbol, start_s, end_s)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Primary fetch failed for %s/%s: %s", primary_vendor, symbol, exc)
+        primary_df = pd.DataFrame()
+
+    if primary_df.empty:
+        for fallback_vendor in fallback_vendors:
+            attempted_vendors.append(fallback_vendor)
+            fallback_fetcher = _get_fetcher(fallback_vendor)
+            try:
+                fallback_df = _fetch_with_retry(fallback_fetcher, symbol, start_s, end_s)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Fallback fetch failed for %s/%s: %s", fallback_vendor, symbol, exc)
+                if _is_alphavantage_vendor(fallback_vendor):
+                    time.sleep(12)
+                continue
+            if _is_alphavantage_vendor(fallback_vendor):
+                time.sleep(12)
+            if not fallback_df.empty:
+                return fallback_df, attempted_vendors
+        return primary_df, attempted_vendors
+
+    expected_index = pd.date_range(pd.Timestamp(start_s), pd.Timestamp(end_s), freq=_timeframe_to_pandas_freq(timeframe))
+    missing_index = expected_index.difference(primary_df.index)
+    if missing_index.empty or not fallback_vendors:
+        return primary_df, attempted_vendors
+
+    merged_frames = [primary_df]
+    for segment_start, segment_end in _find_contiguous_segments(missing_index, _timeframe_to_pandas_freq(timeframe)):
+        segment_start_s = segment_start.strftime("%Y-%m-%d")
+        segment_end_s = segment_end.strftime("%Y-%m-%d")
+        for fallback_vendor in fallback_vendors:
+            if fallback_vendor not in attempted_vendors:
+                attempted_vendors.append(fallback_vendor)
+            fallback_fetcher = _get_fetcher(fallback_vendor)
+            try:
+                fallback_df = _fetch_with_retry(fallback_fetcher, symbol, segment_start_s, segment_end_s)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Fallback vendor %s failed for %s segment %s-%s: %s",
+                    fallback_vendor,
+                    symbol,
+                    segment_start_s,
+                    segment_end_s,
+                    exc,
+                )
+                if _is_alphavantage_vendor(fallback_vendor):
+                    time.sleep(12)
+                continue
+            if _is_alphavantage_vendor(fallback_vendor):
+                time.sleep(12)
+            if fallback_df.empty:
+                continue
+            merged_frames.append(fallback_df)
+            break
+
+    merged = pd.concat(merged_frames, axis=0).sort_index()
+    merged = merged[~merged.index.duplicated(keep="last")]
+    return merged, attempted_vendors
+
+
+def fetch_and_cache(
+    vendor: str = "yfinance",
+    symbol: str = "",
+    timeframe: str = "1D",
+    start: str = "",
+    end: str = "",
     force_refresh: bool = False,
+    fallback_vendors: list[str] | None = None,
 ) -> pd.DataFrame:
     """Fetch OHLCV from vendor and persist a validated cache dataset."""
+    if not symbol:
+        raise ValueError("symbol is required")
     symbol_u = symbol.upper()
     start_s = str(start)[:10]
     end_s = str(end)[:10]
@@ -332,14 +450,23 @@ def fetch_and_cache(
             except CacheCorruptedError as exc:
                 logger.warning("Corrupted cache detected for %s/%s, forcing refresh: %s", vendor, symbol_u, exc)
 
-    fetcher = _get_fetcher(vendor)
     logger.info("Cache miss/stale; fetching %s %s %s %s-%s", vendor, symbol_u, timeframe, start_s, end_s)
 
     try:
-        fetched = _fetch_with_retry(fetcher, symbol_u, start_s, end_s)
+        fetched, vendors_used = _fetch_with_fallback(
+            symbol=symbol_u,
+            timeframe=timeframe,
+            start_s=start_s,
+            end_s=end_s,
+            primary_vendor=vendor,
+            fallback_vendors=fallback_vendors,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Failed to fetch data for %s/%s", vendor, symbol_u)
         raise DataFetchError(f"Failed to fetch data for {vendor}/{symbol_u} after retries: {exc}") from exc
+
+    if fetched.empty:
+        raise DataFetchError(f"Failed to fetch data for {vendor}/{symbol_u}: no rows returned")
 
     validated = _validate_ohlcv(fetched, symbol_u, vendor)
 
@@ -349,6 +476,7 @@ def fetch_and_cache(
         "timeframe": timeframe,
         "start": start_s,
         "end": end_s,
+        "vendors_used": vendors_used,
     }
     try:
         cache.save(validated, vendor, symbol_u, timeframe, start_s, end_s, metadata=metadata)
