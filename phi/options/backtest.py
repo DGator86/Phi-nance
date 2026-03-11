@@ -150,11 +150,11 @@ def _run_from_config(config: RunConfig, data: pd.DataFrame) -> Dict[str, Any]:
                 logger.error("Insufficient capital: cash=%s required=%s", cash, total_cost)
                 raise ValueError("insufficient capital to open options position")
             cash -= total_cost
-            position = OptionPosition(contract=contract, quantity=quantity, entry_cost=total_cost)
+            position = OptionPosition.from_contract(contract=contract, quantity=quantity, entry_cost=total_cost, entry_date=as_of)
             logger.info("Opened %s position: symbol=%s strike=%.2f expiry=%s qty=%d premium=%.4f", contract.option_type.value, symbol, contract.strike, contract.expiry, quantity, premium)
             trade_log.append({"date": as_of.isoformat(), "action": "buy", "price": premium, "value": total_cost})
 
-        position_value = position.mark_to_market(price, as_of, r, iv) if position else 0.0
+        position_value = position.mark_to_market(as_of=as_of, r=r, sigma=iv, underlying_price=float(price)) if position else 0.0
         portfolio_values.append(cash + position_value)
 
         if position and as_of >= contract.expiry:
@@ -165,7 +165,7 @@ def _run_from_config(config: RunConfig, data: pd.DataFrame) -> Dict[str, Any]:
             trade_log.append({"date": as_of.isoformat(), "action": "expiry", "price": intrinsic, "value": settlement})
             position = None
 
-    final_value = cash + (position.mark_to_market(float(close.iloc[-1]), _to_date(close.index[-1]), r, iv) if position else 0.0)
+    final_value = cash + (position.mark_to_market(as_of=_to_date(close.index[-1]), r=r, sigma=iv, underlying_price=float(close.iloc[-1])) if position else 0.0)
     metrics = _compute_metrics(portfolio_values, config.initial_capital)
     logger.info("Completed options backtest for %s: final_value=%.2f trades=%d", symbol, final_value, len(trade_log))
     return {
