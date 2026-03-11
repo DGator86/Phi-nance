@@ -45,6 +45,12 @@ class Settings:
     PHIAI_PARALLEL_JOBS: int = int(os.getenv("PHIAI_PARALLEL_JOBS", "1"))
     PHIAI_WALK_FORWARD_WINDOWS: int = int(os.getenv("PHIAI_WALK_FORWARD_WINDOWS", "3"))
 
+    POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
+    POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "optionsdata")
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "")
+
     BROKER_API_KEY: str = os.getenv("BROKER_API_KEY", "")
     BROKER_SECRET_KEY: str = os.getenv("BROKER_SECRET_KEY", "")
     BROKER_BASE_URL: str = os.getenv("BROKER_BASE_URL", "https://paper-api.alpaca.markets")
@@ -65,3 +71,8 @@ class Settings:
 
 
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """Return process-wide settings singleton."""
+    return settings

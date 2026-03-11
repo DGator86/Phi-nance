@@ -26,6 +26,7 @@ from tenacity import (
 )
 
 from phi.config import settings
+from phi.data.vendor_postgres import PostgresOptionsVendor
 from phi.exceptions import CacheCorruptedError, DataFetchError
 from phi.logging import get_logger
 
@@ -267,9 +268,9 @@ def is_cache_stale(cache_path: Path, timeframe: str, max_age_hours: float | None
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
-def _fetch_with_retry(fetcher: Any, symbol: str, start_s: str, end_s: str) -> pd.DataFrame:
+def _fetch_with_retry(fetcher: Any, symbol: str, start_s: str, end_s: str, **kwargs: Any) -> pd.DataFrame:
     """Invoke a fetcher with retry behavior for transient network failures."""
-    return fetcher(symbol, start_s, end_s)
+    return fetcher(symbol, start_s, end_s, **kwargs)
 
 
 # ---- OHLCV fetch + cache ----
@@ -286,6 +287,13 @@ def _fetch_from_yfinance(symbol: str, start_s: str, end_s: str) -> pd.DataFrame:
     return _normalize_ohlcv(df)
 
 
+
+
+def _fetch_from_postgres(symbol: str, start_s: str, end_s: str, **kwargs: Any) -> pd.DataFrame:
+    """Fetch options-style data from PostgreSQL ticker tables."""
+    vendor = PostgresOptionsVendor()
+    return vendor.fetch(symbol=symbol, start=start_s, end=end_s, **kwargs)
+
 def _fetch_from_alphavantage(symbol: str, start_s: str, end_s: str) -> pd.DataFrame:
     """Phase-1 AlphaVantage handler (delegates to yfinance fallback)."""
     logger.warning("AlphaVantage fetch fallback active for %s; using yfinance", symbol)
@@ -300,6 +308,8 @@ def _get_fetcher(vendor: str) -> Any:
         "yf": _fetch_from_yfinance,
         "alphavantage": _fetch_from_alphavantage,
         "alpha_vantage": _fetch_from_alphavantage,
+        "postgres": _fetch_from_postgres,
+        "postgresql": _fetch_from_postgres,
     }
     if vendor_key not in fetchers:
         raise ValueError(f"Unknown vendor: {vendor!r}. Supported: {', '.join(sorted(fetchers))}")
@@ -352,6 +362,7 @@ def _fetch_with_fallback(
     end_s: str,
     primary_vendor: str,
     fallback_vendors: list[str] | None,
+    **kwargs: Any,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Fetch OHLCV from a primary vendor and fill gaps with fallback vendors."""
     attempted_vendors: list[str] = [primary_vendor]
@@ -359,7 +370,7 @@ def _fetch_with_fallback(
 
     primary_fetcher = _get_fetcher(primary_vendor)
     try:
-        primary_df = _fetch_with_retry(primary_fetcher, symbol, start_s, end_s)
+        primary_df = _fetch_with_retry(primary_fetcher, symbol, start_s, end_s, **kwargs)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Primary fetch failed for %s/%s: %s", primary_vendor, symbol, exc)
         primary_df = pd.DataFrame()
@@ -369,7 +380,7 @@ def _fetch_with_fallback(
             attempted_vendors.append(fallback_vendor)
             fallback_fetcher = _get_fetcher(fallback_vendor)
             try:
-                fallback_df = _fetch_with_retry(fallback_fetcher, symbol, start_s, end_s)
+                fallback_df = _fetch_with_retry(fallback_fetcher, symbol, start_s, end_s, **kwargs)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Fallback fetch failed for %s/%s: %s", fallback_vendor, symbol, exc)
                 if _is_alphavantage_vendor(fallback_vendor):
@@ -395,7 +406,7 @@ def _fetch_with_fallback(
                 attempted_vendors.append(fallback_vendor)
             fallback_fetcher = _get_fetcher(fallback_vendor)
             try:
-                fallback_df = _fetch_with_retry(fallback_fetcher, symbol, segment_start_s, segment_end_s)
+                fallback_df = _fetch_with_retry(fallback_fetcher, symbol, segment_start_s, segment_end_s, **kwargs)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Fallback vendor %s failed for %s segment %s-%s: %s",
@@ -428,6 +439,7 @@ def fetch_and_cache(
     end: str = "",
     force_refresh: bool = False,
     fallback_vendors: list[str] | None = None,
+    **kwargs: Any,
 ) -> pd.DataFrame:
     """Fetch OHLCV from vendor and persist a validated cache dataset."""
     if not symbol:
@@ -460,6 +472,7 @@ def fetch_and_cache(
             end_s=end_s,
             primary_vendor=vendor,
             fallback_vendors=fallback_vendors,
+            **kwargs,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Failed to fetch data for %s/%s", vendor, symbol_u)
@@ -468,7 +481,11 @@ def fetch_and_cache(
     if fetched.empty:
         raise DataFetchError(f"Failed to fetch data for {vendor}/{symbol_u}: no rows returned")
 
-    validated = _validate_ohlcv(fetched, symbol_u, vendor)
+    vendor_key = vendor.lower().replace("-", "_").replace(" ", "")
+    if vendor_key in {"postgres", "postgresql"}:
+        validated = fetched
+    else:
+        validated = _validate_ohlcv(fetched, symbol_u, vendor)
 
     metadata = {
         "vendor": vendor,

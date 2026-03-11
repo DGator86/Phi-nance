@@ -10,6 +10,7 @@ Phi-nance is a quantitative trading research platform for building, blending, an
 
 - Regime-aware MFT engine and strategy research workflows.
 - Multi-vendor data ingestion and cache-backed data spine.
+- PostgreSQL options vendor support for intraday options research datasets.
 - Indicator catalog + configurable signal blending (weighted, voting, regime-weighted).
 - PhiAI optimization workflows for parameter tuning and walk-forward validation.
 - Equity and options backtesting paths.
@@ -140,3 +141,16 @@ Please follow the standards and workflow in [`CONTRIBUTING.md`](CONTRIBUTING.md)
 ## License
 
 MIT. See [`LICENSE`](LICENSE).
+
+
+```python
+from phi.options.data_adapter import fetch_options_data
+
+options_df = fetch_options_data(
+    symbol="SPY",
+    start="2022-01-10",
+    end="2022-01-15",
+)
+```
+
+See `docs/postgres-options-vendor.md` for setup details.
