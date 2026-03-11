@@ -13,6 +13,19 @@ from phi.regime.base import RegimeDetector
 from phi.regime.models.clustering import ClusteringRegimeDetector
 from phi.regime.models.deep import DeepRegimeDetector
 from phi.regime.models.hmm import HMMRegimeDetector
+from phi.regime.regime_definitions import (
+    compose_detailed_regime,
+    detailed_labels_for_probabilities,
+    infer_base_regime_from_prices,
+    infer_volatility_regime,
+    normalise_regime_probabilities,
+)
+from phi.regime.strategy_mapping import (
+    APPROVED_STRATEGIES,
+    REGIME_STRATEGY_MAP,
+    map_regime_probabilities_to_strategies,
+    strategies_for_regime,
+)
 from phi.regime.train import train_regime_detector
 from phi.regime.utils import extract_features
 
@@ -121,4 +134,56 @@ __all__ = [
     "load_detector",
     "predict_regimes",
     "create_detector_from_params",
+    "get_regime_probabilities",
+    "get_current_regime",
+    "get_detailed_regime",
+    "get_detailed_regime_probabilities",
+    "APPROVED_STRATEGIES",
+    "REGIME_STRATEGY_MAP",
+    "strategies_for_regime",
+    "map_regime_probabilities_to_strategies",
 ]
+
+
+def get_regime_probabilities(detector: RegimeDetector, ohlcv: pd.DataFrame) -> dict[str, float]:
+    """Return normalized base regime probabilities from detector predictions."""
+    predicted = detector.predict(ohlcv)
+    if predicted.empty:
+        return {"BULL": 0.0, "BEAR": 0.0, "RANGING": 0.0}
+    probs = (predicted.value_counts(normalize=True)).to_dict()
+    return normalise_regime_probabilities({str(k): float(v) for k, v in probs.items()})
+
+
+def get_current_regime(detector: RegimeDetector, ohlcv: pd.DataFrame) -> str:
+    """Return the latest normalized base regime label for provided bars."""
+    predicted = detector.predict(ohlcv)
+    if predicted.empty:
+        return infer_base_regime_from_prices(ohlcv)
+    normalized = normalise_regime_probabilities({str(predicted.iloc[-1]): 1.0})
+    return max(normalized.items(), key=lambda item: item[1])[0]
+
+
+def get_detailed_regime(
+    ohlcv: pd.DataFrame,
+    detector: RegimeDetector | None = None,
+    vol_window: int = 20,
+) -> str:
+    """Return a composite trend+volatility regime label, e.g. ``BULL_HIGH_VOL``."""
+    base_regime = infer_base_regime_from_prices(ohlcv)
+    if detector is not None:
+        predicted = detector.predict(ohlcv)
+        if not predicted.empty:
+            base_regime = str(predicted.iloc[-1])
+    vol_regime = infer_volatility_regime(ohlcv, window=vol_window)
+    return compose_detailed_regime(base_regime=base_regime, volatility_regime=vol_regime).label
+
+
+def get_detailed_regime_probabilities(
+    detector: RegimeDetector,
+    ohlcv: pd.DataFrame,
+    vol_window: int = 20,
+) -> dict[str, float]:
+    """Return detailed regime probabilities with current volatility qualifier."""
+    base_probs = get_regime_probabilities(detector=detector, ohlcv=ohlcv)
+    vol_regime = infer_volatility_regime(ohlcv, window=vol_window)
+    return detailed_labels_for_probabilities(base_probs=base_probs, vol_regime=vol_regime)
