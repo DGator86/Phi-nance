@@ -13,6 +13,8 @@ class Portfolio:
         self.cash = float(initial_cash)
         self.equity_positions: Dict[str, dict] = {}
         self.option_positions: list[OptionPosition] = []
+        self.equity_history: list[tuple[date, float]] = []
+        self.trade_log: list[dict] = []
 
     def open_option(self, position: OptionPosition) -> None:
         """Open a new options position."""
@@ -23,6 +25,28 @@ class Portfolio:
         """Close an existing options position."""
         position.close(exit_price, exit_date)
         self.cash += position.quantity * exit_price * position.multiplier
+        self.trade_log.append(
+            {
+                "symbol": position.symbol,
+                "option_type": position.option_type,
+                "strike": position.strike,
+                "expiration": position.expiration,
+                "entry_date": position.entry_date,
+                "exit_date": exit_date,
+                "entry_price": position.entry_price,
+                "exit_price": exit_price,
+                "quantity": position.quantity,
+                "pnl": (exit_price - position.entry_price) * position.quantity * position.multiplier,
+            }
+        )
+
+    def snapshot(self, current_date: date, underlying_price: float, option_prices: Dict[str, float]) -> float:
+        """Record current total equity (cash + options MTM)."""
+        _ = underlying_price
+        options_value = self.mark_to_market_options(current_date, option_prices)
+        total_equity = self.cash + options_value
+        self.equity_history.append((current_date, total_equity))
+        return total_equity
 
     def mark_to_market_options(self, current_date: date, prices: Dict[str, float]) -> float:
         """Mark all open options positions to market and return total option value."""

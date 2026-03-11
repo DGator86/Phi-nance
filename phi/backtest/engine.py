@@ -6,12 +6,15 @@ from abc import ABC, abstractmethod
 from datetime import date, timedelta
 from typing import Any, Dict
 
+import numpy as np
 import pandas as pd
 
+from phi.learning.results_db import ResultsDB
 from phi.logging import get_logger
 from phi.options.data_adapter import fetch_options_data
 from phi.options.portfolio import Portfolio
 from phi.options.position import OptionPosition
+from phi.regime import get_detailed_regime_for_symbol
 
 from phi.run_config import RunConfig
 
@@ -41,8 +44,17 @@ def run_portfolio_backtest_engine(config: RunConfig, data: dict[str, pd.DataFram
     )
 
 
-def run_options_backtest(strategy, symbols, start_date, end_date, initial_cash, vendor: str = "yfinance") -> Portfolio:
-    """Run a simple date-by-date options backtest loop."""
+def run_options_backtest(
+    strategy,
+    symbols,
+    start_date,
+    end_date,
+    initial_cash,
+    vendor: str = "yfinance",
+    record_results: bool = True,
+    db_path: str = "backtest_results.db",
+) -> dict[str, Any]:
+    """Run a simple date-by-date options backtest loop and return portfolio + metrics."""
     from phi.data.fetchers import fetch
 
     if not symbols:
@@ -57,6 +69,8 @@ def run_options_backtest(strategy, symbols, start_date, end_date, initial_cash, 
     }
 
     portfolio = Portfolio(initial_cash)
+    regime_sequence: list[str] = []
+
     current_date = start
     while current_date <= end:
         underlying_prices: dict[str, float] = {}
@@ -72,17 +86,22 @@ def run_options_backtest(strategy, symbols, start_date, end_date, initial_cash, 
         if "optiontype" in options_df.columns and "option_type" not in options_df.columns:
             options_df = options_df.rename(columns={"optiontype": "option_type"})
 
-        price_dict = {}
+        price_dict: dict[str, float] = {}
         if not options_df.empty:
             for _, row in options_df.iterrows():
                 mid = float((row.get("bid", 0.0) + row.get("ask", 0.0)) / 2)
                 key = f"{row.get('symbol', symbols[0])}_{row['strike']}_{pd.Timestamp(row['expiration']).date()}_{str(row['option_type']).upper()}"
                 price_dict[key] = mid
 
+        regime = get_detailed_regime_for_symbol(symbols[0], as_of=current_date)
+        regime_sequence.append(regime)
+
         portfolio.mark_to_market_options(current_date, price_dict)
         portfolio.settle_expirations(current_date, underlying_prices)
 
         primary_underlying = underlying_prices.get(symbols[0], 0.0)
+        portfolio.snapshot(current_date, primary_underlying, price_dict)
+
         signals = strategy.generate_signals(current_date, options_df, primary_underlying)
 
         for signal in signals:
@@ -117,4 +136,74 @@ def run_options_backtest(strategy, symbols, start_date, end_date, initial_cash, 
 
         current_date += timedelta(days=1)
 
-    return portfolio
+    metrics = compute_backtest_metrics(portfolio, initial_cash)
+    result = {
+        "portfolio": portfolio,
+        "metrics": metrics,
+        "regime_sequence": regime_sequence,
+    }
+
+    if record_results:
+        db = ResultsDB(db_path)
+        params = strategy.get_params() if hasattr(strategy, "get_params") else {}
+        db.insert_run(
+            {
+                "timestamp": pd.Timestamp.now().isoformat(),
+                "symbol": symbols[0],
+                "strategy_name": strategy.__class__.__name__,
+                "parameters": params,
+                "regime_sequence": regime_sequence,
+                "start_date": str(start),
+                "end_date": str(end),
+                "initial_cash": float(initial_cash),
+                "final_cash": float(portfolio.cash),
+                "total_return": float(metrics["total_return"]),
+                "sharpe_ratio": float(metrics["sharpe_ratio"]),
+                "max_drawdown": float(metrics["max_drawdown"]),
+                "win_rate": float(metrics["win_rate"]),
+                "num_trades": len(portfolio.trade_log),
+            }
+        )
+
+    return result
+
+
+def compute_backtest_metrics(portfolio: Portfolio, initial_cash: float) -> dict[str, float]:
+    """Compute performance metrics from portfolio.equity_history and trade_log."""
+    if not portfolio.equity_history:
+        return {
+            "total_return": 0.0,
+            "sharpe_ratio": 0.0,
+            "max_drawdown": 0.0,
+            "win_rate": 0.0,
+        }
+
+    df = pd.DataFrame(portfolio.equity_history, columns=["date", "equity"])
+    df["return"] = df["equity"].pct_change().fillna(0.0)
+
+    total_return = (float(df["equity"].iloc[-1]) / float(initial_cash)) - 1.0
+
+    std = float(df["return"].std())
+    if len(df) > 1 and std > 0:
+        sharpe = float(df["return"].mean() / std * np.sqrt(252))
+    else:
+        sharpe = 0.0
+
+    cumulative = (1.0 + df["return"]).cumprod()
+    running_max = cumulative.cummax()
+    drawdown = (cumulative - running_max) / running_max
+    max_drawdown = float(drawdown.min())
+
+    trades = portfolio.trade_log
+    if trades:
+        profitable = [trade for trade in trades if float(trade.get("pnl", 0.0)) > 0]
+        win_rate = len(profitable) / len(trades)
+    else:
+        win_rate = 0.0
+
+    return {
+        "total_return": total_return,
+        "sharpe_ratio": sharpe,
+        "max_drawdown": max_drawdown,
+        "win_rate": float(win_rate),
+    }
