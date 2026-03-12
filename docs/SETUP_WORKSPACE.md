@@ -12,7 +12,7 @@ pip install pydantic pyarrow pandas numpy httpx python-dotenv
 ## Step 2: Run the app
 
 ```bash
-python3 -m streamlit run app.py
+python3 -m streamlit run legacy/app.py
 ```
 
 **Important:** Use `python3 -m streamlit` instead of just `streamlit` (the command might not be in PATH).
@@ -31,7 +31,7 @@ The app tries to import from `phinence.gui.runner`. If that fails, it will use a
 If `dashboard.py` is already a Streamlit app, you can run:
 
 ```bash
-streamlit run dashboard.py
+streamlit run legacy/dashboard.py
 ```
 
 And we can adapt that to add the Strategy Lab features.

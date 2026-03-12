@@ -6,15 +6,15 @@ Streamlit apps **must** be started with the `streamlit run` command. If you run 
 
 **Correct command:**
 ```bash
-python3 -m streamlit run app.py
+python3 -m streamlit run legacy/app.py
 ```
 or
 ```bash
-python3 -m streamlit run app_v2.py
+python3 -m streamlit run legacy/app_v2.py
 ```
 or
 ```bash
-python3 -m streamlit run dashboard.py
+python3 -m streamlit run legacy/dashboard.py
 ```
 
 ## If `app_v2.py` is missing
@@ -29,15 +29,15 @@ git pull origin MAIN
 
 Then run:
 ```bash
-python3 -m streamlit run app_v2.py
+python3 -m streamlit run legacy/app_v2.py
 ```
 
 If `app_v2.py` still doesn’t exist, use one of the apps that are present:
 
 ```bash
-python3 -m streamlit run app.py
+python3 -m streamlit run legacy/app.py
 # or
-python3 -m streamlit run dashboard.py
+python3 -m streamlit run legacy/dashboard.py
 ```
 
 ## One-command launcher

@@ -15,7 +15,7 @@ python3 -m streamlit run scripts/app.py
 
 Or if `app.py` is in root:
 ```bash
-python3 -m streamlit run app.py
+python3 -m streamlit run legacy/app.py
 ```
 
 This opens a web UI where you can:
@@ -34,7 +34,7 @@ pip install lumibot streamlit
 
 **Run:**
 ```bash
-python3 -m streamlit run dashboard.py
+python3 -m streamlit run legacy/dashboard.py
 ```
 
 This is the original Lumibot dashboard with 10+ strategies and prediction accuracy metrics.

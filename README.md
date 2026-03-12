@@ -42,10 +42,10 @@ python scripts/setup_data_spine.py --tickers SPY QQQ --years 2
 streamlit run app_streamlit/main.py --server.headless true
 ```
 
-Alternative entry points:
+Useful commands:
 
 ```bash
-# Legacy dashboard
+# Streamlit workbench
 streamlit run app_streamlit/main.py --server.headless true
 
 # Engine health validation
@@ -67,8 +67,8 @@ Phi-nance/
 ├── scripts/               # Operational CLI scripts (fetching, backtests, setup)
 ├── tests/                 # Unit and integration-style tests
 ├── docs/                  # End-user and contributor documentation
-├── Architecture.md        # System architecture and module map
-└── CONTRIBUTING.md        # Contributor workflow and standards
+├── docs/Architecture.md   # System architecture and module map
+└── docs/CONTRIBUTING.md   # Contributor workflow and standards
 ```
 
 ## Configuration
@@ -125,8 +125,8 @@ optimized, explanation = run_phiai_optimization(
 
 ## Documentation
 
-- Architecture: [`Architecture.md`](Architecture.md)
-- Contributor guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Architecture: [`docs/Architecture.md`](docs/Architecture.md)
+- Contributor guide: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)
 - Full docs index: [`docs/quickstart.md`](docs/quickstart.md)
 - External options data landscape: [`docs/external-options-data-landscape.md`](docs/external-options-data-landscape.md)
 
@@ -136,7 +136,7 @@ optimized, explanation = run_phiai_optimization(
 
 ## Contributing
 
-Please follow the standards and workflow in [`CONTRIBUTING.md`](CONTRIBUTING.md), including logging, validation, exception usage, typing, testing, and docs updates for user-facing behavior changes.
+Please follow the standards and workflow in [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md), including logging, validation, exception usage, typing, testing, and docs updates for user-facing behavior changes.
 
 ## License
 

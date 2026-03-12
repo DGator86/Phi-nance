@@ -29,7 +29,7 @@ This should complete and bring in **app_v2.py** and the rest of the repo.
 ## Step 3: Run Strategy Lab v2
 
 ```bash
-python3 -m streamlit run app_v2.py
+python3 -m streamlit run legacy/app_v2.py
 ```
 
 ---
@@ -53,8 +53,8 @@ git pull origin Main
 
 ## After a successful pull
 
-- **Strategy Lab v2:** `python3 -m streamlit run app_v2.py`
-- **Strategy Lab (simple):** `python3 -m streamlit run app.py`
-- **Dashboard:** `python3 -m streamlit run dashboard.py`
+- **Strategy Lab v2:** `python3 -m streamlit run legacy/app_v2.py`
+- **Strategy Lab (simple):** `python3 -m streamlit run legacy/app.py`
+- **Dashboard:** `python3 -m streamlit run legacy/dashboard.py`
 
 Always use `python3 -m streamlit run <file>`, not `python app.py`.

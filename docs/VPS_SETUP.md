@@ -47,7 +47,7 @@ We'll use `screen` so the dashboard stays alive after you close your terminal.
 ```bash
 screen -S phi-nance
 source venv/bin/activate
-streamlit run dashboard.py
+streamlit run legacy/dashboard.py
 ```
 
 **To disconnect (keeping it running):**

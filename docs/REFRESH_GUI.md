@@ -47,7 +47,7 @@ In the **left sidebar**, you should now see:
 
 If `scripts/app.py` isn't working, try the standalone version:
 ```bash
-python3 -m streamlit run app.py
+python3 -m streamlit run legacy/app.py
 ```
 
 This version has the same combined strategies feature but doesn't require the phinence modules.
