@@ -44,7 +44,7 @@ Use this checklist to deploy the Streamlit dashboard for beta access.
    ```bash
    screen -S phi-nance
    source venv/bin/activate
-   streamlit run dashboard.py
+   streamlit run legacy/dashboard.py
    ```
 
    Detach: **Ctrl+A** then **D**.

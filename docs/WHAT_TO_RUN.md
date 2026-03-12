@@ -44,7 +44,7 @@ Local URL: http://localhost:8501
 
 ### Lumibot Dashboard (Prediction Accuracy)
 ```bash
-python3 -m streamlit run dashboard.py
+python3 -m streamlit run legacy/dashboard.py
 ```
 Has 10+ strategies (Momentum, RSI, Bollinger, MACD, Wyckoff, etc.) and measures **prediction accuracy** instead of P&L.
 

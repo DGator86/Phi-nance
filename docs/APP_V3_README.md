@@ -73,7 +73,7 @@ A visual drag-and-drop interface for building trading strategy workflows. Drag s
 ## Running
 
 ```bash
-streamlit run app_v3.py
+streamlit run legacy/app_v3.py
 ```
 
 ## Technical Details

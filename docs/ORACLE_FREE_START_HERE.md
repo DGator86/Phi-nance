@@ -169,7 +169,7 @@ nano .env
 ```bash
 screen -S phi-nance
 source venv/bin/activate
-streamlit run dashboard.py
+streamlit run legacy/dashboard.py
 ```
 
 - When you see “You can now view your Streamlit app”, detach so it keeps running: press **Ctrl+A**, then **D**.

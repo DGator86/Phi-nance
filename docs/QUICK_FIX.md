@@ -24,12 +24,12 @@ http://127.0.0.1:8501
 taskkill /F /IM python.exe
 
 # Start fresh
-python3 -m streamlit run app.py
+python3 -m streamlit run legacy/app.py
 ```
 
 ### Option 2: Use dashboard.py (Lumibot dashboard)
 ```bash
-python3 -m streamlit run dashboard.py --server.port 8502
+python3 -m streamlit run legacy/dashboard.py --server.port 8502
 ```
 Then open: `http://localhost:8502`
 

@@ -93,7 +93,7 @@ nano .env
 ```bash
 screen -S phi-nance
 source venv/bin/activate
-streamlit run dashboard.py
+streamlit run legacy/dashboard.py
 ```
 
 - You should see “You can now view your Streamlit app in your browser” and a URL.
@@ -144,7 +144,7 @@ python do_control.py power_on  # power on
 | Reattach to dashboard process | `ssh root@165.245.142.100` → `screen -r phi-nance` |
 | Reboot VPS from PC | `python do_control.py reboot` |
 | Check VPS status from PC | `python do_control.py status` |
-| Update app on VPS | SSH in → `cd Phi-nance` → `git pull` → reattach screen, restart Streamlit (Ctrl+C, then `streamlit run dashboard.py`) |
+| Update app on VPS | SSH in → `cd Phi-nance` → `git pull` → reattach screen, restart Streamlit (Ctrl+C, then `streamlit run legacy/dashboard.py`) |
 
 ---
 

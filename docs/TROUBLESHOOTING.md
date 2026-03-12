@@ -11,20 +11,20 @@ Local URL: http://localhost:8501
 
 ### 2. Try the standalone app (no dependencies on phinence modules)
 ```bash
-python3 -m streamlit run app.py
+python3 -m streamlit run legacy/app.py
 ```
 
 ### 3. Check for port conflicts
 If port 8501 is busy, use a different port:
 ```bash
-python3 -m streamlit run app.py --server.port 8502
+python3 -m streamlit run legacy/app.py --server.port 8502
 ```
 
 ### 4. Check Python path
 Make sure you're in the project root:
 ```bash
 cd "c:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance"
-python3 -m streamlit run app.py
+python3 -m streamlit run legacy/app.py
 ```
 
 ### 5. Install missing dependencies
@@ -35,13 +35,13 @@ pip install streamlit backtesting openai pandas numpy
 ### 6. Check for errors
 Run with verbose output:
 ```bash
-python3 -m streamlit run app.py --logger.level=debug
+python3 -m streamlit run legacy/app.py --logger.level=debug
 ```
 
 ### 7. Try dashboard.py instead
 If app.py doesn't work, try the Lumibot dashboard:
 ```bash
-python3 -m streamlit run dashboard.py
+python3 -m streamlit run legacy/dashboard.py
 ```
 
 ## Common Errors:
@@ -56,7 +56,7 @@ python3 -m streamlit run dashboard.py
 → Kill the process using port 8501 or use `--server.port 8502`
 
 **"FileNotFoundError: scripts/app.py"**
-→ Use `app.py` in root instead: `python3 -m streamlit run app.py`
+→ Use `app.py` in root instead: `python3 -m streamlit run legacy/app.py`
 
 **Import errors from phinence modules**
 → Use the standalone `app.py` which doesn't require phinence modules

@@ -17,7 +17,7 @@ Look for:
 
 **Option A:** If `app.py` exists in root:
 ```bash
-python3 -m streamlit run app.py
+python3 -m streamlit run legacy/app.py
 ```
 
 **Option B:** If `scripts/app.py` exists:
@@ -27,7 +27,7 @@ python3 -m streamlit run scripts/app.py
 
 **Option C:** If only `dashboard.py` exists:
 ```bash
-python3 -m streamlit run dashboard.py
+python3 -m streamlit run legacy/dashboard.py
 ```
 
 ## 3. If none of those work
