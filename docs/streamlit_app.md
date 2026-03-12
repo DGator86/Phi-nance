@@ -3,7 +3,7 @@
 ## Entry points
 
 - `app_streamlit/main.py` (primary modular app)
-- `dashboard.py` (legacy app)
+- `legacy/dashboard.py` (legacy app)
 
 ## Design
 

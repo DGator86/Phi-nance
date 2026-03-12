@@ -9,8 +9,8 @@ Primary layers:
 1. **Data layer** (`phi.data`, `data/providers`, `phinance/data`): vendor adapters, cache, and staleness-aware retrieval.
 2. **Strategy and signal layer** (`strategies`, `phi.indicators`, `regime_engine`): indicator generation, MFT regime features, and strategy outputs.
 3. **Blending/optimization layer** (`phi.blending`, `phi.phiai`, `phinance/optimization`): weighted/voting/regime-aware blending and auto-tuning workflows.
-4. **Backtesting layer** (`run_backtest.py`, `scripts/run_backtest.py`, `phi.options.backtest`): equities/options simulation and result emission.
-5. **Presentation layer** (`app_streamlit`, `dashboard.py`): modular Streamlit workbench and legacy dashboard.
+4. **Backtesting layer** (`scripts/run_backtest.py`, `phi.options.backtest`): equities/options simulation and result emission.
+5. **Presentation layer** (`app_streamlit`, `legacy/dashboard.py`): modular Streamlit workbench and legacy dashboard.
 
 ## Module Map
 

@@ -16,7 +16,7 @@ Production-quality quant trading dashboard with:
   - Tablet: hybrid 2-3 column layout
 
 Run:
-    python -m streamlit run dashboard.py
+    python -m streamlit run legacy/dashboard.py
 """
 
 import copy, io, os, subprocess, sys, time, json, hashlib, warnings
@@ -45,7 +45,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import yaml
 
-from engine_health import run_engine_health_check
+from scripts.engine_health import run_engine_health_check
 from app_streamlit.device_detect import detect_device, get_device
 
 # ---------------------------------------------------------------------------

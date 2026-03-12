@@ -27,7 +27,7 @@ from typing import Any, Dict, List
 # Ensure project root is on path for regime_engine import
 if __name__ == "__main__":
     import pathlib
-    _root = pathlib.Path(__file__).resolve().parent
+    _root = pathlib.Path(__file__).resolve().parent.parent
     if str(_root) not in sys.path:
         sys.path.insert(0, str(_root))
 

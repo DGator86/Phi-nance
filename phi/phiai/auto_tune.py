@@ -12,6 +12,7 @@ import numpy as np
 import optuna
 import pandas as pd
 from optuna.samplers import TPESampler
+from optuna.samplers import NSGAIISampler, RandomSampler
 
 from phi.config import settings
 from phi.exceptions import OptimizationError
@@ -21,6 +22,57 @@ from phi.run_config import RunConfig
 logger = get_logger(__name__)
 
 _MAXIMIZE_METRICS = {"sharpe", "roi", "cagr", "win_rate", "accuracy"}
+
+
+def tune_parameter_space(
+    objective_func,
+    param_space: dict[str, tuple[Any, Any] | list[Any]],
+    method: str = "bayesian",
+    n_trials: int = 50,
+    direction: str = "minimize",
+    seed: int = 42,
+) -> tuple[dict[str, Any], float]:
+    """Generic PhiAI optimization helper for arbitrary parameter spaces.
+
+    ``param_space`` supports either:
+      - (min, max) tuples for numeric parameters
+      - list values for categorical parameters
+    """
+
+    if not param_space:
+        raise OptimizationError("param_space must not be empty")
+
+    method_key = str(method).strip().lower()
+    if method_key in {"bayesian", "tpe"}:
+        sampler = TPESampler(seed=seed)
+    elif method_key in {"genetic", "nsga2"}:
+        sampler = NSGAIISampler(seed=seed)
+    elif method_key in {"random", "rand"}:
+        sampler = RandomSampler(seed=seed)
+    else:
+        raise OptimizationError(f"Unsupported optimization method: {method}")
+
+    def _suggest(trial: optuna.Trial) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        for name, spec in param_space.items():
+            if isinstance(spec, tuple) and len(spec) == 2:
+                low, high = spec
+                if isinstance(low, int) and isinstance(high, int):
+                    params[name] = trial.suggest_int(name, int(low), int(high))
+                else:
+                    params[name] = trial.suggest_float(name, float(low), float(high))
+            elif isinstance(spec, list) and spec:
+                params[name] = trial.suggest_categorical(name, spec)
+            else:
+                raise OptimizationError(f"Invalid search space for '{name}': {spec!r}")
+        return params
+
+    def wrapped_objective(trial: optuna.Trial) -> float:
+        return float(objective_func(_suggest(trial)))
+
+    study = optuna.create_study(direction=direction, sampler=sampler)
+    study.optimize(wrapped_objective, n_trials=max(1, int(n_trials)))
+    return dict(study.best_params), float(study.best_value)
 
 _PARAM_GRIDS_DAILY: dict[str, dict[str, list[Any]]] = {
     "RSI": {"rsi_period": [7, 14, 21], "oversold": [25, 30, 35], "overbought": [65, 70, 75]},
