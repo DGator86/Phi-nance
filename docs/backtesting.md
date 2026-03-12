@@ -2,7 +2,7 @@
 
 ## Backtest paths
 
-- CLI: `run_backtest.py`
+- CLI: `scripts/run_backtest.py`
 - Script module: `scripts/run_backtest.py`
 - Streamlit-integrated execution from `app_streamlit`
 - Options-specific flows under `phi/options/backtest.py`

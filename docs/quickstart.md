@@ -19,7 +19,7 @@ python scripts/setup_data_spine.py --tickers SPY QQQ --years 2
 ## 3. Validate engine health
 
 ```bash
-python engine_health.py
+python scripts/engine_health.py
 ```
 
 ## 4. Launch Streamlit workbench
@@ -31,7 +31,7 @@ streamlit run app_streamlit/main.py --server.headless true
 ## 5. Run a CLI backtest
 
 ```bash
-python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budget 100000
+python scripts/run_backtest.py --symbol SPY --start 2020-01-01 --end 2024-12-31 --capital 100000
 ```
 
 ## 6. Inspect outputs

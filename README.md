@@ -46,13 +46,13 @@ Alternative entry points:
 
 ```bash
 # Legacy dashboard
-streamlit run dashboard.py --server.headless true
+streamlit run app_streamlit/main.py --server.headless true
 
 # Engine health validation
-python engine_health.py
+python scripts/engine_health.py
 
 # CLI backtest
-python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budget 100000
+python scripts/run_backtest.py --symbol SPY --start 2020-01-01 --end 2024-12-31 --capital 100000
 ```
 
 ## Project Layout

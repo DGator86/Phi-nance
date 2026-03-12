@@ -9,3 +9,8 @@ data_cache/
 runs/
 logs/
 *.parquet
+
+# Backtest outputs
+backtest_output*.txt
+*.csv
+!SPY_minute.csv   # keep this test data
