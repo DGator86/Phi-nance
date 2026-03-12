@@ -16,11 +16,8 @@ from typing import Any
 
 import numpy as np
 import yaml
-from skopt import gp_minimize
-from skopt.space import Integer, Real
-from skopt.utils import use_named_args
-
 from phi.backtest.engine import run_options_backtest
+from phi.phiai.auto_tune import tune_parameter_space
 
 DEFAULT_UNIVERSE_PATH = "configs/universe.yaml"
 DEFAULT_INITIAL_CASH = 100_000.0
@@ -54,25 +51,25 @@ def get_strategy_class(strategy_name: str):
 
 
 # Search spaces aligned with constructor params in strategies/options_regime.py.
-STRATEGY_SEARCH_SPACES = {
-    "LongCallStrategy": [
-        Integer(1, 100, name="min_volume"),
-    ],
-    "BullPutSpreadStrategy": [
-        Integer(1, 100, name="min_volume"),
-        Real(0.01, 0.20, name="width_pct"),
-    ],
-    "BearCallSpreadStrategy": [
-        Integer(1, 100, name="min_volume"),
-        Real(0.01, 0.20, name="width_pct"),
-    ],
-    "LongStraddleStrategy": [
-        Integer(1, 100, name="min_volume"),
-    ],
-    "IronCondorStrategy": [
-        Integer(1, 100, name="min_volume"),
-        Real(0.01, 0.20, name="wing_pct"),
-    ],
+STRATEGY_SEARCH_SPACES: dict[str, dict[str, tuple[Any, Any] | list[Any]]] = {
+    "LongCallStrategy": {
+        "min_volume": (1, 100),
+    },
+    "BullPutSpreadStrategy": {
+        "min_volume": (1, 100),
+        "width_pct": (0.01, 0.20),
+    },
+    "BearCallSpreadStrategy": {
+        "min_volume": (1, 100),
+        "width_pct": (0.01, 0.20),
+    },
+    "LongStraddleStrategy": {
+        "min_volume": (1, 100),
+    },
+    "IronCondorStrategy": {
+        "min_volume": (1, 100),
+        "wing_pct": (0.01, 0.20),
+    },
 }
 
 
@@ -83,13 +80,12 @@ def make_objective(
     train_end: str,
     initial_cash: float,
 ):
-    """Build objective callable for Bayesian optimization.
+    """Build objective callable for parameter optimization.
 
     Objective = negative Sharpe ratio over training window.
     """
 
-    @use_named_args(STRATEGY_SEARCH_SPACES[strategy_class.__name__])
-    def objective(**params: Any) -> float:
+    def objective(params: dict[str, Any]) -> float:
         strategy = strategy_class(symbol=symbol, **params)
         result = run_options_backtest(
             strategy=strategy,
@@ -115,6 +111,7 @@ def main() -> None:
     parser.add_argument("--val-months", type=int, default=1, help="Months of validation data")
     parser.add_argument("--initial-cash", type=float, default=DEFAULT_INITIAL_CASH)
     parser.add_argument("--n-calls", type=int, default=50, help="Optimization calls per strategy")
+    parser.add_argument("--method", type=str, default="bayesian", choices=["bayesian", "genetic", "random"], help="PhiAI optimizer method")
     parser.add_argument("--random-state", type=int, default=42)
     args = parser.parse_args()
 
@@ -145,16 +142,15 @@ def main() -> None:
                 initial_cash=args.initial_cash,
             )
 
-            result = gp_minimize(
-                func=objective,
-                dimensions=space,
-                n_calls=args.n_calls,
-                random_state=args.random_state,
-                verbose=True,
+            best_params, best_score = tune_parameter_space(
+                objective_func=objective,
+                param_space=space,
+                method=args.method,
+                n_trials=args.n_calls,
+                direction="minimize",
+                seed=args.random_state,
             )
-
-            best_params = {dim.name: val for dim, val in zip(space, result.x)}
-            print(f"    Best params: {best_params} (Sharpe={-result.fun:.4f})")
+            print(f"    Best params: {best_params} (Sharpe={-best_score:.4f})")
 
             best_strategy = strategy_class(symbol=symbol, **best_params)
             val_result = run_options_backtest(
