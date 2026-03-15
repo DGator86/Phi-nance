@@ -130,10 +130,10 @@ with col_left:
             f'window.strategies = {strategies_json};'
         )
         workflow_json = json.dumps(st.session_state.workflow)
-        html_content = html_content.replace(
-            '</script>',
-            f'init({workflow_json});</script>'
-        )
+        # Use rsplit to target only the last </script> tag, avoiding injection
+        # into any earlier script blocks (e.g., third-party libraries).
+        parts = html_content.rsplit('</script>', 1)
+        html_content = f'init({workflow_json});</script>'.join(parts)
         
         # Use components.html with height
         result = components.html(html_content, height=600)

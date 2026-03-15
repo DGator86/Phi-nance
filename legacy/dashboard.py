@@ -726,7 +726,7 @@ def _build_config_dict(tf, n_bars, b, bm) -> dict:
 
 
 def _run_backtest(strategy_class, params, config):
-    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
+    av_api_key = os.getenv("AV_API_KEY", "")
     results, strat = strategy_class.run_backtest(
         datasource_class=_av_backtesting(),
         backtesting_start=config["start"], backtesting_end=config["end"],

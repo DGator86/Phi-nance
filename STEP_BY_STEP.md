@@ -29,8 +29,8 @@ git push origin MAIN
 - Open `.env` and set these (use your real values):
 
 ```
-AV_API_KEY=PLN25H3ESMM1IRBN
-AV_MCP_TOKEN=G7jhPGMv69WcDYerwJ6VZ2Tw6upJ
+AV_API_KEY=your_alpha_vantage_api_key
+AV_MCP_TOKEN=your_av_mcp_token
 DIGITALOCEAN_TOKEN=Dop_v1_b380c96df515cc38acdd5e4fb7bad2b3e1e1fd14d894a7d1b05a7a0ed7e4b2fa
 ```
 

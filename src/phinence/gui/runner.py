@@ -178,7 +178,10 @@ def run_backtest_for_strategy(
             def next(self):
                 if len(self.data) < lookback + 1:
                     return
-                momentum = (self.data.Close[-1] - self.data.Close[-lookback]) / self.data.Close[-lookback]
+                base = self.data.Close[-lookback]
+                if base == 0:
+                    return
+                momentum = (self.data.Close[-1] - base) / base
                 if momentum > 0 and not self.position:
                     self.buy()
                 elif momentum < 0 and self.position:
@@ -442,8 +445,11 @@ def _get_strategy_signal(strategy_id: str, bt_df: pd.DataFrame, bar_store: Any, 
             return 0
         
         closes = bt_df["Close"].iloc[:idx+1]
-        momentum = (closes.iloc[-1] - closes.iloc[-lookback]) / closes.iloc[-lookback]
-        
+        base = closes.iloc[-lookback]
+        if base == 0:
+            return 0
+        momentum = (closes.iloc[-1] - base) / base
+
         if momentum > 0:
             return 1
         elif momentum < 0:

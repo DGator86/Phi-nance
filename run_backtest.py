@@ -102,7 +102,7 @@ def main():
     strategy_class = STRATEGIES[args.strategy]
 
     # Use Alpha Vantage as primary data source
-    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
+    av_api_key = os.getenv("AV_API_KEY", "")
     datasource_class = AlphaVantageFixedDataSource
 
     print(f"Running backtest: {args.strategy}")
