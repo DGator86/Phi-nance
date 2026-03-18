@@ -60,7 +60,37 @@ Save (Ctrl+O, Enter) and exit (Ctrl+X).
 
 ---
 
-## 5. Start the app (screen)
+## 5. Set up free LLM (Ollama + DeepSeek)
+
+The deploy script installs Ollama automatically. If you need to do it manually:
+
+```bash
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull DeepSeek-R1 7B (fits in 8 GB RAM, completely free)
+ollama pull deepseek-r1:7b
+
+# Verify it's running
+ollama list
+```
+
+Ollama runs as a background service on `http://localhost:11434`. No API key needed.
+
+Alternative models (all free):
+
+| Model | RAM needed | Command |
+|-------|-----------|---------|
+| `deepseek-r1:1.5b` | ~2 GB | `ollama pull deepseek-r1:1.5b` |
+| `deepseek-r1:7b` | ~5 GB | `ollama pull deepseek-r1:7b` |
+| `llama3.2:3b` | ~3 GB | `ollama pull llama3.2:3b` |
+| `mistral:7b` | ~5 GB | `ollama pull mistral:7b` |
+
+The app is pre-configured for `deepseek-r1:7b` in `configs/llm_config.yaml`.
+
+---
+
+## 6. Start the app (screen)
 
 ```bash
 screen -S phi-nance
@@ -78,7 +108,7 @@ screen -r phi-nance
 
 ---
 
-## 6. Open in browser
+## 7. Open in browser
 
 - **Direct Streamlit:** http://165.245.142.100:8501  
 - If you set up Nginx (optional): http://165.245.142.100 (port 80)

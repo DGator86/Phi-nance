@@ -30,6 +30,14 @@ pip install -r requirements.txt --use-deprecated=legacy-resolver
 # 4. Create local data directories
 mkdir -p data/cache logs models
 
+# 5. Install Ollama (free local LLM runtime)
+echo "🤖 Installing Ollama..."
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull DeepSeek-R1 7B (free, runs on 8 GB RAM VPS)
+echo "📥 Pulling DeepSeek-R1:7b model (this may take a few minutes)..."
+ollama pull deepseek-r1:7b
+
 echo "✅ Setup complete!"
 echo ""
 echo "Next steps:"

@@ -1,10 +1,10 @@
 llm:
-  enabled: false
+  enabled: true
   backend: ollama           # ollama | openai | none
-  model: llama3
+  model: deepseek-r1:7b    # free local model via Ollama; alternatives: deepseek-r1:1.5b, llama3.2, mistral
   base_url: http://localhost:11434
   temperature: 0.7
   max_tokens: 800
-  timeout: 60
+  timeout: 120             # deepseek may be slower than llama3; increase if needed
   # For OpenAI backend, set api_key or use OPENAI_API_KEY env var
   # api_key: ${OPENAI_API_KEY}
