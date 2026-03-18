@@ -36,10 +36,12 @@ chmod +x deploy/deploy_vps.sh
 
 This will:
 
-- Install Python 3.12, venv, pip, git, screen, ufw
+- Install Python 3.12 (or 3.11 as fallback), venv, pip, git, screen, ufw
 - Allow SSH and port 8501 in the firewall
 - Create a virtualenv and install `requirements.txt`
 - Create `data/cache`, `logs`, `models`
+
+> **Note:** Python 3.11 is fully supported. The script tries Python 3.12 first and falls back to 3.11 automatically.
 
 ---
 

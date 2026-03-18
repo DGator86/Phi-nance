@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
 .env
+venv/
+models/
 .av_cache/
 *.egg-info/
 .DS_Store

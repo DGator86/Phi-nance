@@ -8,20 +8,24 @@ echo "🚀 Starting Phi-nance Setup..."
 # 1. Update system and install dependencies
 echo "📦 Installing system dependencies..."
 sudo apt update
-sudo apt install -y python3.12 python3.12-venv python3-pip libomp-dev git screen ufw
+sudo apt install -y python3.12 python3.12-venv python3.11 python3.11-venv python3-pip libomp-dev git screen ufw
 sudo ufw allow ssh
 sudo ufw allow 8501/tcp
 sudo ufw --force enable
 
-# 2. Create virtual environment
+# 2. Create virtual environment (prefer python3.12, fall back to python3.11)
 echo "🐍 Creating virtual environment..."
-python3.12 -m venv venv
+if command -v python3.12 &>/dev/null; then
+    python3.12 -m venv venv
+else
+    python3.11 -m venv venv
+fi
 source venv/bin/activate
 
 # 3. Install Python requirements
 echo "📥 Installing Python packages (this may take a few minutes)..."
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements.txt --use-deprecated=legacy-resolver
 
 # 4. Create local data directories
 mkdir -p data/cache logs models
