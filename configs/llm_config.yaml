@@ -1,10 +1,41 @@
 llm:
   enabled: true
-  backend: ollama           # ollama | openai | none
-  model: deepseek-r1:7b    # free local model via Ollama; alternatives: deepseek-r1:1.5b, llama3.2, mistral
-  base_url: http://localhost:11434
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Backend selection
+  # ──────────────────────────────────────────────────────────────────────────
+  #   ollama    → free local model via Ollama (single backend)
+  #   anthropic → Claude via Anthropic API (single backend)
+  #   tiered    → DeepSeek (1-5 min) + Claude (15 min+ and regime) ← recommended
+  #   none      → deterministic rules only (no LLM)
+  # ──────────────────────────────────────────────────────────────────────────
+  backend: tiered
+
+  # Bars at or below this value → fast (Ollama/DeepSeek) client
+  # Bars above this value       → slow (Anthropic/Claude) client
+  # Regime qualifier always uses the slow client regardless of timeframe
+  fast_threshold_minutes: 5
+
+  # ── Fast client: DeepSeek via Ollama (free, runs locally on the VPS) ──────
+  fast:
+    model: deepseek-r1:7b       # alternatives: deepseek-r1:1.5b, llama3.2, mistral
+    base_url: http://localhost:11434
+    timeout: 120
+
+  # ── Slow client: Anthropic Claude (smarter, for HTF + regime) ─────────────
+  # Set ANTHROPIC_API_KEY env var. If not set, falls back to DeepSeek.
+  # Haiku is cheapest; upgrade to Sonnet for more complex regime decisions.
+  slow:
+    model: claude-haiku-4-5-20251001    # cheapest; swap for claude-sonnet-4-6 if needed
+    # api_key: ${ANTHROPIC_API_KEY}     # reads from env automatically
+
+  # ── Shared generation parameters ─────────────────────────────────────────
   temperature: 0.7
   max_tokens: 800
-  timeout: 120             # deepseek may be slower than llama3; increase if needed
-  # For OpenAI backend, set api_key or use OPENAI_API_KEY env var
-  # api_key: ${OPENAI_API_KEY}
+
+  # ── Regime qualifier ──────────────────────────────────────────────────────
+  # The regime engine always routes through the slow (Claude) client.
+  # Lower temperature → more deterministic regime labels.
+  regime:
+    temperature: 0.3
+    max_tokens: 600

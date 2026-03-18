@@ -12,7 +12,8 @@ Environment variables
   AV_API_KEY              — Alpha Vantage API key
   MARKETDATAAPP_API_TOKEN — MarketDataApp token for options data
   OLLAMA_HOST             — Ollama server URL (default: http://localhost:11434)
-  OLLAMA_MODEL            — Default Ollama model (default: llama3.2)
+  OLLAMA_MODEL            — Default Ollama model (default: deepseek-r1:7b)
+  ANTHROPIC_API_KEY       — Anthropic API key (for slow/regime LLM tier)
   PHINANCE_DATA_DIR       — Override data_cache root
   PHINANCE_RUNS_DIR       — Override runs root
   PHINANCE_LOG_LEVEL      — Logging level (default: WARNING)
@@ -67,7 +68,8 @@ class Settings:
         self.ollama_host: str = os.environ.get(
             "OLLAMA_HOST", "http://localhost:11434"
         )
-        self.ollama_model: str = os.environ.get("OLLAMA_MODEL", "llama3.2")
+        self.ollama_model: str = os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")
+        self.anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
 
         self.data_cache_dir: Path = Path(
             os.environ.get("PHINANCE_DATA_DIR", str(_root / "data_cache"))
