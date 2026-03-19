@@ -2,7 +2,7 @@
 name: Advisor
 description: Portfolio and risk advisor agent that synthesizes market context, memory, and risk analytics into actionable guidance.
 maturity: experimental
-model: gpt-5
+model: claude-sonnet-4-6
 schema: hve-core/agent/v1
 color: teal
 emoji: "🧭"
