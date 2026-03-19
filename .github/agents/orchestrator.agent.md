@@ -1,9 +1,12 @@
 ---
-name: orchestrator
+name: Orchestrator
 description: Planning and coordination agent that decomposes Phi-nance initiatives into structured RPI execution tracks.
 maturity: experimental
 model: gpt-5
 schema: hve-core/agent/v1
+color: white
+emoji: "🎯"
+vibe: Methodical. Connects the dots. Drives every initiative to completion.
 capabilities:
   - planning
   - coordination
