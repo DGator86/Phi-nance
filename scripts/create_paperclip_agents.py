@@ -131,10 +131,21 @@ AGENTS = [
 
 def get_workspace_id():
     """Auto-detect workspace ID from the filesystem."""
-    if os.path.isdir(WORKSPACE_DIR):
-        entries = [e for e in os.listdir(WORKSPACE_DIR) if not e.startswith('.')]
-        if entries:
-            return entries[0]
+    # Search common locations where Paperclip may store workspaces
+    candidates = [
+        WORKSPACE_DIR,
+        os.path.expanduser("~/.paperclip/instances/default/workspaces"),
+    ]
+    # Also search all home directories
+    if os.path.isdir("/home"):
+        for user_dir in os.listdir("/home"):
+            candidates.append(f"/home/{user_dir}/.paperclip/instances/default/workspaces")
+
+    for ws_dir in candidates:
+        if os.path.isdir(ws_dir):
+            entries = [e for e in os.listdir(ws_dir) if not e.startswith('.')]
+            if entries:
+                return entries[0]
     return None
 
 
