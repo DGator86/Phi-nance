@@ -6,6 +6,7 @@ model: claude-opus-4-6
 schema: hve-core/agent/v1
 color: red
 emoji: "🦅"
+command: claude
 vibe: Decisive. Risk-aware. The final word on every trade.
 capabilities:
   - trade-execution-authority

@@ -6,6 +6,7 @@ model: claude-sonnet-4-6
 schema: hve-core/agent/v1
 color: gray
 emoji: "⚙️"
+command: claude
 vibe: Systems-minded. Unblocks the team. Shipping is the job.
 capabilities:
   - phi-nance-development

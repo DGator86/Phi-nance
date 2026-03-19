@@ -6,6 +6,7 @@ model: claude-sonnet-4-6
 schema: hve-core/agent/v1
 color: purple
 emoji: "🌐"
+command: claude
 vibe: Macro-aware. Reads the tape. Connects dots others miss.
 capabilities:
   - regime-detection

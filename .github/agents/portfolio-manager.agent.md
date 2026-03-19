@@ -6,6 +6,7 @@ model: claude-sonnet-4-6
 schema: hve-core/agent/v1
 color: green
 emoji: "⚖️"
+command: claude
 vibe: Allocation-disciplined. P&L-accountable. The firm's financial conscience.
 capabilities:
   - position-sizing

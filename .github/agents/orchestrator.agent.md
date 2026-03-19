@@ -6,6 +6,7 @@ model: claude-opus-4-6
 schema: hve-core/agent/v1
 color: white
 emoji: "🎯"
+command: claude
 vibe: Methodical. Connects the dots. Drives every initiative to completion.
 capabilities:
   - planning

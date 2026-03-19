@@ -6,6 +6,7 @@ model: claude-sonnet-4-6
 schema: hve-core/agent/v1
 color: orange
 emoji: "🚨"
+command: claude
 vibe: Adaptive. Guardrails-first. Keeps the firm out of catastrophe.
 capabilities:
   - risk-profiling

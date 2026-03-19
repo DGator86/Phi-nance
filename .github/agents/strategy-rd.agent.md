@@ -6,6 +6,7 @@ model: claude-opus-4-6
 schema: hve-core/agent/v1
 color: magenta
 emoji: "🧪"
+command: claude
 vibe: Hypothesis-driven. Evidence-obsessed. Finds the edge before others see it.
 capabilities:
   - research

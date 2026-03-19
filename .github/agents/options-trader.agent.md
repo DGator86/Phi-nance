@@ -6,6 +6,7 @@ model: claude-sonnet-4-6
 schema: hve-core/agent/v1
 color: cyan
 emoji: "📊"
+command: claude
 vibe: Precise. Greeks-native. Structures trades others can't see.
 capabilities:
   - options-structuring

@@ -33,6 +33,7 @@ AGENTS = [
         "model": "claude-sonnet-4-6",
         "color": "teal",
         "emoji": "🧭",
+        "command": "claude",
         "instructions_file": ".github/agents/advisor.agent.md",
     },
     {
@@ -41,6 +42,7 @@ AGENTS = [
         "model": "claude-opus-4-6",
         "color": "red",
         "emoji": "🦅",
+        "command": "claude",
         "instructions_file": ".github/agents/chief-trader.agent.md",
     },
     {
@@ -49,6 +51,7 @@ AGENTS = [
         "model": "claude-sonnet-4-6",
         "color": "indigo",
         "emoji": "🛡️",
+        "command": "claude",
         "instructions_file": ".github/agents/compliance-officer.agent.md",
     },
     {
@@ -57,6 +60,7 @@ AGENTS = [
         "model": "claude-sonnet-4-6",
         "color": "purple",
         "emoji": "🌐",
+        "command": "claude",
         "instructions_file": ".github/agents/market-analyst.agent.md",
     },
     {
@@ -65,6 +69,7 @@ AGENTS = [
         "model": "claude-sonnet-4-6",
         "color": "cyan",
         "emoji": "📊",
+        "command": "claude",
         "instructions_file": ".github/agents/options-trader.agent.md",
     },
     {
@@ -73,6 +78,7 @@ AGENTS = [
         "model": "claude-opus-4-6",
         "color": "white",
         "emoji": "🎯",
+        "command": "claude",
         "instructions_file": ".github/agents/orchestrator.agent.md",
     },
     {
@@ -81,6 +87,7 @@ AGENTS = [
         "model": "claude-sonnet-4-6",
         "color": "green",
         "emoji": "⚖️",
+        "command": "claude",
         "instructions_file": ".github/agents/portfolio-manager.agent.md",
     },
     {
@@ -89,6 +96,7 @@ AGENTS = [
         "model": "claude-sonnet-4-6",
         "color": "blue",
         "emoji": "🔬",
+        "command": "claude",
         "instructions_file": ".github/agents/quant-analyst.agent.md",
     },
     {
@@ -97,6 +105,7 @@ AGENTS = [
         "model": "claude-sonnet-4-6",
         "color": "orange",
         "emoji": "🚨",
+        "command": "claude",
         "instructions_file": ".github/agents/risk-monitor.agent.md",
     },
     {
@@ -105,6 +114,7 @@ AGENTS = [
         "model": "claude-sonnet-4-6",
         "color": "gray",
         "emoji": "⚙️",
+        "command": "claude",
         "instructions_file": ".github/agents/software-engineer.agent.md",
     },
     {
@@ -113,6 +123,7 @@ AGENTS = [
         "model": "claude-opus-4-6",
         "color": "magenta",
         "emoji": "🧪",
+        "command": "claude",
         "instructions_file": ".github/agents/strategy-rd.agent.md",
     },
 ]
@@ -273,6 +284,7 @@ def try_create_via_api(company_id, workspace_id, base_url, repo_root):
             "color": agent["color"],
             "emoji": agent["emoji"],
             "systemPrompt": instructions,
+            "command": agent.get("command", "claude"),
         }
 
         # Try every plausible create endpoint
@@ -404,7 +416,7 @@ function apiPost(path, data) {{
 async function main() {{
   let ok = 0;
   for (const agent of AGENTS) {{
-    const payload = {{ companyId: COMPANY_ID, workspaceId: WORKSPACE_ID, ...agent, systemPrompt: agent.instructions }};
+    const payload = {{ companyId: COMPANY_ID, workspaceId: WORKSPACE_ID, ...agent, systemPrompt: agent.instructions, command: agent.command || 'claude' }};
 
     // Try multiple endpoints
     const attempts = [
