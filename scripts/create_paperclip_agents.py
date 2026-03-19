@@ -159,31 +159,40 @@ def get_company_id(base_url):
     return None, None
 
 
-def probe_api(base_url):
-    """Probe many Paperclip API endpoints to find what's available."""
-    paths = [
-        "/api/health",
-        "/api/companies",
-        "/api/agents/list",
-        "/api/agents/create",
-        "/api/agent/list",
-        "/api/agent/create",
-        "/api/workspaces",
-        "/api/v1/agents",
+def probe_api(base_url, company_id=None):
+    """Probe Paperclip API endpoints."""
+    cid = company_id or "COMPANY_ID"
+    paths_and_methods = [
+        ("GET", "/api/health"),
+        ("GET", "/api/companies"),
+        # Try GET listing with companyId
+        ("GET", f"/api/agents?companyId={cid}"),
+        # Try POST to /api/agents (create)
+        ("POST", "/api/agents"),
+        # Company-scoped
+        ("GET", f"/api/companies/{cid}"),
+        ("GET", f"/api/companies/{cid}/agents"),
+        ("POST", f"/api/companies/{cid}/agents"),
+        # Shortname lookup pattern we know exists
+        ("GET", f"/api/agents/advisor?companyId={cid}"),
     ]
     print(f"Probing Paperclip API at {base_url}\n")
-    for path in paths:
-        status, body = api_request(path, base_url=base_url)
+    for method, path in paths_and_methods:
+        if method == "POST":
+            status, body = api_request(path, method="POST",
+                data={"companyId": cid, "name": "test", "shortname": "test"},
+                base_url=base_url)
+        else:
+            status, body = api_request(path, base_url=base_url)
         is_json = body and (body.strip().startswith('{') or body.strip().startswith('['))
-        snippet = body[:200].replace("\n", " ") if body else ""
+        snippet = (body or "")[:150].replace("\n", " ")
         marker = "JSON" if is_json else "HTML" if (body and "<!DOCTYPE" in body) else "text"
-        print(f"  {status or 'ERR'} {marker} {path}: {snippet[:120]}")
+        print(f"  {status or 'ERR'} {method} {marker} {path}: {snippet[:120]}")
     print()
 
 
 def find_psql_binary():
     """Find the psql binary — including Paperclip's embedded postgres."""
-    import glob
     candidates = [
         "/usr/bin/psql",
         "/usr/local/bin/psql",
@@ -192,15 +201,36 @@ def find_psql_binary():
     for p in candidates:
         if os.path.exists(p):
             return p
-    # Search in npm packages (embedded-postgres)
+
+    # Find embedded postgres binary, then look for psql in the same dir
     result = subprocess.run(
-        ["find", "/home/paperclip/.npm", "-name", "psql", "-type", "f"],
+        ["find", "/home/paperclip/.npm", "-name", "postgres", "-type", "f"],
         capture_output=True, text=True, timeout=10
     )
     for line in result.stdout.strip().splitlines():
         line = line.strip()
+        if not line:
+            continue
+        # Check for psql in the same bin/ directory
+        bin_dir = os.path.dirname(line)
+        psql_path = os.path.join(bin_dir, "psql")
+        if os.path.isfile(psql_path):
+            return psql_path
+        # Also check parent dir
+        psql_path2 = os.path.join(os.path.dirname(bin_dir), "psql")
+        if os.path.isfile(psql_path2):
+            return psql_path2
+
+    # Broad search for psql
+    result2 = subprocess.run(
+        ["find", "/home/paperclip/.npm", "-name", "psql", "-type", "f"],
+        capture_output=True, text=True, timeout=10
+    )
+    for line in result2.stdout.strip().splitlines():
+        line = line.strip()
         if line and os.path.isfile(line):
             return line
+
     return None
 
 
@@ -223,81 +253,198 @@ def try_create_via_api(company_id, workspace_id, base_url, repo_root):
     """Try creating agents via REST API using companyId."""
     print(f"Attempting API agent creation for company {company_id}...\n")
 
-    # First, check what /api/agents/list returns with the company ID
-    status, body = api_request(f"/api/agents/list?companyId={company_id}", base_url=base_url)
-    print(f"  Existing agents: HTTP {status}: {body[:300]}\n")
+    # List existing agents via shortname endpoint pattern
+    status, body = api_request(f"/api/agents?companyId={company_id}", base_url=base_url)
+    print(f"  GET /api/agents?companyId: HTTP {status}: {body[:200]}\n")
 
     success = 0
     fail_names = []
 
     for agent in AGENTS:
         instructions = read_instructions(agent, repo_root)
-
-        # Build slug from name
         slug = agent["name"].lower().replace(" ", "-").replace("&", "and")
 
-        # Try various payload shapes with companyId
-        payloads_and_paths = [
-            ("/api/agents/create", {
-                "companyId": company_id,
-                "workspaceId": workspace_id,
-                "name": agent["name"],
-                "shortname": slug,
-                "description": agent["description"],
-                "model": agent["model"],
-                "color": agent["color"],
-                "emoji": agent["emoji"],
-                "systemPrompt": instructions,
-            }),
-            ("/api/agents/create", {
-                "companyId": company_id,
-                "name": agent["name"],
-                "shortname": slug,
-                "description": agent["description"],
-                "model": agent["model"],
-                "color": agent["color"],
-                "emoji": agent["emoji"],
-                "instructions": instructions,
-            }),
-            # Maybe it's a GET with query params for the shortname lookup
-            (f"/api/agents/create?companyId={company_id}", {
-                "name": agent["name"],
-                "shortname": slug,
-                "description": agent["description"],
-                "model": agent["model"],
-                "color": agent["color"],
-                "emoji": agent["emoji"],
-                "systemPrompt": instructions,
-            }),
+        base_payload = {
+            "companyId": company_id,
+            "name": agent["name"],
+            "shortname": slug,
+            "description": agent["description"],
+            "model": agent["model"],
+            "color": agent["color"],
+            "emoji": agent["emoji"],
+            "systemPrompt": instructions,
+        }
+
+        # Try every plausible create endpoint
+        attempts = [
+            # POST /api/agents (most likely for REST create)
+            ("POST", "/api/agents", base_payload),
+            # POST /api/agents with workspaceId too
+            ("POST", "/api/agents", {**base_payload, "workspaceId": workspace_id}),
+            # Company-scoped
+            ("POST", f"/api/companies/{company_id}/agents", {k: v for k, v in base_payload.items() if k != "companyId"}),
+            # PUT (upsert pattern)
+            ("PUT", f"/api/agents/{slug}?companyId={company_id}", {k: v for k, v in base_payload.items() if k not in ("companyId", "shortname")}),
+            # PATCH to existing shortname
+            ("PATCH", f"/api/agents/{slug}?companyId={company_id}", base_payload),
         ]
 
         created = False
         last_status = None
         last_body = None
-        for path, payload in payloads_and_paths:
-            status, body = api_request(path, method="POST", data=payload, base_url=base_url)
+        for method, path, payload in attempts:
+            status, body = api_request(path, method=method, data=payload, base_url=base_url)
             last_status = status
             last_body = body
             if status and 200 <= status < 300:
-                print(f"  ✓ {agent['emoji']} {agent['name']} via POST {path}")
+                print(f"  ✓ {agent['emoji']} {agent['name']} via {method} {path}")
                 created = True
                 success += 1
                 break
             elif status == 404:
                 continue
-            elif status in (400, 422):
-                snippet = body[:300].replace("\n", " ")
-                print(f"  ? {agent['name']} HTTP {status}: {snippet}")
-                # Don't try more variants — we hit the right endpoint
-                break
+            elif status in (400, 409, 422):
+                snippet = (body or "")[:250].replace("\n", " ")
+                print(f"  ? {agent['name']} {method} {path} → HTTP {status}: {snippet}")
+                break  # We found the right endpoint, payload is wrong
 
         if not created:
             fail_names.append(agent['name'])
-            snippet = (last_body or "")[:200].replace("\n", " ")
-            print(f"  ✗ {agent['emoji']} {agent['name']}: HTTP {last_status}: {snippet}")
+            snippet = (last_body or "")[:150].replace("\n", " ")
+            print(f"  ✗ {agent['emoji']} {agent['name']}: last HTTP {last_status}: {snippet}")
 
     print(f"\nAPI Results: {success} created, {len(fail_names)} failed")
     return fail_names
+
+
+def create_agents_via_node(company_id, workspace_id, repo_root, base_url):
+    """Create agents by running a Node.js script that uses the postgres npm package."""
+    # Find node binary
+    node_bin = None
+    for p in ["/usr/bin/node", "/usr/local/bin/node"]:
+        if os.path.exists(p):
+            node_bin = p
+            break
+    if not node_bin:
+        result = subprocess.run(["which", "node"], capture_output=True, text=True)
+        if result.returncode == 0:
+            node_bin = result.stdout.strip()
+
+    if not node_bin:
+        print("node binary not found")
+        return False
+
+    # Find the postgres npm module bundled with paperclip
+    result = subprocess.run(
+        ["find", "/home/paperclip/.npm", "-name", "index.js", "-path", "*/postgres/src/*"],
+        capture_output=True, text=True, timeout=10
+    )
+    pg_module = None
+    for line in result.stdout.strip().splitlines():
+        if "/postgres/" in line and "node_modules" in line:
+            # Get the module root
+            idx = line.find("/postgres/")
+            pg_module = line[:idx + len("/postgres")]
+            break
+
+    if not pg_module:
+        # Try generic path
+        result2 = subprocess.run(
+            ["find", "/home/paperclip/.npm", "-maxdepth", "6", "-name", "package.json", "-path", "*/postgres/package.json"],
+            capture_output=True, text=True, timeout=10
+        )
+        for line in result2.stdout.strip().splitlines():
+            pg_module = os.path.dirname(line)
+            break
+
+    print(f"node: {node_bin}, postgres module: {pg_module}")
+
+    # Build the JS that connects to postgres and creates agents
+    agents_data = []
+    for agent in AGENTS:
+        instructions = read_instructions(agent, repo_root)
+        slug = agent["name"].lower().replace(" ", "-").replace("&", "and")
+        agents_data.append({
+            "name": agent["name"],
+            "shortname": slug,
+            "description": agent["description"],
+            "model": agent["model"],
+            "color": agent["color"],
+            "emoji": agent["emoji"],
+            "instructions": instructions,
+        })
+
+    js_script = f"""
+const http = require('http');
+
+const AGENTS = {json.dumps(agents_data)};
+const COMPANY_ID = {json.dumps(company_id)};
+const WORKSPACE_ID = {json.dumps(workspace_id)};
+const BASE = 'http://127.0.0.1:3100';
+
+function apiPost(path, data) {{
+  return new Promise((resolve, reject) => {{
+    const body = JSON.stringify(data);
+    const opts = {{
+      hostname: '127.0.0.1', port: 3100,
+      path, method: 'POST',
+      headers: {{'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body)}}
+    }};
+    const req = http.request(opts, res => {{
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => resolve({{status: res.statusCode, body: d}}));
+    }});
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  }});
+}}
+
+async function main() {{
+  let ok = 0;
+  for (const agent of AGENTS) {{
+    const payload = {{ companyId: COMPANY_ID, workspaceId: WORKSPACE_ID, ...agent, systemPrompt: agent.instructions }};
+
+    // Try multiple endpoints
+    const attempts = [
+      ['/api/agents', payload],
+      [`/api/companies/${{COMPANY_ID}}/agents`, {{...agent, systemPrompt: agent.instructions}}],
+    ];
+
+    let created = false;
+    for (const [path, data] of attempts) {{
+      try {{
+        const r = await apiPost(path, data);
+        if (r.status >= 200 && r.status < 300) {{
+          console.log('✓', agent.emoji, agent.name, 'via POST', path);
+          ok++;
+          created = true;
+          break;
+        }} else if (r.status !== 404) {{
+          console.log('?', agent.name, path, r.status, r.body.slice(0, 200));
+          break;
+        }}
+      }} catch(e) {{ console.log('ERR', agent.name, e.message); }}
+    }}
+    if (!created) console.log('✗', agent.emoji, agent.name);
+  }}
+  console.log(`\\nNode results: ${{ok}}/${{AGENTS.length}} created`);
+}}
+
+main().catch(console.error);
+"""
+
+    js_file = "/tmp/create_agents.js"
+    with open(js_file, "w") as f:
+        f.write(js_script)
+
+    print(f"Running Node.js agent creator...")
+    result = subprocess.run([node_bin, js_file], capture_output=True, text=True, timeout=60)
+    print(result.stdout)
+    if result.stderr:
+        print("stderr:", result.stderr[:300])
+    return "created" in result.stdout and "0/" not in result.stdout
 
 
 def create_agents_via_postgres(workspace_id, repo_root):
@@ -320,7 +467,8 @@ def create_agents_via_postgres(workspace_id, repo_root):
         return _create_via_psql(psql_bin, pg_host, pg_port, pg_user, pg_db, workspace_id, repo_root)
 
     print("Neither psycopg2 nor psql found.")
-    print("Run: apt-get install -y postgresql-client")
+    print("  As root run: apt-get install -y postgresql-client")
+    print("  Then retry: python3 /root/Phi-nance/scripts/create_paperclip_agents.py --db")
     return False
 
 
@@ -521,7 +669,9 @@ def main():
     args = parser.parse_args()
 
     if args.probe:
-        probe_api(args.base_url)
+        _, cid = get_company_id(args.base_url), None
+        cid, _ = get_company_id(args.base_url)
+        probe_api(args.base_url, company_id=cid)
         return
 
     workspace_id = args.workspace or get_workspace_id()
@@ -569,7 +719,7 @@ def main():
 
     # Default: try API first
     print("Step 1: Probing API endpoints...")
-    probe_api(args.base_url)
+    probe_api(args.base_url, company_id=company_id)
 
     if company_id:
         print("Step 2: Attempting agent creation via REST API (companyId)...")
@@ -579,8 +729,11 @@ def main():
         failed = [a["name"] for a in AGENTS]
 
     if failed:
-        print(f"\n{len(failed)} agents not created via API. Trying PostgreSQL...")
-        create_agents_via_postgres(workspace_id, args.repo_root)
+        print(f"\nStep 3: Trying Node.js approach...")
+        ok = create_agents_via_node(company_id, workspace_id, args.repo_root, args.base_url)
+        if not ok:
+            print(f"\nStep 4: Trying PostgreSQL direct insertion...")
+            create_agents_via_postgres(workspace_id, args.repo_root)
 
 
 if __name__ == "__main__":
