@@ -146,79 +146,61 @@ def api_request(path, method="GET", data=None, base_url=BASE_URL, extra_headers=
         return None, str(e)
 
 
+def get_company_id(base_url):
+    """Get company ID from /api/companies."""
+    status, body = api_request("/api/companies", base_url=base_url)
+    if status == 200:
+        try:
+            companies = json.loads(body)
+            if companies and isinstance(companies, list):
+                return companies[0]["id"], companies[0].get("name", "")
+        except Exception:
+            pass
+    return None, None
+
+
 def probe_api(base_url):
     """Probe many Paperclip API endpoints to find what's available."""
     paths = [
-        # Health / info
         "/api/health",
-        "/api/version",
-        "/api/info",
-        # Workspaces
-        "/api/workspaces",
-        "/api/workspace",
-        "/api/v1/workspaces",
-        # Agents under workspace
-        "/api/workspaces/list",
-        # Company / org
-        "/api/company",
         "/api/companies",
-        "/api/org",
-        # Agent CRUD - different patterns
-        "/api/agent",
-        "/api/agent/list",
-        "/api/agent/create",
         "/api/agents/list",
         "/api/agents/create",
-        # With workspace prefix
-        "/api/workspace/agents",
-        "/api/workspace/agent",
-        # OpenAI-compat
-        "/v1/agents",
-        # Possible versioned paths
-        "/api/v2/agents",
-        "/api/v2/workspaces",
+        "/api/agent/list",
+        "/api/agent/create",
+        "/api/workspaces",
+        "/api/v1/agents",
     ]
     print(f"Probing Paperclip API at {base_url}\n")
     for path in paths:
         status, body = api_request(path, base_url=base_url)
-        is_json = body and body.strip().startswith('{') or (body and body.strip().startswith('['))
+        is_json = body and (body.strip().startswith('{') or body.strip().startswith('['))
         snippet = body[:200].replace("\n", " ") if body else ""
-        marker = "✓ JSON" if is_json else "  HTML" if (body and "<!DOCTYPE" in body) else "  text"
+        marker = "JSON" if is_json else "HTML" if (body and "<!DOCTYPE" in body) else "text"
         print(f"  {status or 'ERR'} {marker} {path}: {snippet[:120]}")
     print()
 
 
-def find_postgres_binary():
-    """Find the postgres binary bundled with Paperclip."""
-    candidates = [
-        "/home/paperclip/.paperclip/bin/psql",
-        "/home/paperclip/.paperclip/postgres/bin/psql",
-        "/home/paperclip/.local/bin/psql",
-        "/usr/lib/postgresql/*/bin/psql",
-        "/usr/bin/psql",
-    ]
+def find_psql_binary():
+    """Find the psql binary — including Paperclip's embedded postgres."""
     import glob
-    for pattern in candidates:
-        matches = glob.glob(pattern)
-        if matches:
-            return matches[0]
-        if os.path.exists(pattern):
-            return pattern
-
-    # Try finding via paperclip's embedded postgres data dir
-    pg_dirs = [
-        "/home/paperclip/.paperclip/instances/default/postgres",
-        "/home/paperclip/.paperclip/data",
+    candidates = [
+        "/usr/bin/psql",
+        "/usr/local/bin/psql",
+        "/home/paperclip/.paperclip/bin/psql",
     ]
-    for d in pg_dirs:
-        if os.path.isdir(d):
-            # Look for pg_ctl or postgres binary nearby
-            result = subprocess.run(
-                ["find", os.path.dirname(d), "-name", "psql", "-type", "f"],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.stdout.strip():
-                return result.stdout.strip().split('\n')[0]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    # Search in npm packages (embedded-postgres)
+    result = subprocess.run(
+        ["find", "/home/paperclip/.npm", "-name", "psql", "-type", "f"],
+        capture_output=True, text=True, timeout=10
+    )
+    for line in result.stdout.strip().splitlines():
+        line = line.strip()
+        if line and os.path.isfile(line):
+            return line
     return None
 
 
@@ -237,9 +219,13 @@ def read_instructions(agent_def, repo_root="/root/Phi-nance"):
     return content
 
 
-def try_create_via_api(workspace_id, base_url, repo_root):
-    """Try creating agents via REST API with many path/format variants."""
-    print(f"Attempting API agent creation for workspace {workspace_id}...\n")
+def try_create_via_api(company_id, workspace_id, base_url, repo_root):
+    """Try creating agents via REST API using companyId."""
+    print(f"Attempting API agent creation for company {company_id}...\n")
+
+    # First, check what /api/agents/list returns with the company ID
+    status, body = api_request(f"/api/agents/list?companyId={company_id}", base_url=base_url)
+    print(f"  Existing agents: HTTP {status}: {body[:300]}\n")
 
     success = 0
     fail_names = []
@@ -247,26 +233,42 @@ def try_create_via_api(workspace_id, base_url, repo_root):
     for agent in AGENTS:
         instructions = read_instructions(agent, repo_root)
 
-        # Multiple payload shapes Paperclip might expect
+        # Build slug from name
+        slug = agent["name"].lower().replace(" ", "-").replace("&", "and")
+
+        # Try various payload shapes with companyId
         payloads_and_paths = [
-            # REST with workspaceId in body
-            ("/api/agents", {"workspaceId": workspace_id, "name": agent["name"],
-             "description": agent["description"], "model": agent["model"],
-             "color": agent["color"], "emoji": agent["emoji"], "systemPrompt": instructions}),
-            # nested under workspace in URL
-            (f"/api/workspaces/{workspace_id}/agents",
-             {"name": agent["name"], "description": agent["description"],
-              "model": agent["model"], "color": agent["color"], "emoji": agent["emoji"],
-              "systemPrompt": instructions}),
-            # alternate field names
-            ("/api/agents", {"workspaceId": workspace_id, "name": agent["name"],
-             "description": agent["description"], "model": agent["model"],
-             "color": agent["color"], "emoji": agent["emoji"],
-             "instructions": instructions}),
-            (f"/api/workspaces/{workspace_id}/agents",
-             {"name": agent["name"], "description": agent["description"],
-              "model": agent["model"], "color": agent["color"], "emoji": agent["emoji"],
-              "instructions": instructions}),
+            ("/api/agents/create", {
+                "companyId": company_id,
+                "workspaceId": workspace_id,
+                "name": agent["name"],
+                "shortname": slug,
+                "description": agent["description"],
+                "model": agent["model"],
+                "color": agent["color"],
+                "emoji": agent["emoji"],
+                "systemPrompt": instructions,
+            }),
+            ("/api/agents/create", {
+                "companyId": company_id,
+                "name": agent["name"],
+                "shortname": slug,
+                "description": agent["description"],
+                "model": agent["model"],
+                "color": agent["color"],
+                "emoji": agent["emoji"],
+                "instructions": instructions,
+            }),
+            # Maybe it's a GET with query params for the shortname lookup
+            (f"/api/agents/create?companyId={company_id}", {
+                "name": agent["name"],
+                "shortname": slug,
+                "description": agent["description"],
+                "model": agent["model"],
+                "color": agent["color"],
+                "emoji": agent["emoji"],
+                "systemPrompt": instructions,
+            }),
         ]
 
         created = False
@@ -284,14 +286,14 @@ def try_create_via_api(workspace_id, base_url, repo_root):
             elif status == 404:
                 continue
             elif status in (400, 422):
-                # Got to the right endpoint but wrong payload - worth reporting
-                snippet = body[:200].replace("\n", " ") if body else ""
-                print(f"  ? {agent['name']} via {path}: HTTP {status}: {snippet}")
+                snippet = body[:300].replace("\n", " ")
+                print(f"  ? {agent['name']} HTTP {status}: {snippet}")
+                # Don't try more variants — we hit the right endpoint
                 break
 
         if not created:
             fail_names.append(agent['name'])
-            snippet = (last_body or "")[:120].replace("\n", " ")
+            snippet = (last_body or "")[:200].replace("\n", " ")
             print(f"  ✗ {agent['emoji']} {agent['name']}: HTTP {last_status}: {snippet}")
 
     print(f"\nAPI Results: {success} created, {len(fail_names)} failed")
@@ -305,37 +307,21 @@ def create_agents_via_postgres(workspace_id, repo_root):
     pg_user = "paperclip"
     pg_db = "paperclip"
 
-    # First check if psycopg2 is available
     try:
         import psycopg2
-        has_psycopg2 = True
-    except ImportError:
-        has_psycopg2 = False
-
-    # Try to find psql binary
-    psql_bin = find_postgres_binary()
-
-    if not has_psycopg2 and not psql_bin:
-        print("Neither psycopg2 nor psql found.")
-        print("To install psycopg2:  pip3 install psycopg2-binary")
-        print("To install psql:      apt-get install -y postgresql-client")
-        print()
-        # Find the postgres port and try a socket approach
-        print("Trying to find bundled postgres binary...")
-        result = subprocess.run(
-            ["find", "/home/paperclip", "-name", "psql", "-o", "-name", "postgres"],
-            capture_output=True, text=True, timeout=10
-        )
-        print(f"Found: {result.stdout.strip() or 'nothing'}")
-        return False
-
-    # First, inspect the DB schema to understand table structure
-    if has_psycopg2:
         print(f"Using psycopg2 to connect to PostgreSQL on port {pg_port}...")
         return _create_via_psycopg2(pg_host, pg_port, pg_user, pg_db, workspace_id, repo_root)
-    else:
+    except ImportError:
+        pass
+
+    psql_bin = find_psql_binary()
+    if psql_bin:
         print(f"Using psql binary: {psql_bin}")
         return _create_via_psql(psql_bin, pg_host, pg_port, pg_user, pg_db, workspace_id, repo_root)
+
+    print("Neither psycopg2 nor psql found.")
+    print("Run: apt-get install -y postgresql-client")
+    return False
 
 
 def _inspect_schema(conn):
@@ -569,17 +555,15 @@ def main():
         conn.close()
         return
 
+    # Auto-detect company ID
+    company_id, company_name = get_company_id(args.base_url)
+    if company_id:
+        print(f"Company:   {company_name} ({company_id})")
+    else:
+        print("WARNING: Could not auto-detect company ID from /api/companies")
+    print()
+
     if args.db:
-        # Try psycopg2; install if missing
-        try:
-            import psycopg2
-        except ImportError:
-            print("psycopg2 not found, attempting install...")
-            if install_psycopg2():
-                import importlib
-                importlib.invalidate_caches()
-            else:
-                print("Could not install psycopg2. Trying psql binary...")
         create_agents_via_postgres(workspace_id, args.repo_root)
         return
 
@@ -587,22 +571,15 @@ def main():
     print("Step 1: Probing API endpoints...")
     probe_api(args.base_url)
 
-    print("Step 2: Attempting agent creation via REST API...")
-    failed = try_create_via_api(workspace_id, args.base_url, args.repo_root)
+    if company_id:
+        print("Step 2: Attempting agent creation via REST API (companyId)...")
+        failed = try_create_via_api(company_id, workspace_id, args.base_url, args.repo_root)
+    else:
+        print("Step 2: Skipped (no company ID).")
+        failed = [a["name"] for a in AGENTS]
 
     if failed:
         print(f"\n{len(failed)} agents not created via API. Trying PostgreSQL...")
-        try:
-            import psycopg2
-        except ImportError:
-            print("psycopg2 not found, attempting install...")
-            install_psycopg2()
-            try:
-                import importlib
-                importlib.invalidate_caches()
-                import psycopg2
-            except ImportError:
-                pass
         create_agents_via_postgres(workspace_id, args.repo_root)
 
 
