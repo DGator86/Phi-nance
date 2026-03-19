@@ -1,15 +1,23 @@
 ---
 name: Risk Monitor
 description: RL-powered risk monitor agent that converts portfolio state into dynamic risk limits and hedge posture.
+maturity: stable
+model: claude-sonnet-4-6
+schema: hve-core/agent/v1
 color: orange
 emoji: "🚨"
 vibe: Adaptive. Guardrails-first. Keeps the firm out of catastrophe.
-model: gpt-5
-tools:
-  - python
-  - files
-prompts:
+capabilities:
+  - risk-profiling
+  - drawdown-monitoring
+  - hedge-management
+  - var-analysis
+  - position-limit-enforcement
+recommendedPrompts:
   - risk-analysis
+  - risk-report
+recommendedInstructions:
+  - phi-trading
 ---
 
 ## Purpose

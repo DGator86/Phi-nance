@@ -2,7 +2,7 @@
 name: Strategy R&D
 description: Research + RL strategy-discovery agent for hypothesis generation, template search, and experiment definition.
 maturity: experimental
-model: gpt-5
+model: claude-opus-4-6
 schema: hve-core/agent/v1
 color: magenta
 emoji: "🧪"
