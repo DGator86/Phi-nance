@@ -129,12 +129,13 @@ AGENTS = [
 ]
 
 
-def get_workspace_id():
-    """Auto-detect workspace ID from the filesystem."""
+def get_workspace_id(base_url=BASE_URL):
+    """Auto-detect workspace ID from the filesystem or API."""
     # Search common locations where Paperclip may store workspaces
     candidates = [
         WORKSPACE_DIR,
         os.path.expanduser("~/.paperclip/instances/default/workspaces"),
+        "/root/.paperclip/instances/default/workspaces",
     ]
     # Also search all home directories
     if os.path.isdir("/home"):
@@ -146,6 +147,37 @@ def get_workspace_id():
             entries = [e for e in os.listdir(ws_dir) if not e.startswith('.')]
             if entries:
                 return entries[0]
+
+    # Fallback: try API endpoints to discover workspace ID
+    for path in ["/api/workspaces", "/api/workspace"]:
+        status, body = api_request(path, base_url=base_url)
+        if status == 200:
+            try:
+                data = json.loads(body)
+                if isinstance(data, list) and data:
+                    ws = data[0]
+                    return ws.get("id") or ws.get("workspaceId")
+                if isinstance(data, dict):
+                    return data.get("id") or data.get("workspaceId")
+            except Exception:
+                pass
+
+    # Try via company
+    company_id, _ = get_company_id(base_url)
+    if company_id:
+        for path in [f"/api/workspaces?companyId={company_id}", f"/api/companies/{company_id}/workspaces"]:
+            status, body = api_request(path, base_url=base_url)
+            if status == 200:
+                try:
+                    data = json.loads(body)
+                    if isinstance(data, list) and data:
+                        ws = data[0]
+                        return ws.get("id") or ws.get("workspaceId")
+                    if isinstance(data, dict):
+                        return data.get("id") or data.get("workspaceId")
+                except Exception:
+                    pass
+
     return None
 
 
@@ -687,7 +719,10 @@ def main():
     parser.add_argument("--base-url", default=BASE_URL)
     parser.add_argument("--dry-run", action="store_true", help="Print agents without creating")
     parser.add_argument("--db", action="store_true", help="Skip API, use PostgreSQL directly")
-    parser.add_argument("--repo-root", default="/root/Phi-nance")
+    # Default repo root: parent of the scripts/ directory (where this file lives)
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _default_repo_root = os.path.dirname(_script_dir) if os.path.basename(_script_dir) == "scripts" else "/root/Phi-nance"
+    parser.add_argument("--repo-root", default=_default_repo_root)
     parser.add_argument("--schema", action="store_true", help="Just inspect the DB schema")
     args = parser.parse_args()
 
@@ -697,10 +732,11 @@ def main():
         probe_api(args.base_url, company_id=cid)
         return
 
-    workspace_id = args.workspace or get_workspace_id()
+    workspace_id = args.workspace or get_workspace_id(base_url=args.base_url)
     if not workspace_id:
-        print(f"ERROR: Could not auto-detect workspace ID from {WORKSPACE_DIR}")
+        print(f"ERROR: Could not auto-detect workspace ID from filesystem or API ({args.base_url})")
         print("Pass --workspace YOUR_WORKSPACE_ID")
+        print("  You can find it by running: python3 scripts/create_paperclip_agents.py --probe")
         sys.exit(1)
 
     print("Phi Capital Agent Creator")
