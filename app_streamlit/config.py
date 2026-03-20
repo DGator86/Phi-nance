@@ -10,6 +10,9 @@ from phi.logging import get_logger
 
 logger = get_logger(__name__)
 
+from dataclasses import dataclass
+from datetime import date, timedelta
+from typing import Any, TypeAlias, TypedDict
 
 class SelectParamSpec(TypedDict):
     """Selectbox parameter metadata used by Streamlit controls."""
@@ -19,22 +22,8 @@ class SelectParamSpec(TypedDict):
     default: str
 
 
-class TextParamSpec(TypedDict):
-    """Text-input parameter metadata used by Streamlit controls."""
-
-    type: str
-    default: str
-
-
-class BoolParamSpec(TypedDict):
-    """Boolean parameter metadata used by Streamlit controls."""
-
-    type: str
-    default: bool
-
-
 ParamRange: TypeAlias = tuple[float, float, float, float]
-IndicatorParamSpec: TypeAlias = ParamRange | SelectParamSpec | TextParamSpec | BoolParamSpec
+IndicatorParamSpec: TypeAlias = ParamRange | SelectParamSpec
 
 DEFAULT_SYMBOL = "SPY"
 DEFAULT_TIMEFRAME = "1D"
@@ -65,16 +54,6 @@ class IndicatorSpec:
 def _select_param(options: list[str], default: str) -> SelectParamSpec:
     """Convenience helper for selectbox parameter specs."""
     return {"type": "select", "options": options, "default": default}
-
-
-def _text_param(default: str) -> TextParamSpec:
-    """Convenience helper for text-input parameter specs."""
-    return {"type": "text", "default": default}
-
-
-def _bool_param(default: bool) -> BoolParamSpec:
-    """Convenience helper for boolean parameter specs."""
-    return {"type": "bool", "default": default}
 
 
 INDICATOR_SPECS: dict[str, IndicatorSpec] = {
@@ -137,25 +116,24 @@ INDICATOR_SPECS: dict[str, IndicatorSpec] = {
         category="Order Flow & Liquidity",
     ),
 
-
-    "Rolling Entropy": IndicatorSpec(
-        description="Shannon entropy over rolling return distributions.",
-        params={"window": (5, 120, 20, 1), "bins": (2, 40, 10, 1)},
+    "Return Entropy": IndicatorSpec(
+        description="Rolling Shannon entropy of returns (uncertainty/choppiness).",
+        params={"window": (5, 200, 20, 1), "bins": (5, 60, 20, 1), "base": (2, 10, 2, 1)},
         category="Information Theory",
     ),
     "Mutual Information": IndicatorSpec(
-        description="Dependency between returns and lagged returns.",
-        params={"window": (10, 150, 30, 1), "bins": (2, 30, 8, 1), "lag": (1, 10, 1, 1)},
+        description="Dependency between returns and volume changes (or lagged returns).",
+        params={"window": (5, 200, 20, 1), "bins": (5, 60, 20, 1)},
         category="Information Theory",
     ),
     "Fisher Information": IndicatorSpec(
-        description="Standardized return-slope information proxy.",
-        params={"window": (5, 120, 20, 1)},
+        description="Inverse-variance stability proxy; higher implies more stable regimes.",
+        params={"window": (5, 200, 20, 1), "clip_percentile": (50, 99.9, 95, 0.1)},
         category="Information Theory",
     ),
     "KL Divergence": IndicatorSpec(
-        description="Divergence between adjacent rolling return distributions.",
-        params={"window": (10, 150, 30, 1), "bins": (2, 40, 10, 1)},
+        description="Distribution shift between recent and prior return windows.",
+        params={"recent_window": (5, 120, 20, 1), "reference_window": (10, 240, 60, 1), "bins": (5, 60, 20, 1), "sigmoid_scale": (0.5, 10, 3, 0.1)},
         category="Information Theory",
     ),
 
@@ -177,80 +155,5 @@ INDICATOR_SPECS: dict[str, IndicatorSpec] = {
             "energy_window": (3, 120, 20, 1),
         },
         category="Market Field Theory",
-    ),
-    "MFT Complex Amplitude": IndicatorSpec(
-        description="Hilbert analytic-signal amplitude for close prices.",
-        params={},
-        category="Market Field Theory",
-    ),
-    "MFT Complex Phase": IndicatorSpec(
-        description="Hilbert analytic-signal phase for close prices.",
-        params={},
-        category="Market Field Theory",
-    ),
-    "MFT Phase Change": IndicatorSpec(
-        description="Unwrapped phase change (instantaneous frequency proxy).",
-        params={},
-        category="Market Field Theory",
-    ),
-    "MFT Price-Volume Interaction": IndicatorSpec(
-        description="Coupling feature between price and volume fields.",
-        params={
-            "kernel": _select_param(["gaussian", "exp", "linear"], "gaussian"),
-            "sigma": (1, 50, 10, 1),
-            "corr_window": (5, 120, 20, 1),
-        },
-        category="Market Field Theory",
-    ),
-    "MFT Spectral Power": IndicatorSpec(
-        description="Rolling FFT relative power in a selected frequency band.",
-        params={
-            "window": (8, 256, 64, 1),
-            "band": _select_param(["low", "mid", "high"], "low"),
-        },
-        category="Market Field Theory",
-    ),
-    "Return Entropy": IndicatorSpec(
-        description="Rolling Shannon entropy of returns (uncertainty/choppiness).",
-        params={"window": (5, 200, 20, 1), "bins": (5, 60, 20, 1), "base": (2, 10, 2, 1)},
-        category="Information Theory",
-    ),
-    "Mutual Information": IndicatorSpec(
-        description="Dependency between returns and volume changes (or lagged returns).",
-        params={"window": (5, 200, 20, 1), "bins": (5, 60, 20, 1)},
-        category="Information Theory",
-    ),
-    "Fisher Information": IndicatorSpec(
-        description="Inverse-variance stability proxy; higher implies more stable regimes.",
-        params={"window": (5, 200, 20, 1), "clip_percentile": (50, 99.9, 95, 0.1)},
-        category="Information Theory",
-    ),
-    "KL Divergence": IndicatorSpec(
-        description="Distribution shift between recent and prior return windows.",
-        params={"recent_window": (5, 120, 20, 1), "reference_window": (10, 240, 60, 1), "bins": (5, 60, 20, 1), "sigmoid_scale": (0.5, 10, 3, 0.1)},
-        category="Information Theory",
-    ),
-    "Transfer Entropy": IndicatorSpec(
-        description="Directional information flow from one symbol to another.",
-        params={
-            "window": (20, 200, 50, 1),
-            "from_symbol": _text_param("SPY"),
-            "to_symbol": _text_param("QQQ"),
-            "bins": (2, 5, 3, 1),
-            "normalize": _bool_param(True),
-        },
-        category="Information Flow",
-    ),
-    "Granger Causality": IndicatorSpec(
-        description="Rolling Granger causality test from one symbol to another.",
-        params={
-            "window": (20, 200, 50, 1),
-            "from_symbol": _text_param("SPY"),
-            "to_symbol": _text_param("QQQ"),
-            "maxlags": (1, 5, 2, 1),
-            "threshold": (0.001, 0.2, 0.05, 0.001),
-            "output": _select_param(["pvalue", "binary", "confidence"], "pvalue"),
-        },
-        category="Information Flow",
     ),
 }

@@ -4,8 +4,8 @@ Alpha Vantage Data Fetcher
 Fetches 1-minute OHLCV from Alpha Vantage and returns DataFrames
 compatible with the regime engine.
 
-API key:   PLN25H3ESMM1IRBN
-MCP token: G7jhPGMv69WcDYerwJ6VZ2Tw6upJ  (mcp.alphavantage.co)
+API key:   set via AV_API_KEY environment variable
+MCP token: set via AV_MCP_TOKEN environment variable (mcp.alphavantage.co)
 
 Rate limits
 -----------
@@ -52,8 +52,8 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────────────────────
 
 AV_BASE_URL    = "https://www.alphavantage.co/query"
-AV_API_KEY     = "PLN25H3ESMM1IRBN"
-AV_MCP_TOKEN   = "G7jhPGMv69WcDYerwJ6VZ2Tw6upJ"   # mcp.alphavantage.co bearer token
+AV_API_KEY     = os.getenv("AV_API_KEY", "")
+AV_MCP_TOKEN   = os.getenv("AV_MCP_TOKEN", "")   # mcp.alphavantage.co bearer token
 AV_MCP_URL     = "https://mcp.alphavantage.co/"
 
 _OHLCV_RENAME = {

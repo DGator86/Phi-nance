@@ -38,59 +38,12 @@ from phi.utils.validation import (
 
 logger = get_logger(__name__)
 
-METHOD_MAP: dict[str, str] = {
+REGIME_METHOD_MAP = {
     "HMM": "hmm",
+    "KMeans": "kmeans",
     "Clustering (KMeans)": "kmeans",
     "GMM": "gmm",
-    "Deep Learning (LSTM)": "deep_lstm",
-    "Deep Learning (Transformer)": "deep_transformer",
 }
-
-
-
-
-def load_optimized_regime_config(config_path: str) -> dict[str, Any]:
-    """Load a saved auto-training JSON and convert it to UI-friendly regime payload."""
-    payload = json.loads(Path(config_path).read_text(encoding="utf-8"))
-    detector = payload.get("regime_detector") or {}
-    boosts = payload.get("regime_boosts") or {}
-    return {
-        "indicators": payload.get("indicators", {}),
-        "regime_detector_params": detector,
-        "regime_boost_matrix": boosts,
-        "regime_enabled": bool(detector and boosts),
-    }
-
-
-def build_regime_boosts_from_payload(payload: dict[str, Any]) -> dict[str, dict[str, float]]:
-    """Build canonical ``regime_boosts`` mapping from UI payload state."""
-    label_map = payload.get("regime_label_map") or {}
-    matrix = payload.get("regime_boost_matrix") or {}
-    boosts: dict[str, dict[str, float]] = {}
-
-    for raw_label, indicator_map in matrix.items():
-        mapped_label = str(label_map.get(raw_label, raw_label)).strip() or str(raw_label)
-        per_indicator = {str(ind): float(val) for ind, val in (indicator_map or {}).items()}
-        boosts[mapped_label] = per_indicator
-    return boosts
-
-
-def load_detector_from_payload(payload: dict[str, Any]) -> Any:
-    """Load selected detector model and cache it in session state."""
-    selected_path = payload.get("regime_selected_model_path")
-    if not selected_path:
-        raise BacktestError("Regime-aware blending enabled but no detector model selected.")
-
-    cached_path = st.session_state.get("regime_model_path")
-    cached_detector = st.session_state.get("regime_detector")
-    if cached_detector is not None and cached_path == selected_path:
-        return cached_detector
-
-    detector = load_detector(selected_path)
-    st.session_state.regime_detector = detector
-    st.session_state.regime_model_path = str(selected_path)
-    st.session_state.regime_available_models = list_saved_detectors()
-    return detector
 
 
 def validate_config_payload(payload: dict[str, Any]) -> list[str]:
@@ -190,27 +143,12 @@ def handle_train_regime_detector(
     *,
     load_data_fn: Callable[..., pd.DataFrame] = load_historical_data,
 ) -> tuple[Any, pd.Series, str | None]:
-    """Train selected regime detector and cache detector+predictions in session state.
-
-    Args:
-        payload: UI payload containing symbol, date range, and regime training controls.
-        load_data_fn: Injectable loader used to fetch historical OHLCV data.
-
-    Returns:
-        Tuple of trained detector, predicted regime series, and optional saved model path.
-
-    Raises:
-        BacktestError: If data loading returns no rows for the selected range.
-    """
+    """Train selected regime detector and cache detector+predictions in session state."""
     method_label = str(payload.get("regime_method", "HMM"))
-    method = METHOD_MAP.get(method_label)
+    method = REGIME_METHOD_MAP.get(method_label)
     if method is None:
-        logger.warning("Unknown regime method label %r from UI; falling back to 'kmeans'.", method_label)
+        logger.warning("Unknown regime method %r, falling back to kmeans", method_label)
         method = "kmeans"
-    if method.startswith("deep"):
-        raise BacktestError(
-            "Deep learning detectors are trained via CLI (`python -m phi.regime.train_deep`) and then loaded in the UI."
-        )
 
     data = load_data_fn(
         sanitize_ticker(payload["symbol"]),
@@ -288,33 +226,17 @@ def handle_run_backtest(
                 if bool(payload.get("regime_detect_on_the_fly", True)):
                     regime_detector = detector
 
-            if len(cfg.symbols) > 1:
-                results = run_portfolio_backtest(
-                    data_dict=data_map,
-                    indicators=cfg.indicators,
-                    blend_weights=cfg.blend_weights,
-                    blend_method=cfg.blend_method,
-                    initial_capital=cfg.initial_capital,
-                    allocation_strategy=cfg.allocation_strategy,
-                    allocation_params=cfg.allocation_params,
-                    rebalance_frequency=cfg.rebalance_frequency,
-                    rebalance_threshold=cfg.rebalance_threshold,
-                    regime_series=regime_series,
-                )
-            else:
-                results, _ = run_equity_fn(
-                    ohlcv=data_map[cfg.symbols[0]],
-                    symbol=cfg.symbols[0],
-                    indicators=cfg.indicators,
-                    blend_weights=cfg.blend_weights,
-                    blend_method=cfg.blend_method,
-                    initial_capital=cfg.initial_capital,
-                    regime_series=regime_series,
-                    regime_label_map=regime_label_map,
-                    regime_boosts=regime_boosts,
-                    regime_detector=regime_detector,
-                )
-            if regime_series is not None and len(cfg.symbols) == 1:
+            results, _ = run_equity_fn(
+                ohlcv=data,
+                symbol=cfg.symbols[0],
+                indicators=cfg.indicators,
+                blend_weights=cfg.blend_weights,
+                blend_method=cfg.blend_method,
+                initial_capital=cfg.initial_capital,
+                regime_series=regime_series,
+                regime_label_map=None,
+            )
+            if regime_series is not None:
                 results["regime_series"] = regime_series
                 results["ohlcv"] = data_map[cfg.symbols[0]]
 

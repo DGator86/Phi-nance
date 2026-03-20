@@ -16,7 +16,7 @@ from phi.regime.utils import extract_features
 
 
 class ClusteringRegimeDetector(RegimeDetector):
-    """KMeans/GMM detector that assigns regime cluster per bar."""
+    """KMeans/GMM detector that assigns a regime cluster to each bar."""
 
     def __init__(self, n_clusters: int = 3, method: Literal["kmeans", "gmm"] = "kmeans", random_state: int = 42) -> None:
         """Initialize clustering detector and metadata container."""
@@ -26,24 +26,20 @@ class ClusteringRegimeDetector(RegimeDetector):
         self.model: Any = None
         self.feature_columns: list[str] = []
         self.metadata: dict[str, Any] = {
-            "detector_class": self.__class__.__name__,
+            "type": self.method,
             "params": {
                 "n_clusters": self.n_clusters,
                 "method": self.method,
                 "random_state": self.random_state,
             },
+            "features": [],
+            "training_start": None,
+            "training_end": None,
+            "window": 20,
         }
 
     def fit(self, ohlcv: pd.DataFrame, **kwargs: Any) -> ClusteringRegimeDetector:
-        """Fit the configured clustering model on regime features.
-
-        Args:
-            ohlcv: Historical bars for training.
-            **kwargs: Optional fit settings including ``window``.
-
-        Returns:
-            The fitted detector instance.
-        """
+        """Fit clustering detector on extracted features and return ``self``."""
         window = int(kwargs.get("window", 20))
         features = extract_features(ohlcv, window=window)
         x = features.to_numpy()
@@ -58,29 +54,29 @@ class ClusteringRegimeDetector(RegimeDetector):
         self.feature_columns = list(features.columns)
         self.metadata.update(
             {
-                "feature_columns": self.feature_columns,
-                "training_period": {
-                    "start": str(features.index.min().date()),
-                    "end": str(features.index.max().date()),
-                },
+                "features": self.feature_columns,
+                "training_start": ohlcv.index.min(),
+                "training_end": ohlcv.index.max(),
                 "window": window,
             }
         )
         return self
 
     def predict(self, ohlcv: pd.DataFrame) -> pd.Series:
-        """Predict cluster labels (``cluster_{i}``) for each eligible bar."""
+        """Predict cluster labels for each available bar."""
         if self.model is None:
             raise ValueError("ClusteringRegimeDetector must be fit before predict")
+
         features = extract_features(ohlcv, window=int(self.metadata.get("window", 20)))
-        x = features.to_numpy()
-        labels = self.model.predict(x)
-        return pd.Series([f"cluster_{int(c)}" for c in labels], index=features.index, name="regime")
+        labels = self.model.predict(features.to_numpy())
+        series = pd.Series([f"cluster_{int(c)}" for c in labels], index=features.index, name="regime")
+        return series.reindex(ohlcv.index).ffill()
 
     def save(self, path: str | Path) -> None:
-        """Persist fitted clustering model and JSON metadata sidecar."""
+        """Persist trained clustering model and metadata to disk."""
         if self.model is None:
             raise ValueError("Cannot save an unfitted ClusteringRegimeDetector")
+
         model_path = Path(path)
         model_path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
@@ -94,11 +90,11 @@ class ClusteringRegimeDetector(RegimeDetector):
             },
             model_path,
         )
-        model_path.with_suffix(".json").write_text(json.dumps(self.metadata, indent=2), encoding="utf-8")
+        model_path.with_suffix(".json").write_text(json.dumps(self.metadata, indent=2, default=str), encoding="utf-8")
 
     @classmethod
     def load(cls, path: str | Path) -> ClusteringRegimeDetector:
-        """Load a previously saved clustering detector from disk."""
+        """Load a persisted clustering detector from disk."""
         payload = joblib.load(Path(path))
         inst = cls(
             n_clusters=int(payload["n_clusters"]),

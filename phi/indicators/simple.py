@@ -19,20 +19,15 @@ from phi.indicators.orderflow import (
     get_order_flow_provider,
 )
 from phi.logging import get_logger
-from phi.mft.complex import complex_potential
-from phi.mft.fourier import rolling_spectral_power
 from phi.mft.signals import mft_energy_signal, mft_signal
-from phi.mft.volume_field import volume_price_interaction
-
-logger = get_logger(__name__)
-
 from phi.indicators.information import (
     compute_entropy_signal,
     compute_fisher_information_signal,
     compute_kld_signal,
     compute_mutual_info_signal,
 )
-from phi.indicators.information_flow import rolling_granger_causality, rolling_transfer_entropy
+
+logger = get_logger(__name__)
 
 
 def _normalize_signal(s: pd.Series) -> pd.Series:
@@ -229,76 +224,6 @@ def compute_kld_regime_shift(
     )
 
 
-def compute_rolling_entropy(df: pd.DataFrame, window: int = 20, bins: int = 10) -> pd.Series:
-    """Shannon entropy of rolling return distributions."""
-    returns = df["close"].pct_change().fillna(0.0)
-
-    def _entropy(x: np.ndarray) -> float:
-        hist, _ = np.histogram(x, bins=max(2, int(bins)), density=True)
-        probs = hist / (hist.sum() + 1e-12)
-        probs = probs[probs > 0]
-        return float(-(probs * np.log(probs)).sum())
-
-    ent = returns.rolling(int(window), min_periods=max(5, int(window) // 2)).apply(_entropy, raw=True)
-    return _normalize_signal(ent.fillna(0.0))
-
-
-def compute_mutual_information(df: pd.DataFrame, window: int = 30, bins: int = 8, lag: int = 1) -> pd.Series:
-    """Rolling mutual information between returns and lagged returns."""
-    returns = df["close"].pct_change().fillna(0.0)
-    shifted = returns.shift(int(lag)).fillna(0.0)
-
-    def _mi(x: np.ndarray, y: np.ndarray) -> float:
-        joint_hist, _, _ = np.histogram2d(x, y, bins=max(2, int(bins)))
-        pxy = joint_hist / (joint_hist.sum() + 1e-12)
-        px = pxy.sum(axis=1, keepdims=True)
-        py = pxy.sum(axis=0, keepdims=True)
-        expected = px @ py
-        mask = pxy > 0
-        return float((pxy[mask] * np.log((pxy[mask] + 1e-12) / (expected[mask] + 1e-12))).sum())
-
-    vals = np.full(len(returns), np.nan)
-    w = int(window)
-    for i in range(w - 1, len(returns)):
-        x = returns.iloc[i - w + 1 : i + 1].to_numpy(dtype=float)
-        y = shifted.iloc[i - w + 1 : i + 1].to_numpy(dtype=float)
-        vals[i] = _mi(x, y)
-    mi = pd.Series(vals, index=df.index)
-    return _normalize_signal(mi.fillna(0.0))
-
-
-def compute_fisher_information(df: pd.DataFrame, window: int = 20) -> pd.Series:
-    """Fisher-like information proxy using squared standardized return slopes."""
-    returns = df["close"].pct_change().fillna(0.0)
-    z = (returns - returns.rolling(window, min_periods=max(5, window // 2)).mean())
-    z = z / returns.rolling(window, min_periods=max(5, window // 2)).std().replace(0.0, np.nan)
-    fisher = z.diff().pow(2).rolling(window, min_periods=max(5, window // 2)).mean()
-    return _normalize_signal(fisher.fillna(0.0))
-
-
-def compute_kl_divergence(df: pd.DataFrame, window: int = 30, bins: int = 10) -> pd.Series:
-    """KL divergence between consecutive rolling return distributions."""
-    returns = df["close"].pct_change().fillna(0.0)
-    values = np.full(len(returns), np.nan)
-    w = int(window)
-    b = max(2, int(bins))
-    for i in range(2 * w - 1, len(returns)):
-        prev = returns.iloc[i - 2 * w + 1 : i - w + 1].to_numpy(dtype=float)
-        curr = returns.iloc[i - w + 1 : i + 1].to_numpy(dtype=float)
-        low = float(min(prev.min(), curr.min()))
-        high = float(max(prev.max(), curr.max()))
-        if low == high:
-            values[i] = 0.0
-            continue
-        p_hist, _ = np.histogram(prev, bins=b, range=(low, high), density=True)
-        q_hist, _ = np.histogram(curr, bins=b, range=(low, high), density=True)
-        p_dist = p_hist / (p_hist.sum() + 1e-12)
-        q_dist = q_hist / (q_hist.sum() + 1e-12)
-        values[i] = float(np.sum(p_dist * np.log((p_dist + 1e-12) / (q_dist + 1e-12))))
-    kl = pd.Series(values, index=df.index)
-    return _normalize_signal(kl.fillna(0.0))
-
-
 def compute_mft_signal(
     df: pd.DataFrame,
     kernel: str = "gaussian",
@@ -331,115 +256,7 @@ def compute_mft_energy(
     )
 
 
-
-
-def compute_mft_complex_amplitude(df: pd.DataFrame) -> pd.Series:
-    """Instantaneous amplitude from Hilbert analytic signal of close."""
-    out = complex_potential(df["close"].astype(float))["amplitude"]
-    return _normalize_signal(out.fillna(0.0))
-
-
-def compute_mft_complex_phase(df: pd.DataFrame) -> pd.Series:
-    """Instantaneous phase from Hilbert analytic signal of close."""
-    out = complex_potential(df["close"].astype(float))["phase"]
-    return _normalize_signal(out.fillna(0.0))
-
-
-def compute_mft_phase_change(df: pd.DataFrame) -> pd.Series:
-    """Phase-difference proxy for instantaneous frequency shifts."""
-    out = complex_potential(df["close"].astype(float))["phase_change"]
-    return _normalize_signal(out.fillna(0.0))
-
-
-def compute_mft_price_volume_interaction(
-    df: pd.DataFrame,
-    kernel: str = "gaussian",
-    sigma: float = 10.0,
-    corr_window: int = 20,
-) -> pd.Series:
-    """Price/volume field interaction using potential and gradient coupling."""
-    return _normalize_signal(
-        volume_price_interaction(
-            price_series=df["close"].astype(float),
-            volume_series=df["volume"].astype(float),
-            kernel=kernel,
-            sigma=sigma,
-            corr_window=corr_window,
-        ).fillna(0.0)
-    )
-
-
-def compute_mft_spectral_power(
-    df: pd.DataFrame,
-    window: int = 64,
-    band: str = "low",
-) -> pd.Series:
-    """Rolling relative FFT power for a selected frequency band."""
-    band_map = {
-        "low": (0.0, 0.2),
-        "mid": (0.2, 0.5),
-        "high": (0.5, 1.0),
-    }
-    bounds = band_map.get(str(band).lower(), band_map["low"])
-    power = rolling_spectral_power(df["close"].astype(float), window=int(window), bands=[bounds])
-    signed = 2.0 * power.iloc[:, 0] - 1.0
-    return signed.fillna(0.0).clip(-1.0, 1.0)
-
-def _extract_information_flow_prices(df: pd.DataFrame) -> pd.DataFrame:
-    """Build a symbol->close matrix from single or multi-symbol inputs."""
-    if {"open", "high", "low", "close", "volume"}.issubset(df.columns):
-        return pd.DataFrame({"SYMBOL": df["close"].astype(float)}, index=df.index)
-    if isinstance(df.columns, pd.MultiIndex):
-        if "close" in df.columns.get_level_values(1):
-            return df.xs("close", axis=1, level=1).astype(float)
-        if "close" in df.columns.get_level_values(0):
-            return df["close"].astype(float)
-    return df.astype(float)
-
-
-def compute_transfer_entropy(
-    df: pd.DataFrame,
-    window: int = 50,
-    from_symbol: str = "SYMBOL",
-    to_symbol: str = "SYMBOL",
-    bins: int = 3,
-    normalize: bool = True,
-) -> pd.Series:
-    """Compute rolling transfer entropy for selected pair."""
-    prices = _extract_information_flow_prices(df)
-    return rolling_transfer_entropy(
-        prices=prices,
-        from_symbol=from_symbol,
-        to_symbol=to_symbol,
-        window=window,
-        bins=bins,
-        normalize=normalize,
-    ).fillna(0.0)
-
-
-def compute_granger_causality(
-    df: pd.DataFrame,
-    window: int = 50,
-    from_symbol: str = "SYMBOL",
-    to_symbol: str = "SYMBOL",
-    maxlags: int = 2,
-    threshold: float = 0.05,
-    output: str = "pvalue",
-) -> pd.Series:
-    """Compute rolling Granger-causality output for selected pair."""
-    prices = _extract_information_flow_prices(df)
-    return rolling_granger_causality(
-        prices=prices,
-        from_symbol=from_symbol,
-        to_symbol=to_symbol,
-        window=window,
-        maxlags=maxlags,
-        threshold=threshold,
-        output=output,
-    ).fillna(0.0)
-
-
-INDICATOR_COMPUTERS: dict[str, Callable[..., pd.Series]] = {
+INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "RSI": compute_rsi,
     "MACD": compute_macd,
     "Bollinger": compute_bollinger,
@@ -452,24 +269,12 @@ INDICATOR_COMPUTERS: dict[str, Callable[..., pd.Series]] = {
     "Volume Profile": compute_volume_profile,
     "Cumulative Delta": compute_cumulative_delta,
     "Liquidity Metrics": compute_liquidity_metrics,
-    "Rolling Entropy": compute_rolling_entropy,
-    "Mutual Information": compute_mutual_information,
-    "Fisher Information": compute_fisher_information,
-    "KL Divergence": compute_kl_divergence,
     "MFT Signal": compute_mft_signal,
     "MFT Energy": compute_mft_energy,
-    "MFT Complex Amplitude": compute_mft_complex_amplitude,
-    "MFT Complex Phase": compute_mft_complex_phase,
-    "MFT Phase Change": compute_mft_phase_change,
-    "MFT Price-Volume Interaction": compute_mft_price_volume_interaction,
-    "MFT Spectral Power": compute_mft_spectral_power,
-    "Phi-Bot (MFT)": compute_mft_signal,
     "Return Entropy": compute_return_entropy,
     "Mutual Information": compute_mutual_information,
     "Fisher Information": compute_fisher_information,
     "KL Divergence": compute_kld_regime_shift,
-    "Transfer Entropy": compute_transfer_entropy,
-    "Granger Causality": compute_granger_causality,
 }
 
 
@@ -485,24 +290,12 @@ _PARAM_MAP = {
     "Volume Profile": {"window": "window", "bins": "bins", "near_poc_threshold": "near_poc_threshold"},
     "Cumulative Delta": {"window": "window", "clip_value": "clip_value"},
     "Liquidity Metrics": {"window": "window", "amihud_scale": "amihud_scale"},
-    "Rolling Entropy": {"window": "window", "bins": "bins"},
-    "Mutual Information": {"window": "window", "bins": "bins", "lag": "lag"},
-    "Fisher Information": {"window": "window"},
-    "KL Divergence": {"window": "window", "bins": "bins"},
     "MFT Signal": {"kernel": "kernel", "sigma": "sigma", "threshold": "threshold", "smooth_window": "smooth_window"},
     "MFT Energy": {"kernel": "kernel", "sigma": "sigma", "energy_window": "energy_window"},
-    "MFT Complex Amplitude": {},
-    "MFT Complex Phase": {},
-    "MFT Phase Change": {},
-    "MFT Price-Volume Interaction": {"kernel": "kernel", "sigma": "sigma", "corr_window": "corr_window"},
-    "MFT Spectral Power": {"window": "window", "band": "band"},
-    "Phi-Bot (MFT)": {},
     "Return Entropy": {"window": "window", "bins": "bins", "base": "base"},
     "Mutual Information": {"window": "window", "bins": "bins", "mode": "mode"},
     "Fisher Information": {"window": "window", "clip_percentile": "clip_percentile"},
     "KL Divergence": {"recent_window": "recent_window", "reference_window": "reference_window", "bins": "bins", "sigmoid_scale": "sigmoid_scale"},
-    "Transfer Entropy": {"window": "window", "from_symbol": "from_symbol", "to_symbol": "to_symbol", "bins": "bins", "normalize": "normalize"},
-    "Granger Causality": {"window": "window", "from_symbol": "from_symbol", "to_symbol": "to_symbol", "maxlags": "maxlags", "threshold": "threshold", "output": "output"},
 }
 
 
