@@ -93,27 +93,52 @@ class RegimeEngine:
                 )
                 self._gamma_enabled = False
 
+        # Phase 4: IndexEngine — calendar/macro index impact features.
+        # Always enabled when config section is present (no external data needed).
+        index_cfg = config.get("index_engine", {})
+        self._index_enabled = bool(index_cfg.get("enabled", True))
+        self._index_engine = None
+        if self._index_enabled:
+            try:
+                from .index_engine import IndexEngine
+                self._index_engine = IndexEngine(index_cfg)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "IndexEngine init failed — index features disabled: %s", exc
+                )
+                self._index_enabled = False
+
     def run(
         self,
         ohlcv: pd.DataFrame,
         gamma_features: Optional[Dict[str, float]] = None,
         l2_features: Optional[Dict[str, float]] = None,
+        index_features: Optional[Dict[str, float]] = None,
     ) -> Dict[str, pd.DataFrame]:
         """
         Run full engine on a single OHLCV DataFrame.
 
         Parameters
         ----------
-        ohlcv         : pd.DataFrame with columns open/high/low/close/volume
-        gamma_features: optional dict from GammaSurface.compute_features()
-                        Keys: gamma_wall_distance, gamma_net,
-                              gamma_expiry_days, gex_flip_zone.
-                        When provided, values are broadcast as constant
-                        columns onto the feature DataFrame.
-        l2_features   : optional dict from PolygonL2Client.get_snapshot()
-                        Keys: book_imbalance, ofi_true, spread_bps,
-                              depth_ratio, depth_trend.
-                        Same broadcast treatment as gamma_features.
+        ohlcv          : pd.DataFrame with columns open/high/low/close/volume
+        gamma_features : optional dict from GammaSurface.compute_features()
+                         Keys: gamma_wall_distance, gamma_net,
+                               gamma_expiry_days, gex_flip_zone,
+                               gex_term_structure_slope, gex_regime_strength.
+                         When provided, values are broadcast as constant
+                         columns onto the feature DataFrame.
+        l2_features    : optional dict from PolygonL2Client.get_snapshot()
+                         Keys: book_imbalance, ofi_true, spread_bps,
+                               depth_ratio, depth_trend.
+                         Same broadcast treatment as gamma_features.
+        index_features : optional dict from IndexEngine.compute_features()
+                         Keys: month_end_flag, quarter_end_flag,
+                               opex_proximity, quad_witching_flag,
+                               fomc_proximity, rebalance_pressure.
+                         When None and _index_engine is configured,
+                         features are computed automatically from ohlcv.index.
+                         Same broadcast treatment as gamma_features.
 
         Returns
         -------
@@ -124,8 +149,19 @@ class RegimeEngine:
         # 1. Feature computation
         feat_df = self.features.compute(ohlcv)
 
-        # Inject external feature dicts as constant-valued columns
-        for ext_features in [gamma_features, l2_features]:
+        # Auto-compute index features from DatetimeIndex when not provided
+        if index_features is None and self._index_engine is not None:
+            try:
+                index_features = self._index_engine.compute_features(ohlcv.index)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).debug(
+                    "IndexEngine.compute_features skipped: %s", exc
+                )
+
+        # Inject external feature dicts as constant-valued columns.
+        # Order matters: later dicts overwrite earlier ones for same-named keys.
+        for ext_features in [gamma_features, l2_features, index_features]:
             if ext_features:
                 for col, val in ext_features.items():
                     feat_df[col] = float(val)
@@ -175,14 +211,25 @@ class RegimeEngine:
             "mix":            mix_df,
         }
 
-    def run_latest(self, ohlcv: pd.DataFrame) -> TickerResult:
+    def run_latest(
+        self,
+        ohlcv: pd.DataFrame,
+        gamma_features: Optional[Dict[str, float]] = None,
+        l2_features: Optional[Dict[str, float]] = None,
+        index_features: Optional[Dict[str, float]] = None,
+    ) -> TickerResult:
         """
         Run engine and return a TickerResult representing only the latest bar.
         Efficient for scanner use — full time series computed internally,
         only last row extracted.
         """
         try:
-            out = self.run(ohlcv)
+            out = self.run(
+                ohlcv,
+                gamma_features=gamma_features,
+                l2_features=l2_features,
+                index_features=index_features,
+            )
         except Exception as e:
             return TickerResult(
                 ticker="?", timestamp=None,

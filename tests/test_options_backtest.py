@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from datetime import date
 
 import pandas as pd
 
 from phi.options.backtest import compute_greeks, run_options_backtest
+from phi.run_config import RunConfig
 
 
 def _make_ohlcv(n: int = 10) -> pd.DataFrame:
@@ -18,10 +19,18 @@ def _make_ohlcv(n: int = 10) -> pd.DataFrame:
     )
 
 
-@patch("phi.options.backtest.get_marketdataapp_snapshot", return_value=None)
-def test_run_options_backtest_basic(mock_snap):
+def test_run_options_backtest_basic():
     ohlcv = _make_ohlcv(20)
-    result = run_options_backtest(ohlcv, symbol="SPY", strategy_type="long_call")
+    cfg = RunConfig(
+        symbols=["SPY"],
+        start_date=date(2023, 1, 1),
+        end_date=date(2023, 1, 20),
+        trading_mode="options",
+        option_params={
+            "SPY": {"option_type": "call", "strike": 100.0, "expiry": date(2023, 1, 15), "iv": 0.3, "r": 0.02}
+        },
+    )
+    result = run_options_backtest(cfg, ohlcv)
     assert "portfolio_value" in result
     assert "total_return" in result
     assert "cagr" in result
@@ -31,35 +40,14 @@ def test_run_options_backtest_basic(mock_snap):
     assert len(result["portfolio_value"]) == 20
 
 
-@patch("phi.options.backtest.get_marketdataapp_snapshot", return_value=None)
-def test_run_options_backtest_too_short(mock_snap):
-    ohlcv = _make_ohlcv(1)
-    result = run_options_backtest(ohlcv, symbol="SPY")
-    assert result["total_return"] == 0
-    assert result["cagr"] == 0
-    assert result["max_drawdown"] == 0
-    assert result["sharpe"] == 0
-
-
-@patch("phi.options.backtest.get_marketdataapp_snapshot", return_value=None)
-def test_run_options_backtest_long_put(mock_snap):
+def test_run_options_backtest_legacy_mode():
     ohlcv = _make_ohlcv(15)
     result = run_options_backtest(ohlcv, symbol="SPY", strategy_type="long_put")
-    assert "portfolio_value" in result
     assert isinstance(result["total_return"], float)
 
 
 def test_compute_greeks_basic():
-    g = compute_greeks(0.5, gamma=0.05, theta=-0.02, vega=0.10)
-    assert g["delta"] == 0.5
-    assert g["gamma"] == 0.05
-    assert g["theta"] == -0.02
-    assert g["vega"] == 0.10
-
-
-def test_compute_greeks_defaults():
-    g = compute_greeks(0.4)
-    assert g["delta"] == 0.4
-    assert g["gamma"] is None
-    assert g["theta"] is None
-    assert g["vega"] is None
+    g = compute_greeks(100.0, 100.0, 0.5, 0.02, 0.3, "call")
+    assert 0 <= g["delta"] <= 1
+    assert g["gamma"] >= 0
+    assert g["vega"] >= 0

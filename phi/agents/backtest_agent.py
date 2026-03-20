@@ -10,10 +10,14 @@ Usage (programmatic):
     from phi.agents import BacktestAgent
     agent = BacktestAgent()
     result = agent.run("SPY", "2022-01-01", "2024-12-31", capital=100_000)
-    print(result["ai_analysis"])
+    _ = result["ai_analysis"]  # inspect analysis text from the run result
 """
 
 from __future__ import annotations
+
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
 
 import importlib
 import json
@@ -26,11 +30,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from phi.config import settings
+
 _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-_LEARNED_DIR = _ROOT / "data_cache" / "learned_params"
+_LEARNED_DIR = settings.DATA_CACHE_DIR / "learned_params"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Strategy catalogue — mirrors INDICATOR_CATALOG in live_workbench.py
@@ -135,6 +141,10 @@ def _run_single(
     timeframe: str = "1D",
 ) -> Dict:
     """Execute one backtest and return a metrics dict."""
+    logger.debug(
+        "Running single backtest execution.",
+        extra={"symbol": symbol, "timeframe": timeframe, "capital": capital},
+    )
     try:
         from lumibot.backtesting import PandasDataBacktesting
         from lumibot.entities import Asset
@@ -181,6 +191,7 @@ def _run_single(
             "score": _score(sharpe, cagr, max_dd),
         }
     except Exception as exc:
+        logger.exception("Single backtest execution failed.")
         return {"status": "error", "error": str(exc)}
 
 
@@ -227,12 +238,20 @@ class BacktestAgent:
             }
         """
         symbol = symbol.upper()
+        logger.info(
+            "Starting backtest agent run.",
+            extra={"symbol": symbol, "timeframe": timeframe, "start": start, "end": end},
+        )
         _emit = on_progress or (lambda *a, **k: None)
 
         # ── 1. Fetch data ─────────────────────────────────────────────────────
         _emit("Data", "fetching")
         from phi.data import auto_fetch_and_cache
         df, vendor_used = auto_fetch_and_cache(symbol, timeframe, start, end)
+        logger.info(
+            "Fetched data for backtest agent run.",
+            extra={"symbol": symbol, "vendor": vendor_used, "bars": len(df)},
+        )
         _emit("Data", "complete", {"vendor": vendor_used, "bars": len(df)})
 
         start_dt = datetime.combine(date.fromisoformat(start), datetime.min.time())
@@ -252,6 +271,7 @@ class BacktestAgent:
                 try:
                     strategy_cls = _load_strategy(cfg["module_cls"])
                 except Exception as exc:
+                    logger.exception("Strategy import failed.", extra={"strategy": cfg["module_cls"]})
                     runs.append({"name": label, "strategy": cfg["module_cls"],
                                  "params": raw_params, "status": "error",
                                  "error": f"import failed: {exc}"})
@@ -266,12 +286,20 @@ class BacktestAgent:
                 metrics.update({"name": label, "strategy": cfg["module_cls"],
                                  "params": raw_params})
                 runs.append(metrics)
+                logger.debug(
+                    "Completed strategy run.",
+                    extra={"strategy_label": label, "status": metrics.get("status")},
+                )
                 _emit(label, "complete" if metrics["status"] == "ok" else "error", metrics)
 
         # ── 3. Rank results ───────────────────────────────────────────────────
         ok_runs = [r for r in runs if r["status"] == "ok"]
         ok_runs.sort(key=lambda r: r.get("score", -999), reverse=True)
         best = ok_runs[0] if ok_runs else None
+        logger.info(
+            "Finished ranking strategy runs.",
+            extra={"total_runs": len(runs), "successful_runs": len(ok_runs), "best": best["name"] if best else None},
+        )
 
         # ── 4. AI analysis via Claude ─────────────────────────────────────────
         _emit("Claude Analysis", "running")
@@ -284,6 +312,7 @@ class BacktestAgent:
         learned_path = self._save_learned_params(
             symbol, timeframe, start, end, best, ai_analysis, ai_params, ok_runs
         )
+        logger.info("Backtest agent run complete.", extra={"learned_params_path": str(learned_path)})
 
         return {
             "runs": runs,
@@ -296,9 +325,11 @@ class BacktestAgent:
     def load_learned_params(self, symbol: str, timeframe: str = "1D") -> Optional[Dict]:
         """Load previously persisted params for a symbol/timeframe."""
         path = _LEARNED_DIR / f"{symbol.upper()}_{timeframe}.json"
+        logger.debug("Loading learned params.", extra={"path": str(path)})
         if path.exists():
             with open(path, encoding="utf-8") as f:
                 return json.load(f)
+        logger.info("No learned params found.", extra={"path": str(path)})
         return None
 
     # ── Private helpers ───────────────────────────────────────────────────────
@@ -313,6 +344,7 @@ class BacktestAgent:
     ) -> Tuple[str, Dict]:
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
         if not api_key:
+            logger.info("ANTHROPIC_API_KEY not configured, using fallback analysis.")
             return self._fallback_analysis(runs, best), {}
 
         try:
@@ -375,9 +407,11 @@ Reply in this exact structure:
                 messages=[{"role": "user", "content": prompt}],
             )
             text = msg.content[0].text
+            logger.info("Claude analysis completed.")
             return text, self._extract_json(text)
 
         except Exception as exc:
+            logger.exception("Claude analysis failed; using fallback.")
             fallback = self._fallback_analysis(runs, best)
             return f"{fallback}\n\n*Claude unavailable: {exc}*", {}
 
@@ -412,6 +446,7 @@ Reply in this exact structure:
             try:
                 return json.loads(m.group(1))
             except json.JSONDecodeError:
+                logger.warning("Failed to parse Claude JSON recommendation block.")
                 pass
         return {}
 
@@ -458,4 +493,5 @@ Reply in this exact structure:
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
+        logger.info("Persisted learned parameters.", extra={"path": str(path), "symbol": symbol})
         return path

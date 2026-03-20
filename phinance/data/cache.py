@@ -24,7 +24,6 @@ Public API
 from __future__ import annotations
 
 import json
-import logging
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -32,12 +31,14 @@ from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 
 from phinance.utils.logging import get_logger
+from phinance.data.optimised_cache import OptimisedCache
 
 logger = get_logger(__name__)
 
 _SECONDS_PER_DAY = 86_400
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _DATA_CACHE_ROOT = _PROJECT_ROOT / "data_cache"
+_OPTIMISED_CACHE: OptimisedCache | None = None
 
 
 # ── Normalisation + Validation ────────────────────────────────────────────────
@@ -289,6 +290,8 @@ def fetch_and_cache(
     start: Union[str, date, datetime],
     end: Union[str, date, datetime],
     api_key: Optional[str] = None,
+    use_optimised_cache: bool = False,
+    optimised_cache: OptimisedCache | None = None,
 ) -> pd.DataFrame:
     """Fetch OHLCV data from a vendor and persist it; return cache hit if available.
 
@@ -326,7 +329,14 @@ def fetch_and_cache(
     end_s = str(end)[:10]
 
     cache = DataCache()
-    cached = cache.load(vendor, symbol.upper(), timeframe, start_s, end_s)
+    active_optimised_cache = optimised_cache if optimised_cache is not None else _get_global_optimised_cache(use_optimised_cache)
+
+    cache_key = (vendor, symbol.upper(), timeframe, start_s, end_s)
+    cached = active_optimised_cache.get(cache_key) if active_optimised_cache is not None else None
+    if cached is None:
+        cached = cache.load(vendor, symbol.upper(), timeframe, start_s, end_s)
+        if cached is not None and active_optimised_cache is not None:
+            active_optimised_cache.set(cache_key, cached)
     if cached is not None and len(cached) > 0:
         logger.debug("Cache hit: %s %s %s", vendor, symbol, timeframe)
         return cached
@@ -345,7 +355,18 @@ def fetch_and_cache(
 
     df = v.fetch(symbol=symbol, timeframe=timeframe, start=start_s, end=end_s)
     cache.save(df, vendor, symbol.upper(), timeframe, start_s, end_s)
+    if active_optimised_cache is not None:
+        active_optimised_cache.set(cache_key, df)
     return df
+
+
+def _get_global_optimised_cache(enabled: bool) -> OptimisedCache | None:
+    global _OPTIMISED_CACHE
+    if not enabled:
+        return None
+    if _OPTIMISED_CACHE is None:
+        _OPTIMISED_CACHE = OptimisedCache(max_size_mb=1024, default_ttl_seconds=300)
+    return _OPTIMISED_CACHE
 
 
 def get_cached_dataset(

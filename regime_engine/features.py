@@ -146,12 +146,22 @@ class FeatureEngine:
         "mass",
         # L2: mass collapse rate — pre-acceleration signal
         "d_mass_dt",
-        # L1 proxy: signed volume pressure = sign(close-open) × volume
+        # L1 proxy: improved OFI using close position within bar range
+        #   (2*(close-low)/(high-low) - 1) * volume  — Lee-Ready bar proxy
         "ofi_proxy",
+        # L1 proxy: dollar-weighted OFI — scales aggression by price level
+        "ofi_dollar",
         # L2 proxy: volume per unit range (high = absorption)
         "absorption_score",
         # L3 proxy: field non-conservativeness (1=trending, -1=mean-reverting)
         "dissipation_proxy",
+        # L2 proxy: rolling percentile rank of volume — whale/institutional activity
+        "large_trade_proxy",
+        # L2 proxy: normalized distance to nearest round-dollar level / ATR
+        #   Low → price near psychological stop-clustering level
+        "round_number_proximity",
+        # L2 proxy: deviation from rolling VWAP — stop-level and institutional anchor
+        "vwap_distance",
     ]
 
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -317,10 +327,21 @@ class FeatureEngine:
         # This is the "variable-mass" term in d²P/dT² = F/M - (dM/dT/M)×dP/dT
         out["d_mass_dt"] = mass_raw.diff()
 
-        # ofi_proxy: OHLCV approximation of Order Flow Imbalance
-        # sign(close-open) × volume — positive = buyer aggression dominated bar
-        ofi_raw = np.sign(close - open_) * volume
+        # ofi_proxy: improved Lee-Ready bar proxy for Order Flow Imbalance.
+        # Uses close position within bar's high-low range instead of open/close
+        # sign.  (2*(close-low)/(high-low) - 1) ∈ [-1, +1] maps the bar's close
+        # position to buyer fraction, then scales by volume.
+        # This correctly handles gap-and-hold bars where open ≈ close but
+        # price moved heavily within the range (wicking signals aggressor activity).
+        bar_range = (high - low).clip(lower=1e-10)
+        buy_frac = ((close - low) / bar_range).clip(0.0, 1.0)  # 0=at low, 1=at high
+        ofi_raw = (2.0 * buy_frac - 1.0) * volume  # [-volume, +volume]
         out["ofi_proxy"] = ofi_raw
+
+        # ofi_dollar: dollar-volume-weighted OFI.
+        # Scales aggressor imbalance by price level so that a $500 stock's
+        # order flow counts proportionally to a $50 stock.
+        out["ofi_dollar"] = ofi_raw * close
 
         # absorption_score: volume per unit of true range
         # High → lots of volume absorbed per unit of price movement → wall holding
@@ -339,6 +360,46 @@ class FeatureEngine:
             .rolling(d_w, min_periods=d_w // 2)
             .mean()
         )
+
+        # large_trade_proxy: rolling percentile rank of volume.
+        # High values (→1) indicate outsized volume relative to recent history —
+        # proxy for institutional/whale activity.  Uses rank within the rolling
+        # window to avoid sensitivity to distribution shape.
+        lt_w = int(cfg.get("large_trade_window", 200))
+        def _pct_rank(x: np.ndarray) -> float:
+            """Percentile rank of last value within window."""
+            if len(x) < 2:
+                return 0.5
+            return float(np.sum(x[:-1] <= x[-1]) / (len(x) - 1))
+        out["large_trade_proxy"] = volume.rolling(
+            lt_w, min_periods=lt_w // 4
+        ).apply(_pct_rank, raw=True)
+
+        # round_number_proximity: distance to nearest round-dollar level
+        # normalised by ATR.  Low = price is near a psychological round number
+        # where stops and systematic orders tend to cluster.
+        # We use full-dollar rounding; for stocks above $100 we additionally
+        # check $10-level proximity and take the minimum.
+        full_dollar_dist = (close - close.round(0)).abs()
+        ten_dollar_dist  = (close - (close / 10.0).round(0) * 10.0).abs()
+        raw_rnd = np.where(close >= 50.0, np.minimum(full_dollar_dist, ten_dollar_dist / 10.0),
+                           full_dollar_dist)
+        atr_for_rnd = tr.rolling(int(cfg.get("range_expansion_window", 30)),
+                                 min_periods=5).mean().clip(lower=1e-6)
+        out["round_number_proximity"] = pd.Series(raw_rnd, index=close.index) / atr_for_rnd
+
+        # vwap_distance: deviation from rolling approximate VWAP.
+        # VWAP = sum(typical_price × volume) / sum(volume) over a rolling window.
+        # Acts as a proxy for institutional anchoring / stop-cluster levels.
+        # Returns a signed ratio: positive = above VWAP (recent buyer bias),
+        # negative = below (recent seller bias).
+        vwap_w = int(cfg.get("vwap_window", 390))  # 1 full intraday session at 1m
+        typical = (high + low + close) / 3.0
+        dv = typical * volume
+        vwap_num = dv.rolling(vwap_w, min_periods=vwap_w // 10).sum()
+        vwap_den = volume.rolling(vwap_w, min_periods=vwap_w // 10).sum().clip(lower=1e-10)
+        vwap = vwap_num / vwap_den
+        out["vwap_distance"] = (close - vwap) / vwap.clip(lower=1e-10)
 
         return pd.DataFrame(out, index=close.index)
 

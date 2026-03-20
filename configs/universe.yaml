@@ -1,0 +1,15 @@
+equities:
+  - SPY
+  - QQQ
+  - IWM
+  - AAPL
+  - MSFT
+  - NVDA
+  - TSLA
+  - AMZN
+  - GOOGL
+  - META
+indexes:
+  - SPX
+  - NDX
+  - VIX

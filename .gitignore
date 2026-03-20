@@ -1,7 +1,10 @@
 __pycache__/
 *.pyc
 .env
+venv/
+models/
 .av_cache/
+.cache/
 *.egg-info/
 .DS_Store
 data/cache/
@@ -9,3 +12,10 @@ data_cache/
 runs/
 logs/
 *.parquet
+
+# Backtest outputs
+backtest_output*.txt
+*.csv
+!SPY_minute.csv   # keep this test data
+
+venv/

@@ -1,0 +1,28 @@
+environment:
+  episode_length: 32
+  seed: 13
+
+meta_env:
+  option_horizon: 3
+  switch_penalty: 0.01
+  inactivity_penalty: 0.001
+
+options:
+  use_rl: true
+  execution_policy: models/execution_agent/latest.pt
+  strategy_policy: models/strategy_rd_agent/latest.pt
+  risk_policy: models/risk_monitor_agent/latest.pt
+  execution_max_steps: 5
+  risk_monitor_max_steps: 1000
+
+model:
+  architecture: mlp
+  hidden_size: 256
+  sequence_length: 16
+
+training:
+  algorithm: ppo
+  total_timesteps: 15000
+  episodes_smoke: 5
+  learning_rate: 0.0003
+  gamma: 0.99

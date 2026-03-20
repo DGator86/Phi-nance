@@ -15,6 +15,10 @@ Usage:
   reply = agent.chat("Explain this regime")
 """
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 from .ollama_agent import OllamaAgent, list_ollama_models, check_ollama_ready
 
 __all__ = ["OllamaAgent", "list_ollama_models", "check_ollama_ready"]

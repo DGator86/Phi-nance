@@ -1,0 +1,19 @@
+name: "gp_search"
+description: "Run GP discovery with synthetic OHLCV through experiment runner"
+tracking:
+  backend: "none"
+  uri: "./mlruns"
+
+target: "run_gp_search"
+params:
+  config_path: "configs/meta_config.yaml"
+  vault_path: "data/strategy_vault.json"
+  distributed_config_path: "configs/distributed_config.yaml"
+  rows: 200
+  seed: 21
+
+data: {}
+
+tags:
+  author: "codex"
+  project: "gp"

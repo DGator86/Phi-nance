@@ -12,6 +12,10 @@ Philosophy — situational awareness, NOT overfitting:
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 

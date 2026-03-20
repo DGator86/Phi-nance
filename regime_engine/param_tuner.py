@@ -200,18 +200,20 @@ class ParameterTuner:
 
     def tune(
         self,
-        regime_probs:   Dict[str, float],
-        gamma_features: Optional[Dict[str, float]] = None,
-        l2_signals:     Optional[Dict[str, float]] = None,
+        regime_probs:    Dict[str, float],
+        gamma_features:  Optional[Dict[str, float]] = None,
+        l2_signals:      Optional[Dict[str, float]] = None,
+        index_features:  Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         """
         Compute runtime parameter overrides for the current market state.
 
         Parameters
         ----------
-        regime_probs   : dict from RegimeEngine (8-bin probabilities)
-        gamma_features : dict from GammaSurface.compute_features() (optional)
-        l2_signals     : dict from PolygonL2Client.get_snapshot() (optional)
+        regime_probs    : dict from RegimeEngine (8-bin probabilities)
+        gamma_features  : dict from GammaSurface.compute_features() (optional)
+        l2_signals      : dict from PolygonL2Client.get_snapshot() (optional)
+        index_features  : dict from IndexEngine.compute_features() (optional)
 
         Returns
         -------
@@ -230,6 +232,10 @@ class ParameterTuner:
         # Apply liquidity overlay
         if self.enable_liquidity and l2_signals:
             base = self._apply_liquidity(base, l2_signals)
+
+        # Apply calendar/index overlay
+        if index_features:
+            base = self._apply_index(base, index_features)
 
         # Clamp position size multiplier
         ps = float(base.get('position_size_mult', 1.0))
@@ -356,6 +362,45 @@ class ParameterTuner:
                     self.min_pos_mult, self.max_pos_mult,
                 ))
 
+    def update_from_index_features(self, index_features: Dict[str, float]) -> None:
+        """
+        Real-time calendar/index signal integration (called each bar).
+
+        Adjusts regime banks when significant calendar pressure is detected:
+        - High rebalance_pressure → raise all confidence floors (choppy forced flow)
+        - quad_witching → shrink position sizes (unpredictable gamma expiration)
+        - fomc_proximity → raise threshold for trend-following regimes
+        """
+        rebalance   = float(index_features.get('rebalance_pressure', 0.0))
+        quad_witch  = float(index_features.get('quad_witching_flag', 0.0))
+        fomc_prox   = float(index_features.get('fomc_proximity', 0.0))
+
+        if rebalance > 0.40:
+            # High calendar rebalancing pressure: forced flows dominate, raise all floors
+            bump = 0.02 * rebalance
+            for regime in self._banks:
+                self._banks[regime]['confidence_floor'] = float(np.clip(
+                    self._banks[regime].get('confidence_floor', 0.35) + bump, 0.10, 0.90
+                ))
+
+        if quad_witch >= 1.0:
+            # Quad witching: gamma expiration dominates; reduce all directional position sizes
+            for regime in ('TREND_UP', 'TREND_DN', 'BREAKOUT_UP', 'BREAKOUT_DN'):
+                if regime in self._banks:
+                    self._banks[regime]['position_size_mult'] = float(np.clip(
+                        self._banks[regime].get('position_size_mult', 1.0) * 0.80,
+                        self.min_pos_mult, self.max_pos_mult,
+                    ))
+
+        if fomc_prox > 0.60:
+            # Close to FOMC: trend signals unreliable — tighten thresholds
+            for regime in ('TREND_UP', 'TREND_DN'):
+                if regime in self._banks:
+                    self._banks[regime]['signal_threshold'] = float(np.clip(
+                        self._banks[regime].get('signal_threshold', 0.15) + 0.05 * fomc_prox,
+                        0.05, 0.70,
+                    ))
+
     # ──────────────────────────────────────────────────────────────────────
     # Persistence
     # ──────────────────────────────────────────────────────────────────────
@@ -435,9 +480,11 @@ class ParameterTuner:
     @staticmethod
     def _apply_gex(bank: Dict[str, Any], gamma_features: Dict[str, float]) -> Dict[str, Any]:
         """Overlay GEX adjustments on top of the blended regime bank."""
-        gex_net = float(gamma_features.get('gamma_net', 0.0))
-        flip    = float(gamma_features.get('gex_flip_zone', 0.0))
-        wall    = float(gamma_features.get('gamma_wall_distance', 0.0))
+        gex_net       = float(gamma_features.get('gamma_net', 0.0))
+        flip          = float(gamma_features.get('gex_flip_zone', 0.0))
+        wall          = float(gamma_features.get('gamma_wall_distance', 0.0))
+        regime_str    = float(gamma_features.get('gex_regime_strength', 0.0))
+        term_slope    = float(gamma_features.get('gex_term_structure_slope', 0.0))
 
         if flip >= 0.5:
             gex_regime = 'FLIP'
@@ -458,7 +505,26 @@ class ParameterTuner:
         if abs(wall) < 0.01:
             bank['position_size_mult'] = float(bank.get('position_size_mult', 1.0) * 0.80)
 
-        bank['_gex_regime'] = gex_regime
+        # GEX regime strength: stronger wall / dealer exposure → more aggressive size reduction
+        # regime_str ∈ [0, ~2]: 0 = no GEX effect, ~1 = moderate, ~2 = extreme
+        if regime_str > 0.5:
+            # Scale: strength 0.5→1.0 maps to 0%→10% size reduction on top of base adjustment
+            str_reduction = float(np.clip((regime_str - 0.5) / 1.5, 0.0, 1.0)) * 0.10
+            bank['position_size_mult'] = float(bank.get('position_size_mult', 1.0) * (1.0 - str_reduction))
+
+        # GEX term structure slope: positive = near-term gamma dominates (high-risk expiry week)
+        # Raise thresholds when near-term expiry dominates; loosen when far-term dominates
+        if term_slope > 0.30:
+            # Near-term expiry week: dealers have short gamma → volatile; tighten threshold
+            bank['signal_threshold'] = float(bank.get('signal_threshold', 0.20) + 0.03 * term_slope)
+            bank['confidence_floor'] = float(bank.get('confidence_floor', 0.35) + 0.02 * term_slope)
+        elif term_slope < -0.30:
+            # Far-term gamma dominant: more stable dealer hedging; allow slightly lower threshold
+            bank['signal_threshold'] = float(bank.get('signal_threshold', 0.20) + 0.02 * term_slope)  # negative add
+
+        bank['_gex_regime']      = gex_regime
+        bank['_gex_strength']    = float(regime_str)
+        bank['_gex_term_slope']  = float(term_slope)
         return bank
 
     @staticmethod
@@ -488,6 +554,35 @@ class ParameterTuner:
 
         bank['_liq_spread_bps'] = spread
         bank['_liq_depth_ratio'] = depth_r
+        return bank
+
+    @staticmethod
+    def _apply_index(bank: Dict[str, Any], index_features: Dict[str, float]) -> Dict[str, Any]:
+        """Overlay calendar/index adjustments on top of the blended regime bank."""
+        rebalance   = float(index_features.get('rebalance_pressure', 0.0))
+        quad_witch  = float(index_features.get('quad_witching_flag', 0.0))
+        fomc_prox   = float(index_features.get('fomc_proximity', 0.0))
+        opex_prox   = float(index_features.get('opex_proximity', 0.0))
+
+        # Rebalance pressure: forced institutional flows create noise
+        if rebalance > 0.20:
+            bank['confidence_floor'] = float(bank.get('confidence_floor', 0.35) + 0.03 * rebalance)
+
+        # Quad witching: extreme flow unpredictability — cut directional sizing
+        if quad_witch >= 1.0:
+            bank['position_size_mult'] = float(bank.get('position_size_mult', 1.0) * 0.80)
+            bank['confidence_floor']   = float(bank.get('confidence_floor', 0.35) + 0.05)
+
+        # FOMC proximity: macro uncertainty — raise signal threshold
+        if fomc_prox > 0.40:
+            bank['signal_threshold'] = float(bank.get('signal_threshold', 0.20) + 0.04 * fomc_prox)
+
+        # OPEX proximity: gamma pinning near expiry — add slight threshold bump
+        if opex_prox > 0.60:
+            bank['signal_threshold'] = float(bank.get('signal_threshold', 0.20) + 0.02 * opex_prox)
+
+        bank['_rebalance_pressure'] = float(rebalance)
+        bank['_fomc_proximity']     = float(fomc_prox)
         return bank
 
     def _apply_decay(self) -> None:

@@ -1,0 +1,12 @@
+data_optimisation:
+  in_memory_cache:
+    enabled: false
+    max_size_mb: 1024
+    ttl_seconds: 300
+  memmap:
+    enabled: false
+    data_dir: data/memmap
+  streaming:
+    enabled: false
+    batch_size: 256
+    prefetch: 2

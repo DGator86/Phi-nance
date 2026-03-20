@@ -6,8 +6,26 @@ Lightweight signal computation from OHLCV (no Lumibot).
 Used by BlendedWorkbenchStrategy for multi-indicator blending.
 """
 
-from .simple import compute_rsi, compute_macd, compute_bollinger, compute_dual_sma
-from .simple import compute_mean_reversion, compute_breakout, INDICATOR_COMPUTERS
+from phi.logging import get_logger
+
+from .orderflow import OHLCVOrderFlowProvider, get_order_flow_provider, set_order_flow_provider
+from .information import (
+    compute_entropy_signal,
+    compute_fisher_information_signal,
+    compute_kld_signal,
+    compute_mutual_info_signal,
+)
+from .simple import (
+    compute_bollinger,
+    compute_breakout,
+    compute_dual_sma,
+    compute_macd,
+    compute_mean_reversion,
+    compute_mft_energy,
+    compute_mft_signal,
+    compute_rsi,
+)
+from .simple import INDICATOR_COMPUTERS
 
 __all__ = [
     "compute_rsi",
@@ -16,5 +34,14 @@ __all__ = [
     "compute_dual_sma",
     "compute_mean_reversion",
     "compute_breakout",
+    "compute_mft_signal",
+    "compute_mft_energy",
     "INDICATOR_COMPUTERS",
+    "OHLCVOrderFlowProvider",
+    "set_order_flow_provider",
+    "get_order_flow_provider",
+    "compute_entropy_signal",
+    "compute_mutual_info_signal",
+    "compute_fisher_information_signal",
+    "compute_kld_signal",
 ]

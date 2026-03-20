@@ -1,0 +1,297 @@
+"""Rate-limit aware multi-source data manager for live trading."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable
+
+import pandas as pd
+
+from phinance.features.extractor import FeatureExtractor
+from phinance.data.optimised_cache import OptimisedCache
+from phinance.live.cache import PersistentCache
+from phinance.live.rate_limiter import RateLimiter
+from phinance.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+Fetcher = Callable[..., Any]
+
+
+@dataclass
+class SourceStatus:
+    enabled: bool = True
+    health: str = "ok"
+    last_error: str | None = None
+    last_success_at: str | None = None
+
+
+class DataSourceManager:
+    """Coordinates source priority, caching, rate limits, and usage tracking."""
+
+    def __init__(self, config: dict[str, Any], cache: PersistentCache | None = None) -> None:
+        self.config = config
+        self.cache = cache or PersistentCache()
+        self.sources: dict[str, dict[str, Fetcher]] = defaultdict(dict)
+        self.limiters: dict[str, RateLimiter] = {}
+        self.usage: dict[str, int] = defaultdict(int)
+        self.usage_daily: dict[str, int] = defaultdict(int)
+        self.daily_limit: dict[str, int] = {}
+        self.status: dict[str, SourceStatus] = {}
+        self.priorities: dict[str, list[str]] = config.get("data_priorities", {})
+        self.cache_ttl: dict[str, float] = config.get("cache_ttl_seconds", {})
+        self.feature_registry_path: Path | None = None
+        data_optim_cfg = config.get("data_optimisation", {})
+        mem_cfg = data_optim_cfg.get("in_memory_cache", {})
+        self.optimised_cache: OptimisedCache | None = None
+        if mem_cfg.get("enabled", False):
+            self.optimised_cache = OptimisedCache(
+                max_size_mb=int(mem_cfg.get("max_size_mb", 1024)),
+                default_ttl_seconds=float(mem_cfg.get("ttl_seconds", 300)),
+            )
+        self.feature_window = int(config.get("feature_window", 32))
+        self.feature_extractor: FeatureExtractor | None = None
+
+        feature_registry_path = config.get("feature_registry_path")
+        if feature_registry_path:
+            self.feature_registry_path = Path(feature_registry_path)
+            if self.feature_registry_path.exists():
+                self.feature_extractor = FeatureExtractor(
+                    registry_path=self.feature_registry_path,
+                    use_autoencoder=bool(config.get("use_auto_features", True)),
+                    use_gp_features=bool(config.get("use_gp_features", True)),
+                    window=self.feature_window,
+                )
+
+        self._init_sources(config.get("data_sources", {}))
+
+    def _init_sources(self, source_cfg: dict[str, Any]) -> None:
+        for source, cfg in source_cfg.items():
+            enabled = bool(cfg.get("enabled", True))
+            self.status[source] = SourceStatus(enabled=enabled)
+            rate = cfg.get("rate_limit")
+            per = cfg.get("rate_window_seconds", 60)
+            if rate:
+                self.limiters[source] = RateLimiter(rate=float(rate), per=float(per))
+            if cfg.get("daily_limit"):
+                self.daily_limit[source] = int(cfg["daily_limit"])
+
+    def register_source(self, source: str, data_type: str, fetcher: Fetcher) -> None:
+        self.sources[source][data_type] = fetcher
+
+    def set_source_enabled(self, source: str, enabled: bool) -> None:
+        if source not in self.status:
+            self.status[source] = SourceStatus(enabled=enabled)
+        self.status[source].enabled = enabled
+
+    def _cache_key(self, source: str, data_type: str, **params: Any) -> str:
+        parts = [source, data_type]
+        for key in sorted(params.keys()):
+            parts.append(f"{key}={params[key]}")
+        return "|".join(parts)
+
+    def _can_use_source(self, source: str) -> bool:
+        if not self.status.get(source, SourceStatus()).enabled:
+            return False
+        if source in self.daily_limit and self.usage_daily[source] >= self.daily_limit[source]:
+            self._mark_failure(source, f"daily limit reached ({self.daily_limit[source]})")
+            return False
+        return True
+
+    def _acquire_rate(self, source: str) -> bool:
+        limiter = self.limiters.get(source)
+        if limiter is None:
+            return True
+        decision = limiter.acquire(blocking=False)
+        return decision.allowed
+
+    def fetch(self, data_type: str, *, cache_params: dict[str, Any] | None = None, **kwargs: Any) -> Any:
+        priority_sources = self.priorities.get(data_type, [])
+        cache_params = cache_params or kwargs
+
+        last_error: Exception | None = None
+        for source in priority_sources:
+            if source not in self.sources or data_type not in self.sources[source]:
+                continue
+            if not self._can_use_source(source):
+                continue
+
+            cache_key = self._cache_key(source, data_type, **cache_params)
+            cached = self._get_cached(cache_key)
+            if cached is not None:
+                return cached
+
+            if not self._acquire_rate(source):
+                logger.warning("Skipping %s for %s due to rate limit", source, data_type)
+                continue
+
+            try:
+                payload = self.sources[source][data_type](**kwargs)
+                ttl = self.cache_ttl.get(data_type, 300)
+                self.cache.set(cache_key, payload, expiry_seconds=ttl)
+                if self.optimised_cache is not None:
+                    self.optimised_cache.set(cache_key, payload, ttl_seconds=float(ttl))
+                self.usage[source] += 1
+                self.usage_daily[source] += 1
+                self._mark_success(source)
+                return payload
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                self._mark_failure(source, str(exc))
+                logger.warning("Data fetch failed from %s for %s: %s", source, data_type, exc)
+                continue
+
+        if last_error:
+            raise RuntimeError(f"All sources exhausted for {data_type}: {last_error}")
+        raise RuntimeError(f"All sources exhausted for {data_type}")
+
+
+    def _get_cached(self, cache_key: str) -> Any | None:
+        if self.optimised_cache is not None:
+            cached = self.optimised_cache.get(cache_key)
+            if cached is not None:
+                return cached
+        return self.cache.get(cache_key)
+
+    def usage_snapshot(self) -> dict[str, dict[str, Any]]:
+        snapshot: dict[str, dict[str, Any]] = {}
+        for source, status in self.status.items():
+            limit = self.daily_limit.get(source)
+            used = self.usage_daily.get(source, 0)
+            remaining = None if limit is None else max(0, limit - used)
+            snapshot[source] = {
+                "enabled": status.enabled,
+                "health": status.health,
+                "last_error": status.last_error,
+                "last_success_at": status.last_success_at,
+                "calls_made": self.usage.get(source, 0),
+                "daily_used": used,
+                "daily_limit": limit,
+                "daily_remaining": remaining,
+            }
+        return snapshot
+
+    def build_discovered_features(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """Compute discovered features using configured registry, if available."""
+        if self.feature_extractor is None:
+            return {"features": [], "dim": 0, "enabled": False}
+        if self.optimised_cache is not None:
+            feature_key = ("features", market_data.index.min(), market_data.index.max(), len(market_data))
+            cached_features = self.optimised_cache.get(feature_key)
+            if cached_features is not None:
+                return cached_features
+
+        values = self.feature_extractor.extract(market_data)
+        payload = {
+            "features": values.tolist(),
+            "dim": int(values.shape[0]),
+            "enabled": True,
+        }
+        if self.optimised_cache is not None:
+            self.optimised_cache.set(feature_key, payload)
+        return payload
+
+    def _mark_success(self, source: str) -> None:
+        self.status[source].health = "ok"
+        self.status[source].last_error = None
+        self.status[source].last_success_at = datetime.now(timezone.utc).isoformat()
+
+    def _mark_failure(self, source: str, error: str) -> None:
+        self.status[source].health = "degraded"
+        self.status[source].last_error = error
+
+    # ── Unusual Whales bootstrap ───────────────────────────────────────────────
+
+    def register_unusual_whales_sources(
+        self,
+        api_key: str | None = None,
+        timeout: int = 10,
+    ) -> bool:
+        """Register all Unusual Whales data types with the source manager.
+
+        Instantiates an :class:`~phinance.data.vendors.unusual_whales.UnusualWhalesClient`
+        and registers each of its methods as the canonical fetcher for the
+        corresponding data type.  The registration is silently skipped if the
+        API key is unavailable.
+
+        Data type → method mapping
+        --------------------------
+        flow_alerts     → ``fetch_flow_alerts(symbol, limit)``
+        ticker_flow     → ``fetch_ticker_flow(symbol, limit)``
+        options_chain   → ``fetch_options_chain(symbol)``
+        dark_pool       → ``fetch_dark_pool(symbol, limit)``
+        dark_pool_ticker→ ``fetch_dark_pool_ticker(symbol, limit)``
+        market_tide     → ``fetch_market_tide(symbol)``
+        market_overview → ``fetch_market_overview()``
+        market_movers   → ``fetch_market_movers(direction, limit)``
+        etf_flow        → ``fetch_etf_flow(limit)``
+        etf_holdings    → ``fetch_etf_holdings(symbol)``
+        iv_rank         → ``fetch_iv_rank(symbol)``
+        oi_change       → ``fetch_oi_change(symbol, limit)``
+        options_volume  → ``fetch_options_volume(symbol, limit)``
+        pc_ratio        → ``fetch_pc_ratio(symbol)``
+        short_interest  → ``fetch_short_interest(symbol)``
+        congress_trades → ``fetch_congress_trades(limit)``
+        insider_trades  → ``fetch_insider_trades(symbol, limit)``
+
+        Parameters
+        ----------
+        api_key : str | None
+            Bearer token.  Falls back to ``UNUSUAL_WHALES_API_KEY`` env var.
+        timeout : int
+            HTTP request timeout in seconds.
+
+        Returns
+        -------
+        bool
+            ``True`` if registration succeeded, ``False`` if the API key was
+            missing or client construction failed.
+        """
+        try:
+            from phinance.data.vendors.unusual_whales import UnusualWhalesClient
+            client = UnusualWhalesClient(api_key=api_key, timeout=timeout)
+        except Exception as exc:
+            logger.warning("register_unusual_whales_sources: skipped — %s", exc)
+            return False
+
+        _SOURCE = "unusual_whales"
+
+        _bindings: list[tuple[str, Any]] = [
+            ("flow_alerts",      client.fetch_flow_alerts),
+            ("ticker_flow",      client.fetch_ticker_flow),
+            ("options_chain",    client.fetch_options_chain),
+            ("dark_pool",        client.fetch_dark_pool),
+            ("dark_pool_ticker", client.fetch_dark_pool_ticker),
+            ("market_tide",      client.fetch_market_tide),
+            ("market_overview",  client.fetch_market_overview),
+            ("market_movers",    client.fetch_market_movers),
+            ("etf_flow",         client.fetch_etf_flow),
+            ("etf_holdings",     client.fetch_etf_holdings),
+            ("iv_rank",          client.fetch_iv_rank),
+            ("oi_change",        client.fetch_oi_change),
+            ("options_volume",   client.fetch_options_volume),
+            ("pc_ratio",         client.fetch_pc_ratio),
+            ("short_interest",   client.fetch_short_interest),
+            ("congress_trades",  client.fetch_congress_trades),
+            ("insider_trades",   client.fetch_insider_trades),
+        ]
+
+        for data_type, fetcher in _bindings:
+            self.register_source(_SOURCE, data_type, fetcher)
+
+        # Ensure the source appears in the status map
+        if _SOURCE not in self.status:
+            uw_cfg = self.config.get("data_sources", {}).get(_SOURCE, {})
+            self.status[_SOURCE] = SourceStatus(
+                enabled=bool(uw_cfg.get("enabled", True))
+            )
+
+        logger.info(
+            "register_unusual_whales_sources: registered %d data types for '%s'",
+            len(_bindings),
+            _SOURCE,
+        )
+        return True

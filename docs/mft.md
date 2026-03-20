@@ -1,35 +1,86 @@
-# Market Field Theory (MFT) Notes
+# Market Field Theory (MFT) — Simplified Implementation
 
-This document summarizes the MFT framing used by Phi-nance regime detection.
+## Overview
 
-## Core concepts
+This project includes an **experimental** Market Field Theory (MFT) implementation in `phi/mft/`.
 
-- **Field strength**: directional pressure inferred from price trend, momentum, and breadth-like proxies.
-- **Entropy**: uncertainty/disorder of recent returns, approximated with rolling distribution metrics.
-- **Fractal dimension**: roughness of the price path, used to discriminate trend persistence from noisy mean reversion.
+The core idea is to treat price as a 1D temporal field:
 
-## Feature computation
+1. Build a smoothed **field potential** from close prices via kernel convolution.
+2. Derive local dynamics from the potential:
+   - **Gradient** (first difference): directional force proxy.
+   - **Laplacian** (second difference): curvature / turning-pressure proxy.
+   - **Energy** (`gradient^2`): activity or volatility proxy.
+3. Convert these into bounded trading signals in `[-1, 1]`.
 
-Typical MFT-inspired features are computed on rolling windows over OHLCV:
+> This is intentionally interpretable and lightweight, not a strict physics derivation.
 
-1. Return, volatility, and drawdown transforms.
-2. Entropy-like statistics from return bins or normalized volatility changes.
-3. Regime persistence and transition scores.
-4. Optional volume/participation features.
+## Components
 
-## Regime classifier usage
+- `phi/mft/utils.py`
+  - `build_kernel(kernel, sigma)`
+  - Supported kernels:
+    - `gaussian`: `exp(-t^2 / (2*sigma^2))`
+    - `exp`: `exp(-|t| / sigma)`
+    - `linear`: triangular kernel
 
-The classifier combines these features into labels such as:
+- `phi/mft/field.py`
+  - `field_potential(series, kernel, sigma)`
+  - `field_gradient(potential)`
+  - `field_laplacian(potential)`
+  - `field_energy(gradient)`
+  - `compute_field_dynamics(series, kernel, sigma)`
 
-- `TREND_UP` / `TREND_DN`
-- `RANGE`
-- `BREAKOUT_UP` / `BREAKOUT_DN`
-- `HIGHVOL` / `LOWVOL`
+- `phi/mft/signals.py`
+  - `mft_signal(close, kernel, sigma, threshold, smooth_window)`
+  - `mft_energy_signal(close, kernel, sigma, energy_window)`
 
-Those labels can be converted to probabilities and consumed by blending (`regime_weighted`) to adapt signal weights.
+## Indicator Integration
 
-## References
+Two MFT indicators are available in the Streamlit workbench under **Market Field Theory**:
 
-- Peters, E. E. *Fractal Market Analysis*.
-- Mandelbrot, B. *The (Mis)Behavior of Markets*.
-- Related literature on entropy in financial time series and regime-switching models.
+- **MFT Signal**
+  - Signal from gradient direction with threshold filter.
+  - Parameters:
+    - `kernel`: `gaussian | exp | linear`
+    - `sigma`: kernel width/decay
+    - `threshold`: minimum absolute gradient to emit non-zero signal
+    - `smooth_window`: optional smoothing on final signal
+
+- **MFT Energy**
+  - Signal from relative energy regime (energy vs rolling baseline).
+  - Parameters:
+    - `kernel`
+    - `sigma`
+    - `energy_window`
+
+## Interpretation Notes
+
+- Positive **MFT Signal** implies upward local field force.
+- Negative **MFT Signal** implies downward local field force.
+- **MFT Energy** can help filter regimes:
+  - Very high energy: unstable / reactive environments.
+  - Lower energy: calmer environments.
+
+## Practical Usage
+
+Start simple:
+
+- `kernel = gaussian`
+- `sigma = 10`
+- `threshold = 0.0`
+- `smooth_window = 3`
+
+Then tune with backtests by market and timeframe.
+
+## Caveats
+
+- This feature is **experimental** and should be validated empirically.
+- Results are sensitive to kernel shape and `sigma`.
+- Signals are heuristic and may evolve as MFT research in the project matures.
+
+
+## Backward compatibility
+
+- Registry key `phi_mft` is retained as an alias to the simplified `mft_signal` computation.
+- Simple-indicator name `Phi-Bot (MFT)` is retained as an alias to `MFT Signal`.

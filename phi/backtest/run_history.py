@@ -13,6 +13,10 @@ RunHistory provides list / load / compare / delete operations.
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import json
 import shutil
 from datetime import datetime
@@ -21,9 +25,11 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from phi.config import settings
+
 from .run_config import RunConfig
 
-RUNS_ROOT = Path(__file__).parents[2] / "runs"
+RUNS_ROOT = settings.RUNS_DIR
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +37,7 @@ RUNS_ROOT = Path(__file__).parents[2] / "runs"
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _run_dir(run_id: str) -> Path:
+    RUNS_ROOT.mkdir(parents=True, exist_ok=True)
     return RUNS_ROOT / run_id
 
 

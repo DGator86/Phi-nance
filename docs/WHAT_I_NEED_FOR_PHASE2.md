@@ -27,7 +27,17 @@ Use **one** of Polygon or Massive for history; Tradier for live.
 
 ## 3. Run Phase 2
 
-From repo root:
+From repo root (recommended wrapper):
+
+```bash
+# Preferred: one command to populate + verify, with sample fallback
+python scripts/setup_data_spine.py --tickers SPY QQQ AAPL --years 2
+
+# Keyless smoke mode
+python scripts/setup_data_spine.py --sample-only
+```
+
+Direct script (advanced/manual):
 
 ```bash
 # Full Phase 2: FINRA short volume + Polygon backfill + Tradier live bars

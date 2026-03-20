@@ -11,4 +11,13 @@ Modular structure:
   phi.phiai      — PhiAI auto-tuning
 """
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 __version__ = "0.1.0"
+
+
+from phi.config import settings
+
+settings.create_dirs()

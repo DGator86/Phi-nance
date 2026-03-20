@@ -16,7 +16,7 @@ Production-quality quant trading dashboard with:
   - Tablet: hybrid 2-3 column layout
 
 Run:
-    python -m streamlit run dashboard.py
+    python -m streamlit run legacy/dashboard.py
 """
 
 import copy, io, os, subprocess, sys, time, json, hashlib, warnings
@@ -45,7 +45,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import yaml
 
-from engine_health import run_engine_health_check
+from scripts.engine_health import run_engine_health_check
 from app_streamlit.device_detect import detect_device, get_device
 
 # ---------------------------------------------------------------------------
@@ -726,7 +726,7 @@ def _build_config_dict(tf, n_bars, b, bm) -> dict:
 
 
 def _run_backtest(strategy_class, params, config):
-    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
+    av_api_key = os.getenv("AV_API_KEY", "")
     results, strat = strategy_class.run_backtest(
         datasource_class=_av_backtesting(),
         backtesting_start=config["start"], backtesting_end=config["end"],

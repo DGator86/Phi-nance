@@ -7,12 +7,18 @@ No manual tuning. Uses Ollama when available for indicator/blend suggestions.
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import json
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+from phi.run_config import RunConfig
+
 
 # Default indicators to use when Ollama unavailable
 _DEFAULT_INDICATORS = ["RSI", "MACD", "Bollinger", "Dual SMA"]
@@ -101,6 +107,7 @@ def run_fully_automated(
     ollama_host: str = "http://localhost:11434",
     ollama_model: str = "llama3.2",
     use_ollama: bool = True,
+    run_config: Optional[RunConfig] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Dict], str, str, pd.DataFrame]:
     """
     Fully automated pipeline: data → indicators → params → blend.
@@ -147,9 +154,29 @@ def run_fully_automated(
         indicators[name] = {"enabled": True, "auto_tune": True, "params": params.copy()}
 
     # 4. PhiAI optimize params using timeframe-aware grids
-    optimized, opt_expl = run_phiai_optimization(ohlcv, indicators, max_iter_per_indicator=12, timeframe=timeframe)
-    indicators = optimized
-    explanation_parts.append(opt_expl)
+    optimization_config = run_config
+    if optimization_config is None:
+        equal_weight = 1.0 / max(1, len(indicators))
+        optimization_config = RunConfig(
+            symbols=[symbol],
+            start_date=start_date,
+            end_date=end_date,
+            timeframe=timeframe,
+            vendor=vendor,
+            initial_capital=initial_capital,
+            indicators={name: {"enabled": True, "params": indicators[name].get("params", {})} for name in indicators},
+            blend_method="weighted_sum",
+            blend_weights={name: equal_weight for name in indicators},
+        )
+
+    opt_result = run_phiai_optimization(
+        ohlcv=ohlcv,
+        indicators_config=indicators,
+        run_config=optimization_config,
+        metric="sharpe",
+    )
+    indicators = opt_result.get("optimized_indicators", indicators)
+    explanation_parts.append(opt_result.get("explanation", "PhiAI made no changes."))
 
     # 5. Blend method (equal weights, handled by caller)
     from datetime import datetime

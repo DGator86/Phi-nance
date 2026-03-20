@@ -1,0 +1,30 @@
+name: gp_discovery_sweep
+description: Random search for GP discovery target
+tracking:
+  backend: none
+
+target: phinance.experiment.dummy_targets:gp_discovery_target
+params:
+  generations: 5
+  population: 20
+
+search_space:
+  params.generations:
+    type: int
+    low: 3
+    high: 8
+  params.population:
+    type: choice
+    values: [10, 20, 30, 40]
+  params.mutation_rate:
+    type: uniform
+    low: 0.01
+    high: 0.2
+
+sweep:
+  method: random
+  n_trials: 6
+  seed: 123
+  parallel: 1
+  objective_metric: best_score
+  objective_mode: max

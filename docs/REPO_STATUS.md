@@ -38,6 +38,7 @@ Phi-nance/
 │   └── projection_packet_sample.json
 ├── scripts/
 │   ├── run_phase2.py                # Phase 2: backfill + live + FINRA + optional --check-gaps
+│   ├── setup_data_spine.py          # Phase 2 bootstrap wrapper with retries, verification, sample fallback
 │   ├── run_backtest.py              # WF backtest (synthetic or data/bars)
 │   ├── run_paper_daily.py           # Phase 6.5: daily packets -> data/paper_packets/YYYY-MM-DD/
 │   ├── run_dashboard.py            # Phase 6.5: 20d AUC, 75% cone, 20d IC, kill gate
@@ -127,7 +128,7 @@ Phi-nance/
 | Phase | Spec | Status |
 |-------|------|--------|
 | **1** | ProjectionPacket boundary + projection-only rule | ✅ Done |
-| **2** | Data spine: 2A historical bars, 2B live + chain, 2C FINRA | ✅ Code done. **You still need:** run `python -m scripts.run_phase2` (keys in .env) to fill data/bars and data/short_volume. |
+| **2** | Data spine: 2A historical bars, 2B live + chain, 2C FINRA | ✅ Automated bootstrap added via `python scripts/setup_data_spine.py` (uses Phase 2 + verification + sample fallback). |
 | **3** | AssignmentEngine (router, 5m resample, coverage) | ✅ Done |
 | **4** | Engines V1 (liquidity, regime, sentiment, hedge EOD) | ✅ Done |
 | **5** | MFM (deterministic, replayable) | ✅ Done |
@@ -148,19 +149,16 @@ Phi-nance/
 
 ## 5. What’s next (in order)
 
-1. **Run Phase 2**  
-   `python -m scripts.run_phase2` (optionally `--tickers SPY QQQ --years 2 --check-gaps`). Confirms keys work and fills bars + short volume.
+1. **Run data spine setup**  
+   `python scripts/setup_data_spine.py --tickers SPY QQQ --years 2` (optionally `--sample-only`). This wraps Phase 2, retries failures, and validates no-gap checks.
 
-2. **Validate Phase 2 “done when”**  
-   After backfill: whole universe has bars; no-gap check passes. Live stream persists in same schema (already wired).
-
-3. **Composer calibration**  
+2. **Composer calibration**  
    Replace stub direction/drift with something trained on WF train windows (e.g. simple model or rules using MFM features).
 
-4. **Run WF and hit Phase 6 gate**  
+3. **Run WF and hit Phase 6 gate**  
    Use `scripts/run_backtest.py` or validation harness on real data; get mean OOS AUC; aim for > 0.52.
 
-5. **Phase 6.5**  
+4. **Phase 6.5**  
    Implement Tradier sandbox loop (daily run, persist packets, compute 20d AUC / 75% cone / 20d IC) and a minimal dashboard or log summary.
 
 ---
@@ -168,6 +166,6 @@ Phi-nance/
 ## 6. Summary
 
 - **Built:** Skeleton, contracts, store, providers (Polygon/Massive, Tradier, FINRA), all four engines, MFM, Composer, WF + ablation, paper kill criteria, projection-only rule. Backtests run on synthetic data.
-- **Not yet done:** Real data in the store (run Phase 2), Composer calibration, passing the Phase 6 AUC gate, and a real Phase 6.5 paper-trading loop + dashboard.
+- **Not yet done:** Composer calibration, passing the Phase 6 AUC gate, and a real Phase 6.5 paper-trading loop + dashboard.
 
-So: **implementation is in place through Phase 6 (with stub calibration); Phase 2 data load and Phase 6.5 automation are the next concrete steps.**
+So: **implementation is in place through Phase 6 (with stub calibration); Phase 2 bootstrapping is now automated, and Phase 6.5 automation remains a next concrete step.**

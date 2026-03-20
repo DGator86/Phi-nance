@@ -1,34 +1,40 @@
-"""
-Phi-nance Options Module
-========================
+"""Public API for options pricing and backtesting."""
 
-Options backtest mode:
-  - Simple delta-based simulation (backtest.py)
-  - Full walk-forward engine backtest (engine_backtest.py)
-  - AI-powered strategy advisor (ai_advisor.py)
-  - Post-trade reviewer with regime/IV/GEX insights (options_reviewer.py)
+from phi.logging import get_logger
 
-Market data:
-  - MarketDataApp real chain snapshots (market_data.py)
-"""
+logger = get_logger(__name__)
 
-from .backtest import run_options_backtest, compute_greeks
-from .market_data import get_marketdataapp_snapshot
-from .engine_backtest import run_engine_backtest
-from .ai_advisor import OptionsAIAdvisor, OptionsRecommendation
-from .options_reviewer import review_options_backtest, OptionsBacktestReview
-from .models import black_scholes_price, black_scholes_greeks, Greeks
+from .backtest import compute_greeks, run_options_backtest
+from .contract import OptionContract, OptionType
+from .data_adapter import adapt_for_backtesting, fetch_options_data
+from .market import fetch_options_market_data
+from .position import OptionPosition
+from .pricing import black_scholes_price, delta, gamma, theta, vega
+from .regime_strategy_map import (
+    APPROVED_STRATEGIES,
+    REGIME_STRATEGY_MAP,
+    is_approved_strategy,
+    map_regime_probabilities_to_strategies,
+    strategies_for_regime,
+)
 
 __all__ = [
-    "run_options_backtest",
-    "compute_greeks",
-    "get_marketdataapp_snapshot",
-    "run_engine_backtest",
-    "OptionsAIAdvisor",
-    "OptionsRecommendation",
-    "review_options_backtest",
-    "OptionsBacktestReview",
+    "OptionType",
+    "OptionContract",
+    "OptionPosition",
     "black_scholes_price",
-    "black_scholes_greeks",
-    "Greeks",
+    "delta",
+    "gamma",
+    "vega",
+    "theta",
+    "compute_greeks",
+    "run_options_backtest",
+    "fetch_options_market_data",
+    "adapt_for_backtesting",
+    "fetch_options_data",
+    "APPROVED_STRATEGIES",
+    "REGIME_STRATEGY_MAP",
+    "strategies_for_regime",
+    "map_regime_probabilities_to_strategies",
+    "is_approved_strategy",
 ]

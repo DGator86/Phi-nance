@@ -14,12 +14,15 @@ Usage
     ...     metrics=results,
     ...     ohlcv=ohlcv,
     ... )
-    >>> print(review.summary)
-    >>> for tweak in review.tweaks:
-    ...     print(tweak.title, tweak.rationale)
+    >>> review.summary
+    >>> [(t.title, t.rationale) for t in review.tweaks]
 """
 
 from __future__ import annotations
+
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple

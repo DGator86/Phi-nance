@@ -1,0 +1,29 @@
+environment:
+  symbol: SPY
+  timeframe: 1m
+  vendor: yfinance
+  episode_length: 30
+  participation_cap: 0.25
+  impact_coefficient: 0.1
+  urgency_cross_spread: 1.0
+  seed: 7
+
+model:
+  hidden_size: 256
+  architecture: lstm  # mlp | lstm | transformer
+  sequence_length: 16
+
+training:
+  algorithm: sac  # ppo | sac | td3 (when supported by AReaL)
+  total_timesteps: 100000
+  learning_rate: 0.0003
+  gamma: 0.99
+  rollout_workers: 2
+  episodes_smoke: 5
+
+use_transformer_embeddings: false
+transformer_model_path: "phinance/ml/checkpoints/transformer_latest.pt"
+use_auto_features: false
+use_gp_features: false
+feature_registry_path: "phinance/features/feature_registry.json"
+feature_window: 32

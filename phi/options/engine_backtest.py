@@ -38,6 +38,10 @@ Limitations
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import logging
 import math
 from datetime import date, timedelta
@@ -46,7 +50,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # BS kernel (self-contained so this module has no circular imports)

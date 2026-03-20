@@ -1,14 +1,12 @@
-"""
-Phi-nance Blending Module
-=========================
+"""Public API for signal blending."""
 
-Blend multiple indicator signals:
-  - Weighted Sum
-  - Regime-Weighted
-  - Voting
-  - PhiAI Chooses
-"""
+from phi.logging import get_logger
 
-from .blender import blend_signals, BLEND_METHODS
+logger = get_logger(__name__)
 
-__all__ = ["blend_signals", "BLEND_METHODS"]
+from .blender import ALLOWED_METHODS, DEFAULT_REGIME_BOOSTS, blend_signals
+
+# Backward-compatible alias.
+BLEND_METHODS = ALLOWED_METHODS
+
+__all__ = ["blend_signals", "ALLOWED_METHODS", "BLEND_METHODS", "DEFAULT_REGIME_BOOSTS"]

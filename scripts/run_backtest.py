@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).resolve().parent.parent
@@ -59,6 +60,150 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--api-key",    default="",  help="Alpha Vantage API key (if needed)")
     p.add_argument("--no-cache",   action="store_true",       help="Bypass data cache")
     return p.parse_args()
+
+
+def run_backtest_experiment(
+    symbol: str = "SPY",
+    start: str = "2022-01-01",
+    end: str = "2024-12-31",
+    tf: str = "1D",
+    vendor: str = "yfinance",
+    indicators: list[str] | None = None,
+    blend: str = "weighted_sum",
+    capital: float = 100_000.0,
+    threshold: float = 0.15,
+    position: float = 0.95,
+    phiai: bool = False,
+    max_iter: int = 20,
+    api_key: str = "",
+    log_trades_artifact: bool = False,
+    trades_artifact_path: str = "artifacts/backtest_trades.csv",
+    tracker: Any = None,
+) -> dict[str, float]:
+    from phinance.backtest import run_backtest
+    from phinance.data import fetch_and_cache
+    from phinance.optimization import run_phiai_optimization
+
+    selected_indicators = indicators or ["RSI", "MACD"]
+    if tracker is not None:
+        tracker.log_params(
+            {
+                "symbol": symbol,
+                "start": start,
+                "end": end,
+                "tf": tf,
+                "vendor": vendor,
+                "blend": blend,
+                "capital": capital,
+                "threshold": threshold,
+                "position": position,
+                "phiai": phiai,
+                "max_iter": max_iter,
+                "indicator_count": len(selected_indicators),
+            }
+        )
+
+    df = fetch_and_cache(
+        vendor=vendor,
+        symbol=symbol,
+        timeframe=tf,
+        start=start,
+        end=end,
+        api_key=api_key or None,
+    )
+
+    indicators_cfg = {name: {"enabled": True, "auto_tune": phiai, "params": {}} for name in selected_indicators}
+
+    if phiai:
+        indicators_cfg, _ = run_phiai_optimization(
+            ohlcv=df,
+            indicators=indicators_cfg,
+            max_iter_per_indicator=max_iter,
+            timeframe=tf,
+        )
+
+    result = run_backtest(
+        ohlcv=df,
+        symbol=symbol,
+        indicators=indicators_cfg,
+        blend_method=blend,
+        signal_threshold=threshold,
+        initial_capital=capital,
+        position_size_pct=position,
+    )
+
+    if tracker is not None and log_trades_artifact:
+        import pandas as pd
+
+        trade_rows = [
+            {
+                "entry_date": trade.entry_date,
+                "exit_date": trade.exit_date,
+                "symbol": trade.symbol,
+                "entry_price": trade.entry_price,
+                "exit_price": trade.exit_price,
+                "quantity": trade.quantity,
+                "pnl": trade.pnl,
+                "pnl_pct": trade.pnl_pct,
+                "hold_bars": trade.hold_bars,
+                "direction": trade.direction,
+                "regime": trade.regime,
+            }
+            for trade in result.trades
+        ]
+        artifact_path = Path(trades_artifact_path)
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(trade_rows).to_csv(artifact_path, index=False)
+        tracker.log_artifact(str(artifact_path))
+
+    return {
+        "total_return": float(result.total_return),
+        "cagr": float(result.cagr),
+        "max_drawdown": float(result.max_drawdown),
+        "sharpe": float(result.sharpe),
+        "sortino": float(result.sortino),
+        "win_rate": float(result.win_rate),
+        "total_trades": float(result.total_trades),
+        "net_pl": float(result.net_pl),
+    }
+
+
+def run_experiment_target(
+    symbol: str = "SPY",
+    start: str = "2022-01-01",
+    end: str = "2024-12-31",
+    tf: str = "1D",
+    vendor: str = "yfinance",
+    indicators: list[str] | None = None,
+    blend: str = "weighted_sum",
+    capital: float = 100_000.0,
+    threshold: float = 0.15,
+    position: float = 0.95,
+    phiai: bool = False,
+    max_iter: int = 20,
+    api_key: str = "",
+    log_trades_artifact: bool = False,
+    trades_artifact_path: str = "artifacts/backtest_trades.csv",
+    tracker: Any = None,
+) -> dict[str, float]:
+    return run_backtest_experiment(
+        symbol=symbol,
+        start=start,
+        end=end,
+        tf=tf,
+        vendor=vendor,
+        indicators=indicators,
+        blend=blend,
+        capital=capital,
+        threshold=threshold,
+        position=position,
+        phiai=phiai,
+        max_iter=max_iter,
+        api_key=api_key,
+        log_trades_artifact=log_trades_artifact,
+        trades_artifact_path=trades_artifact_path,
+        tracker=tracker,
+    )
 
 
 def main() -> int:

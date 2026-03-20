@@ -55,6 +55,17 @@ except ImportError:  # pragma: no cover
 from phinance.live.scheduler import TradingScheduler, SchedulerConfig, ScheduledTick, run_paper_scheduler
 
 __all__ = [
+    "RateLimiter",
+    "RateLimitDecision",
+    "PersistentCache",
+    "DataSourceManager",
+    "LiveBroker",
+    "BrokerConfig",
+    "OrderManager",
+    "OrderDecision",
+    "LiveEngine",
+    "LiveEngineState",
+    "PollingDataStream",
     "BrokerAdapter",
     "OrderSide",
     "OrderType",
@@ -70,3 +81,11 @@ __all__ = [
     "run_paper_scheduler",
     *__all_brokers__,
 ]
+
+from phinance.live.rate_limiter import RateLimiter, RateLimitDecision
+from phinance.live.cache import PersistentCache
+from phinance.live.data_source_manager import DataSourceManager
+from phinance.live.broker import LiveBroker, BrokerConfig
+from phinance.live.order_manager import OrderManager, OrderDecision
+from phinance.live.engine import LiveEngine, LiveEngineState
+from phinance.live.data_stream import PollingDataStream

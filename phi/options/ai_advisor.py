@@ -26,10 +26,14 @@ Usage
     ...     gamma_features={"gamma_net": 0.15, "gex_flip_zone": 0},
     ...     iv_regime="HIGH_IV",
     ... )
-    >>> print(rec.structure, rec.confidence, rec.reasoning)
+    >>> rec.structure, rec.confidence, rec.reasoning
 """
 
 from __future__ import annotations
+
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
 
 import json
 import logging
@@ -39,7 +43,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

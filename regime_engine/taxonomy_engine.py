@@ -92,6 +92,7 @@ _RATE_FEATURES = frozenset({"d_mass_dt", "d_lambda", "rv_delta", "er_delta"})
 
 # Features that use the near-equilibrium gate (1 - tanh|z|)
 # — active when signal is *close to zero*, not when large
+# mass: represents equilibrium market depth; contributes when at typical level
 _ABS_FEATURES = frozenset({"mass"})
 
 
@@ -155,10 +156,16 @@ MSL_KINGDOM_MATRIX: dict[str, dict[str, float]] = {
         "NDR": -0.7,
         "TRN": +0.3,
     },
-    # order-flow imbalance proxy
+    # order-flow imbalance proxy (improved Lee-Ready bar estimate)
     "ofi_proxy": {
         "DIR": +0.8,  # directed flow → trending
         "NDR": -0.6,
+        "TRN": +0.2,
+    },
+    # dollar-weighted OFI — scales flow by price level (institutional size)
+    "ofi_dollar": {
+        "DIR": +0.7,  # dollar-sized flow confirms directional regime
+        "NDR": -0.5,
         "TRN": +0.2,
     },
     # absorption score (volume per price unit)
@@ -191,6 +198,82 @@ MSL_KINGDOM_MATRIX: dict[str, dict[str, float]] = {
         "NDR": +0.6,
         "TRN": -0.7,
     },
+    # large trade proxy (high = institutional/whale volume)
+    # Large trades confirm directional commitment; rare in pure ranging
+    "large_trade_proxy": {
+        "DIR": +0.5,  # outsized volume → commitment to direction
+        "NDR": -0.3,
+        "TRN": +0.4,  # large trades also trigger breakouts
+    },
+    # round number proximity (raw = distance/ATR; high z = far from round number)
+    # Near round numbers (negative z, low raw): stops cluster here → NDR/TRN
+    # Far from round numbers (positive z, high raw): cleaner price action → DIR
+    # Weights are inverted vs intuition because tanh(negative z) is negative:
+    #   energy = weight × tanh(z); near-round z<0 → need negative weight for positive NDR
+    "round_number_proximity": {
+        "DIR": +0.1,   # far from round number (z > 0) → slight directional confirmation
+        "NDR": -0.4,   # near round number (z < 0) × -0.4 = +0.4 NDR energy
+        "TRN": -0.5,   # near round number (z < 0) × -0.5 = +0.5 TRN energy
+    },
+    # VWAP distance (deviation from rolling VWAP)
+    # High positive = extended above institutional anchor → reverting/exhausting
+    # High negative = extended below anchor → similar
+    # Near zero = pinned to VWAP = ranging / indecision
+    "vwap_distance": {
+        "DIR": +0.4,  # extension from VWAP = trending (signed)
+        "NDR": -0.5,  # near VWAP = ranging / mean-reverting
+        "TRN": +0.3,  # large VWAP deviation = transitional exhaustion risk
+    },
+    # GEX: net dealer gamma at spot (positive = pinning, negative = amplifying)
+    "gamma_net": {
+        "DIR": -0.3,  # strong positive GEX = pinned = suppresses DIR
+        "NDR": +0.6,  # pinning reinforces ranging
+        "TRN": -0.4,  # negative GEX (amplifying) = transition fuel
+    },
+    # GEX: distance to nearest wall (signed: +ve = wall above)
+    # Price approaching a large GEX wall = mean-reversion risk
+    "gamma_wall_distance": {
+        "DIR": -0.2,  # approaching wall suppresses directional momentum
+        "NDR": +0.4,  # near wall reinforces bounded range
+        "TRN": +0.3,  # breaking through a wall = strong transition
+    },
+    # GEX: regime strength (|gamma_net| × wall proximity)
+    # High = dealers strongly positioned AND price near the wall
+    "gex_regime_strength": {
+        "DIR": -0.4,  # strong dealer positioning suppresses raw direction
+        "NDR": +0.7,  # dealer-enforced pin = strongest range signal
+        "TRN": -0.3,  # strong pinning is anti-transitional (until it breaks)
+    },
+    # GEX: term structure slope (+1 = near-expiry dominates = volatile pin)
+    "gex_term_structure_slope": {
+        "DIR": +0.2,  # front-month dominance can accelerate directional after pin breaks
+        "NDR": -0.2,  # front-month also creates volatile pinning (mixed signal)
+        "TRN": +0.6,  # near-expiry concentration → sharper transition near expiry
+    },
+    # GEX flip zone (1 = near zero-crossing = unstable)
+    "gex_flip_zone": {
+        "DIR": -0.1,  # unstable GEX = unclear directional structure
+        "NDR": -0.5,  # flip zone breaks ranging
+        "TRN": +0.9,  # GEX zero-crossing = high transition probability
+    },
+    # Index rebalance pressure (calendar composite)
+    "rebalance_pressure": {
+        "DIR": -0.2,  # rebalancing is typically counter-trend (buys laggards)
+        "NDR": +0.3,  # index flows create orderly ranges
+        "TRN": +0.5,  # quarter-end / opex = transition catalyst
+    },
+    # FOMC proximity (near meeting = uncertainty, volatility expected)
+    "fomc_proximity": {
+        "DIR": -0.3,  # pre-FOMC drift often stalls / reverses
+        "NDR": +0.2,  # short-range consolidation ahead of meeting
+        "TRN": +0.6,  # FOMC days are the strongest regime transition catalysts
+    },
+    # Quad witching / options expiration proximity
+    "quad_witching_flag": {
+        "DIR": -0.2,  # expiry-day mechanics suppress clean directional moves
+        "NDR": +0.3,  # pin-to-strike creates tight ranging
+        "TRN": +0.7,  # post-expiry regime transition is high-probability
+    },
 }
 
 
@@ -200,6 +283,63 @@ MSL_KINGDOM_MATRIX: dict[str, dict[str, float]] = {
 # Keyed by Kingdom name, then {feature: {class_node: weight}}
 
 MSL_CLASS_MATRICES: dict[str, dict[str, dict[str, float]]] = {
+    "TRN": {
+        "rv_30": {
+            "SR": +0.9,  # low RV → squeeze incoming
+            "RB": +0.4,
+            "FB": -0.2,
+        },
+        "rv_delta": {
+            "SR": -0.2,
+            "RB": +0.9,  # rising vol after squeeze → breakout
+            "FB": -0.1,
+        },
+        "impulse_revert": {
+            "SR": -0.3,
+            "RB": -0.2,
+            "FB": +0.9,  # impulse failed → false break
+        },
+        "d_mass_dt": {
+            "SR": +0.6,  # mass collapsing → squeeze pre-release
+            "RB": +0.7,
+            "FB": -0.3,
+        },
+        "ofi_proxy": {
+            "SR": +0.4,
+            "RB": +0.8,  # directional flow confirms breakout
+            "FB": -0.2,
+        },
+        "d_lambda": {
+            "SR": +0.7,  # book thinning = squeeze
+            "RB": +0.5,
+            "FB": -0.1,
+        },
+        "gex_flip_zone": {
+            "SR": +0.5,  # GEX flip zone often precedes squeeze
+            "RB": +0.8,  # flip zone + directional OFI = breakout
+            "FB": +0.4,  # flip zone with waning flow = false break
+        },
+        "quad_witching_flag": {
+            "SR": +0.3,  # expiry creates pre-event squeeze
+            "RB": +0.5,  # post-expiry breakout common
+            "FB": +0.7,  # opex-week moves often fail (dealers hedge reversal)
+        },
+        "fomc_proximity": {
+            "SR": +0.6,  # pre-FOMC squeeze / consolidation
+            "RB": +0.4,
+            "FB": +0.4,  # FOMC moves fail about half the time
+        },
+        "vwap_distance": {
+            "SR": -0.3,  # squeeze happens near VWAP
+            "RB": +0.7,  # extended VWAP deviation drives real breakout
+            "FB": -0.2,  # low VWAP extension = suspicious breakout
+        },
+        "large_trade_proxy": {
+            "SR": +0.2,
+            "RB": +0.7,  # institutional size volume confirms breakout
+            "FB": -0.4,  # no large trades behind breakout = false break
+        },
+    },
     "DIR": {
         "er_60": {
             "PT": +0.9,   # high ER stable → persistent trend
@@ -231,37 +371,25 @@ MSL_CLASS_MATRICES: dict[str, dict[str, dict[str, float]]] = {
             "PX": -0.3,
             "TE": +0.9,  # impulse-revert = exhaustion indicator
         },
-    },
-    "TRN": {
-        "rv_30": {
-            "SR": +0.9,  # low RV → squeeze incoming
-            "RB": +0.4,
-            "FB": -0.2,
+        "ofi_dollar": {
+            "PT": +0.6,  # sustained dollar-volume flow = trend persistence
+            "PX": +0.8,  # large dollar flow = price expansion
+            "TE": -0.4,  # dollar flow drying up = exhaustion
         },
-        "rv_delta": {
-            "SR": -0.2,
-            "RB": +0.9,  # rising vol after squeeze → breakout
-            "FB": -0.1,
+        "large_trade_proxy": {
+            "PT": +0.5,  # institutional follow-through = persistent trend
+            "PX": +0.7,  # large trades = expansion
+            "TE": -0.3,  # no institutional size = trend exhausting
         },
-        "impulse_revert": {
-            "SR": -0.3,
-            "RB": -0.2,
-            "FB": +0.9,  # impulse failed → false break
+        "vwap_distance": {
+            "PT": +0.4,  # moderate VWAP extension = healthy trend
+            "PX": +0.8,  # large VWAP deviation = explosive expansion
+            "TE": -0.5,  # excessive extension → exhaustion mean-reversion
         },
-        "d_mass_dt": {
-            "SR": +0.6,  # mass collapsing → squeeze pre-release
-            "RB": +0.7,
-            "FB": -0.3,
-        },
-        "ofi_proxy": {
-            "SR": +0.4,
-            "RB": +0.8,  # directional flow confirms breakout
-            "FB": -0.2,
-        },
-        "d_lambda": {
-            "SR": +0.7,  # book thinning = squeeze
-            "RB": +0.5,
-            "FB": -0.1,
+        "gex_regime_strength": {
+            "PT": -0.5,  # strong dealer pin suppresses persistent trend
+            "PX": -0.3,
+            "TE": +0.7,  # price fighting strong GEX = exhaustion building
         },
     },
     # NDR branch: use config-file weights only (no separate MSL class matrix)

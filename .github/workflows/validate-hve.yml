@@ -1,0 +1,22 @@
+name: Validate HVE Artifacts
+
+on:
+  pull_request:
+    paths:
+      - '.github/agents/**'
+      - '.github/instructions/**'
+      - '.github/prompts/**'
+      - '.github/workflows/validate-hve.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install HVE Core CLI
+        run: npm install -g @microsoft/hve-core
+      - name: Validate HVE artifacts
+        run: hve validate .github/agents .github/instructions .github/prompts

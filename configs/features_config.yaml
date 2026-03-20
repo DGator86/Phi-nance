@@ -1,0 +1,22 @@
+window: 16
+registry_path: phinance/features/feature_registry.json
+checkpoint_path: phinance/features/checkpoints/autoencoder_latest.npz
+
+autoencoder:
+  latent_dim: 8
+  hidden_dim: 32
+  learning_rate: 0.001
+  epochs: 12
+  batch_size: 32
+  random_seed: 7
+
+gp:
+  population_size: 16
+  generations: 3
+  top_k: 5
+  tournament_size: 3
+  crossover_prob: 0.5
+  mutation_prob: 0.3
+  min_depth: 1
+  max_depth: 3
+  random_seed: 7

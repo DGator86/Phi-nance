@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 # -*- coding: utf-8 -*-
 """
 Phi-nance Premium Dashboard — Production-Grade $250/mo SaaS
@@ -1024,7 +1028,7 @@ def _execute_backtest(config, indicators, blend_method, blend_weights):
         def run_bt():
             try:
                 os.environ["IS_BACKTESTING"] = "True"
-                av_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
+                av_key = os.getenv("AV_API_KEY", "")
                 results, strat = strat_cls.run_backtest(
                     datasource_class=_av_datasource(),
                     backtesting_start=config["start"],

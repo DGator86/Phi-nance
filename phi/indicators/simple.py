@@ -5,10 +5,29 @@ Returns normalized signal series (-1 to 1 scale) for blending.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pandas as pd
+
+from phi.indicators.orderflow import (
+    compute_cumulative_delta_signal,
+    compute_liquidity_signal,
+    compute_volume_profile_signal,
+    compute_vwap_signal,
+    get_order_flow_provider,
+)
+from phi.logging import get_logger
+from phi.mft.signals import mft_energy_signal, mft_signal
+from phi.indicators.information import (
+    compute_entropy_signal,
+    compute_fisher_information_signal,
+    compute_kld_signal,
+    compute_mutual_info_signal,
+)
+
+logger = get_logger(__name__)
 
 
 def _normalize_signal(s: pd.Series) -> pd.Series:
@@ -149,6 +168,94 @@ def compute_vwap(df: pd.DataFrame, band_pct: float = 0.5) -> pd.Series:
     return signal.fillna(0.0)
 
 
+def compute_orderflow_vwap(df: pd.DataFrame, atr_period: int = 14, clip_value: float = 2.0) -> pd.Series:
+    """Order flow VWAP deviation normalized by ATR."""
+    return compute_vwap_signal(df, atr_period=atr_period, clip_value=clip_value)
+
+
+def compute_volume_profile(df: pd.DataFrame, window: int = 20, bins: int = 16, near_poc_threshold: float = 0.002) -> pd.Series:
+    """Rolling volume profile signal using point of control proximity."""
+    _poc, signal = compute_volume_profile_signal(df, window=window, bins=bins, near_poc_threshold=near_poc_threshold)
+    return signal
+
+
+def compute_cumulative_delta(df: pd.DataFrame, window: int = 20, clip_value: float = 1.0) -> pd.Series:
+    """Rolling cumulative delta signal from the configured order flow provider."""
+    provider = get_order_flow_provider()
+    flow = provider.get_order_flow(df)
+    return compute_cumulative_delta_signal(flow, df["volume"], window=window, clip_value=clip_value)
+
+
+def compute_liquidity_metrics(df: pd.DataFrame, window: int = 20, amihud_scale: float = 1e6) -> pd.Series:
+    """Liquidity signal based on spread proxy and Amihud illiquidity."""
+    provider = get_order_flow_provider()
+    flow = provider.get_order_flow(df)
+    return compute_liquidity_signal(df, flow, amihud_scale=amihud_scale, window=window)
+
+def compute_return_entropy(df: pd.DataFrame, window: int = 20, bins: int = 20, base: float = 2.0) -> pd.Series:
+    """Rolling Shannon entropy of returns normalized to [-1, 1]."""
+    return compute_entropy_signal(df, window=window, bins=bins, base=base)
+
+
+def compute_mutual_information(df: pd.DataFrame, window: int = 20, bins: int = 20, mode: str = "price_volume") -> pd.Series:
+    """Rolling mutual information signal between returns and volume changes (or returns)."""
+    return compute_mutual_info_signal(df, window=window, bins=bins, mode=mode)
+
+
+def compute_fisher_information(df: pd.DataFrame, window: int = 20, clip_percentile: float = 95.0) -> pd.Series:
+    """Rolling Fisher information proxy from inverse return variance."""
+    return compute_fisher_information_signal(df, window=window, clip_percentile=clip_percentile)
+
+
+def compute_kld_regime_shift(
+    df: pd.DataFrame,
+    recent_window: int = 20,
+    reference_window: int = 60,
+    bins: int = 20,
+    sigmoid_scale: float = 3.0,
+) -> pd.Series:
+    """Symmetric KL-divergence signal comparing recent vs prior return distributions."""
+    return compute_kld_signal(
+        df,
+        recent_window=recent_window,
+        reference_window=reference_window,
+        bins=bins,
+        sigmoid_scale=sigmoid_scale,
+    )
+
+
+def compute_mft_signal(
+    df: pd.DataFrame,
+    kernel: str = "gaussian",
+    sigma: float = 10.0,
+    threshold: float = 0.0,
+    smooth_window: int = 1,
+) -> pd.Series:
+    """Simplified MFT directional signal from field-potential gradient."""
+    return mft_signal(
+        close=df["close"],
+        kernel=kernel,
+        sigma=sigma,
+        threshold=threshold,
+        smooth_window=smooth_window,
+    )
+
+
+def compute_mft_energy(
+    df: pd.DataFrame,
+    kernel: str = "gaussian",
+    sigma: float = 10.0,
+    energy_window: int = 20,
+) -> pd.Series:
+    """MFT energy-derived signal based on relative field activity."""
+    return mft_energy_signal(
+        close=df["close"],
+        kernel=kernel,
+        sigma=sigma,
+        energy_window=energy_window,
+    )
+
+
 INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "RSI": compute_rsi,
     "MACD": compute_macd,
@@ -158,6 +265,16 @@ INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "Breakout": compute_breakout,
     "Buy & Hold": compute_buy_hold,
     "VWAP": compute_vwap,
+    "Orderflow VWAP": compute_orderflow_vwap,
+    "Volume Profile": compute_volume_profile,
+    "Cumulative Delta": compute_cumulative_delta,
+    "Liquidity Metrics": compute_liquidity_metrics,
+    "MFT Signal": compute_mft_signal,
+    "MFT Energy": compute_mft_energy,
+    "Return Entropy": compute_return_entropy,
+    "Mutual Information": compute_mutual_information,
+    "Fisher Information": compute_fisher_information,
+    "KL Divergence": compute_kld_regime_shift,
 }
 
 
@@ -169,10 +286,20 @@ _PARAM_MAP = {
     "Mean Reversion": {"sma_period": "period"},
     "Breakout": {"channel_period": "period"},
     "VWAP": {"band_pct": "band_pct"},
+    "Orderflow VWAP": {"atr_period": "atr_period", "clip_value": "clip_value"},
+    "Volume Profile": {"window": "window", "bins": "bins", "near_poc_threshold": "near_poc_threshold"},
+    "Cumulative Delta": {"window": "window", "clip_value": "clip_value"},
+    "Liquidity Metrics": {"window": "window", "amihud_scale": "amihud_scale"},
+    "MFT Signal": {"kernel": "kernel", "sigma": "sigma", "threshold": "threshold", "smooth_window": "smooth_window"},
+    "MFT Energy": {"kernel": "kernel", "sigma": "sigma", "energy_window": "energy_window"},
+    "Return Entropy": {"window": "window", "bins": "bins", "base": "base"},
+    "Mutual Information": {"window": "window", "bins": "bins", "mode": "mode"},
+    "Fisher Information": {"window": "window", "clip_percentile": "clip_percentile"},
+    "KL Divergence": {"recent_window": "recent_window", "reference_window": "reference_window", "bins": "bins", "sigmoid_scale": "sigmoid_scale"},
 }
 
 
-def compute_indicator(name: str, df: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+def compute_indicator(name: str, df: pd.DataFrame, params: dict[str, Any]) -> pd.Series:
     """Compute indicator signal by name with params."""
     fn = INDICATOR_COMPUTERS.get(name)
     if fn is None:

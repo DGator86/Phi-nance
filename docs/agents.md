@@ -1,54 +1,46 @@
-# Free AI Agents Setup (Ollama)
+# AGENTS.md
 
-Phi-nance uses [Ollama](https://ollama.com) for free, local AI agents. No API keys needed.
+## Cursor Cloud specific instructions
 
-## 1. Install Ollama
+### Overview
 
-**Download:** [ollama.com/download](https://ollama.com/download)
+Phi-nance is a quantitative trading platform built around a Market Field Theory (MFT) regime detection engine with a Streamlit dashboard UI. Single Python application (not a monorepo) with two internal packages: `regime_engine/` and `strategies/`.
 
-- **Windows:** Run installer
-- **macOS:** Run installer
-- **Linux:** `curl -fsSL https://ollama.com/install.sh | sh`
-
-## 2. Pull a model
-
-Open a terminal and run:
+### Running the app
 
 ```bash
-# General purpose (fast, ~2GB)
-ollama pull llama3.2
-
-# Finance-focused (trading recommendations)
-ollama pull 0xroyce/plutus
-
-# Other options
-ollama pull gemma2
-ollama pull mistral
-ollama pull phi3
+source venv/bin/activate
+streamlit run app_streamlit/main.py --server.headless true
 ```
 
-## 3. Start Ollama
+Dashboard serves on **port 8501**. The `.streamlit/config.toml` binds to `0.0.0.0`.
 
-Ollama usually runs automatically after install. If not:
+### JupyterLab
 
 ```bash
-ollama serve
+source venv/bin/activate
+pip install -r requirements-jupyter.txt
+python -m ipykernel install --user --name phinance --display-name "Python (Phi-nance)"
+jupyter lab
 ```
 
-## 4. Use in Phi-nance
+Open the **Phi-nance** folder as the Jupyter workspace. Run `notebook_setup.py` via the first cell in `notebooks/00_getting_started.ipynb` (or the same bootstrap block in `regime_engine/demo_notebook.ipynb`). That adds the repo to `sys.path`, sets `IS_BACKTESTING=True`, and loads `.env`.
 
-1. Open the **AI Agents** tab in the Live Workbench
-2. Click **Check connection** — should show "Ollama is running"
-3. Click **List models** to load your pulled models
-4. Pick a model and type your question (regime, strategy, indicators, etc.)
+Alternatively: `pip install -e ".[jupyter]"` if using the editable `pyproject.toml` install.
 
-## Remote / Cloud
+### Validating the engine
 
-- **Local (default):** `http://localhost:11434`
-- **ollama.com cloud:** `https://ollama.com/api` — set host in the app
+```bash
+source venv/bin/activate
+python scripts/engine_health.py
+```
 
-## Integrations
+Runs the full MFT pipeline on synthetic OHLCV data (no API key needed). Exit code 0 = all 6 components pass.
 
-- [Ollama docs](https://docs.ollama.com)
-- [Ollama API](https://docs.ollama.com/api/introduction)
-- [Plutus model](https://ollama.com/0xroyce/plutus) — finance-trained
+### Key caveats
+
+- **`IS_BACKTESTING` env var**: Set before importing lumibot (e.g. Streamlit entrypoints and `notebook_setup.py`). Without it, lumibot's `credentials.py` can crash when instantiating live brokers.
+- **Tests**: `pytest` is configured under `tests/`; `python scripts/engine_health.py` validates the MFT pipeline on synthetic data.
+- **`.env` file**: Copy `.env.example` to `.env`. The default `AV_API_KEY` in `.env.example` is a free-tier Alpha Vantage key (rate-limited to 5 req/min). Backtests and data fetching require this key.
+- **Optional services**: Ollama (for Plutus Bot tab) and Polygon.io (for L2 feed) are optional and the app gracefully degrades without them.
+- **`python3.12-venv` system package**: Required to create the venv; install with `sudo apt-get install -y python3.12-venv` if not already present.

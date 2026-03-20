@@ -14,9 +14,28 @@ Each indicator:
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional
+
+from phi.indicators.orderflow import (
+    compute_cumulative_delta_signal,
+    compute_liquidity_signal,
+    compute_volume_profile_signal,
+    compute_vwap_signal,
+    get_order_flow_provider,
+)
+from phi.logging import get_logger
+from phi.mft.signals import mft_energy_signal, mft_signal
+
+from phi.mft.signals import mft_energy_signal, mft_signal
+from phi.indicators.information import (
+    compute_entropy_signal,
+    compute_fisher_information_signal,
+    compute_kld_signal,
+    compute_mutual_info_signal,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -211,27 +230,178 @@ def _compute_adx(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
 
 
 def _compute_mft_signal(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
-    """Full MFT regime engine composite signal."""
-    try:
-        import yaml
-        from pathlib import Path
-        cfg_path = Path(__file__).parents[2] / "regime_engine" / "config.yaml"
-        with open(cfg_path) as f:
-            cfg = yaml.safe_load(f)
-        from regime_engine.scanner import RegimeEngine
-        engine = RegimeEngine(cfg)
-        out = engine.run(ohlcv)
-        mix = out.get("mix", pd.DataFrame())
-        if "composite_signal" in mix.columns:
-            sig = mix["composite_signal"]
-            return _to_signal(sig)
-    except Exception:
-        pass
-    # Fallback: MACD + RSI blend
-    rsi  = _compute_rsi(ohlcv, {"period": 14})
-    macd = _compute_macd(ohlcv, {"fast": 12, "slow": 26, "signal": 9})
-    return _to_signal((rsi + macd) / 2.0)
+    """Simplified MFT directional signal based on potential gradient."""
+    close = ohlcv["close"].astype(float)
+    kernel = str(params.get("kernel", "gaussian"))
+    sigma = float(params.get("sigma", 10.0))
+    threshold = float(params.get("threshold", 0.0))
+    smooth_window = int(params.get("smooth_window", 1))
+    return mft_signal(close=close, kernel=kernel, sigma=sigma, threshold=threshold, smooth_window=smooth_window)
 
+
+def _compute_mft_energy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT energy-derived signal from relative field activity."""
+    close = ohlcv["close"].astype(float)
+    kernel = str(params.get("kernel", "gaussian"))
+    sigma = float(params.get("sigma", 10.0))
+    energy_window = int(params.get("energy_window", 20))
+    return mft_energy_signal(close=close, kernel=kernel, sigma=sigma, energy_window=energy_window)
+
+
+def _compute_mutual_information(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """Mutual information signal between returns and lagged returns."""
+    close = ohlcv["close"].astype(float)
+    window = int(params.get("window", 30))
+    bins = int(params.get("bins", 8))
+    lag = int(params.get("lag", 1))
+    returns = close.pct_change().fillna(0.0)
+    shifted = returns.shift(lag).fillna(0.0)
+
+    def _mi(x: np.ndarray, y: np.ndarray) -> float:
+        joint_hist, _, _ = np.histogram2d(x, y, bins=max(2, bins))
+        pxy = joint_hist / (joint_hist.sum() + 1e-12)
+        px = pxy.sum(axis=1, keepdims=True)
+        py = pxy.sum(axis=0, keepdims=True)
+        expected = px @ py
+        mask = pxy > 0
+        return float((pxy[mask] * np.log((pxy[mask] + 1e-12) / (expected[mask] + 1e-12))).sum())
+
+    vals = np.full(len(returns), np.nan)
+    for i in range(window - 1, len(returns)):
+        x = returns.iloc[i - window + 1 : i + 1].to_numpy(dtype=float)
+        y = shifted.iloc[i - window + 1 : i + 1].to_numpy(dtype=float)
+        vals[i] = _mi(x, y)
+    mi = pd.Series(vals, index=ohlcv.index)
+    return _to_signal(_safe_zscore(mi.fillna(0.0), max(30, window)))
+
+
+def _compute_fisher_information(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """Fisher-like information proxy from return slope intensity."""
+    close = ohlcv["close"].astype(float)
+    window = int(params.get("window", 20))
+    returns = close.pct_change().fillna(0.0)
+    mu = returns.rolling(window, min_periods=max(5, window // 2)).mean()
+    sigma = returns.rolling(window, min_periods=max(5, window // 2)).std().replace(0.0, np.nan)
+    z = (returns - mu) / sigma
+    fisher = z.diff().pow(2).rolling(window, min_periods=max(5, window // 2)).mean()
+    return _to_signal(_safe_zscore(fisher.fillna(0.0), max(30, window)))
+
+
+def _compute_kl_divergence(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """KL divergence between two adjacent rolling return distributions."""
+    close = ohlcv["close"].astype(float)
+    window = int(params.get("window", 30))
+    bins = int(params.get("bins", 10))
+    returns = close.pct_change().fillna(0.0)
+
+    values = np.full(len(returns), np.nan)
+    b = max(2, bins)
+    for i in range(2 * window - 1, len(returns)):
+        prev = returns.iloc[i - 2 * window + 1 : i - window + 1].to_numpy(dtype=float)
+        curr = returns.iloc[i - window + 1 : i + 1].to_numpy(dtype=float)
+        low = float(min(prev.min(), curr.min()))
+        high = float(max(prev.max(), curr.max()))
+        if low == high:
+            values[i] = 0.0
+            continue
+        p_hist, _ = np.histogram(prev, bins=b, range=(low, high), density=True)
+        q_hist, _ = np.histogram(curr, bins=b, range=(low, high), density=True)
+        p_dist = p_hist / (p_hist.sum() + 1e-12)
+        q_dist = q_hist / (q_hist.sum() + 1e-12)
+        values[i] = float(np.sum(p_dist * np.log((p_dist + 1e-12) / (q_dist + 1e-12))))
+
+    kl = pd.Series(values, index=ohlcv.index)
+    return _to_signal(_safe_zscore(kl.fillna(0.0), max(30, window)))
+
+
+
+
+def _extract_flow_prices(ohlcv: pd.DataFrame) -> pd.DataFrame:
+    """Build symbol->close matrix from single/multi symbol frames."""
+    if {"open", "high", "low", "close", "volume"}.issubset(ohlcv.columns):
+        return pd.DataFrame({"SYMBOL": ohlcv["close"].astype(float)}, index=ohlcv.index)
+    if isinstance(ohlcv.columns, pd.MultiIndex):
+        if "close" in ohlcv.columns.get_level_values(1):
+            return ohlcv.xs("close", axis=1, level=1).astype(float)
+        if "close" in ohlcv.columns.get_level_values(0):
+            return ohlcv["close"].astype(float)
+    return ohlcv.astype(float)
+
+
+def _compute_transfer_entropy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    prices = _extract_flow_prices(ohlcv)
+    return rolling_transfer_entropy(
+        prices=prices,
+        from_symbol=str(params.get("from_symbol", "SYMBOL")),
+        to_symbol=str(params.get("to_symbol", "SYMBOL")),
+        window=int(params.get("window", 50)),
+        bins=int(params.get("bins", 3)),
+        normalize=bool(params.get("normalize", True)),
+    ).fillna(0.0)
+
+
+def _compute_granger_causality(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    prices = _extract_flow_prices(ohlcv)
+    return rolling_granger_causality(
+        prices=prices,
+        from_symbol=str(params.get("from_symbol", "SYMBOL")),
+        to_symbol=str(params.get("to_symbol", "SYMBOL")),
+        window=int(params.get("window", 50)),
+        maxlags=int(params.get("maxlags", 2)),
+        threshold=float(params.get("threshold", 0.05)),
+        output=str(params.get("output", "pvalue")),
+    ).fillna(0.0)
+
+def _compute_mft_signal(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """Simplified MFT directional signal based on potential gradient."""
+    close = ohlcv["close"].astype(float)
+    kernel = str(params.get("kernel", "gaussian"))
+    sigma = float(params.get("sigma", 10.0))
+    threshold = float(params.get("threshold", 0.0))
+    smooth_window = int(params.get("smooth_window", 1))
+    return mft_signal(close=close, kernel=kernel, sigma=sigma, threshold=threshold, smooth_window=smooth_window)
+
+
+
+def _compute_mft_complex_amplitude(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT complex potential amplitude, mapped to [-1, 1]."""
+    amplitude = complex_potential(ohlcv["close"].astype(float))["amplitude"].fillna(0.0)
+    return _to_signal(_safe_zscore(amplitude, 60).fillna(0.0))
+
+
+def _compute_mft_complex_phase(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT complex potential phase, mapped to [-1, 1]."""
+    phase = complex_potential(ohlcv["close"].astype(float))["phase"].fillna(0.0)
+    return _to_signal(_safe_zscore(phase, 60).fillna(0.0))
+
+
+def _compute_mft_phase_change(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT phase-change feature, mapped to [-1, 1]."""
+    phase_change = complex_potential(ohlcv["close"].astype(float))["phase_change"].fillna(0.0)
+    return _to_signal(_safe_zscore(phase_change, 60).fillna(0.0))
+
+
+def _compute_mft_price_volume_interaction(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT interaction feature between price and volume fields."""
+    interaction = volume_price_interaction(
+        price_series=ohlcv["close"].astype(float),
+        volume_series=ohlcv["volume"].astype(float),
+        kernel=str(params.get("kernel", "gaussian")),
+        sigma=float(params.get("sigma", 10.0)),
+        corr_window=int(params.get("corr_window", 20)),
+    ).fillna(0.0)
+    return _to_signal(_safe_zscore(interaction, 60).fillna(0.0))
+
+
+def _compute_mft_spectral_power(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """Relative FFT spectral power for selected band."""
+    window = int(params.get("window", 64))
+    band = str(params.get("band", "low")).lower()
+    band_map = {"low": (0.0, 0.2), "mid": (0.2, 0.5), "high": (0.5, 1.0)}
+    bounds = band_map.get(band, band_map["low"])
+    power = rolling_spectral_power(ohlcv["close"].astype(float), window=window, bands=[bounds]).iloc[:, 0]
+    signed = 2.0 * power - 1.0
+    return signed.fillna(0.0).clip(-1.0, 1.0)
 
 def _compute_wyckoff(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     """Simplified Wyckoff: accumulation/distribution proxy."""
@@ -267,11 +437,76 @@ def _compute_range_pos(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     return _to_signal(signal)
 
 
+
+def _compute_orderflow_vwap(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    atr_period = int(params.get("atr_period", 14))
+    clip_value = float(params.get("clip_value", 2.0))
+    return compute_vwap_signal(ohlcv, atr_period=atr_period, clip_value=clip_value)
+
+
+def _compute_orderflow_volume_profile(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    window = int(params.get("window", 20))
+    bins = int(params.get("bins", 16))
+    near_poc_threshold = float(params.get("near_poc_threshold", 0.002))
+    _poc, signal = compute_volume_profile_signal(ohlcv, window=window, bins=bins, near_poc_threshold=near_poc_threshold)
+    return signal
+
+
+def _compute_orderflow_cumulative_delta(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    provider = get_order_flow_provider()
+    flow = provider.get_order_flow(ohlcv)
+    window = int(params.get("window", 20))
+    clip_value = float(params.get("clip_value", 1.0))
+    return compute_cumulative_delta_signal(flow, ohlcv["volume"], window=window, clip_value=clip_value)
+
+
+def _compute_orderflow_liquidity(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    provider = get_order_flow_provider()
+    flow = provider.get_order_flow(ohlcv)
+    amihud_scale = float(params.get("amihud_scale", 1e6))
+    window = int(params.get("window", 20))
+    return compute_liquidity_signal(ohlcv, flow, amihud_scale=amihud_scale, window=window)
+
+
+
+def _compute_entropy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    window = int(params.get("window", 20))
+    bins = int(params.get("bins", 20))
+    base = float(params.get("base", 2.0))
+    return compute_entropy_signal(ohlcv, window=window, bins=bins, base=base)
+
+
+def _compute_mutual_information(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    window = int(params.get("window", 20))
+    bins = int(params.get("bins", 20))
+    mode = str(params.get("mode", "price_volume"))
+    return compute_mutual_info_signal(ohlcv, window=window, bins=bins, mode=mode)
+
+
+def _compute_fisher_information(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    window = int(params.get("window", 20))
+    clip_percentile = float(params.get("clip_percentile", 95.0))
+    return compute_fisher_information_signal(ohlcv, window=window, clip_percentile=clip_percentile)
+
+
+def _compute_kld(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    recent_window = int(params.get("recent_window", 20))
+    reference_window = int(params.get("reference_window", 60))
+    bins = int(params.get("bins", 20))
+    sigmoid_scale = float(params.get("sigmoid_scale", 3.0))
+    return compute_kld_signal(
+        ohlcv,
+        recent_window=recent_window,
+        reference_window=reference_window,
+        bins=bins,
+        sigmoid_scale=sigmoid_scale,
+    )
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Registry
 # ─────────────────────────────────────────────────────────────────────────────
 
-INDICATOR_REGISTRY: Dict[str, Dict[str, Any]] = {
+INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
     "rsi": {
         "display_name": "RSI",
         "description":  "Relative Strength Index. Oversold → buy, overbought → sell.",
@@ -419,9 +654,130 @@ INDICATOR_REGISTRY: Dict[str, Dict[str, Any]] = {
         },
         "tune_ranges": {"period": (10, 50)},
     },
+
+    "orderflow_vwap": {
+        "display_name": "Order Flow VWAP",
+        "description": "VWAP deviation normalized by ATR.",
+        "type": "orderflow",
+        "compute": _compute_orderflow_vwap,
+        "params": {
+            "atr_period": {"label": "ATR Period", "default": 14, "min": 5, "max": 50, "step": 1, "type": "int"},
+            "clip_value": {"label": "Clip", "default": 2.0, "min": 0.5, "max": 5.0, "step": 0.5, "type": "float"},
+        },
+        "tune_ranges": {"atr_period": (7, 28), "clip_value": (1.0, 3.0)},
+    },
+    "volume_profile": {
+        "display_name": "Volume Profile",
+        "description": "Rolling point-of-control proximity signal.",
+        "type": "orderflow",
+        "compute": _compute_orderflow_volume_profile,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 120, "step": 1, "type": "int"},
+            "bins": {"label": "Bins", "default": 16, "min": 4, "max": 40, "step": 1, "type": "int"},
+            "near_poc_threshold": {"label": "Near POC %", "default": 0.002, "min": 0.0005, "max": 0.02, "step": 0.0005, "type": "float"},
+        },
+        "tune_ranges": {"window": (10, 60), "bins": (8, 24), "near_poc_threshold": (0.001, 0.01)},
+    },
+    "cumulative_delta": {
+        "display_name": "Cumulative Delta",
+        "description": "Rolling buy vs sell pressure from estimated order flow.",
+        "type": "orderflow",
+        "compute": _compute_orderflow_cumulative_delta,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 100, "step": 1, "type": "int"},
+            "clip_value": {"label": "Clip", "default": 1.0, "min": 0.2, "max": 3.0, "step": 0.1, "type": "float"},
+        },
+        "tune_ranges": {"window": (10, 50), "clip_value": (0.5, 2.0)},
+    },
+    "liquidity": {
+        "display_name": "Liquidity Metrics",
+        "description": "Spread/Amihud-based liquidity signal.",
+        "type": "orderflow",
+        "compute": _compute_orderflow_liquidity,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 100, "step": 1, "type": "int"},
+            "amihud_scale": {"label": "Amihud Scale", "default": 1000000.0, "min": 1000.0, "max": 10000000.0, "step": 1000.0, "type": "float"},
+        },
+        "tune_ranges": {"window": (10, 50), "amihud_scale": (1e4, 1e7)},
+    },
+
+    "return_entropy": {
+        "display_name": "Return Entropy",
+        "description": "Rolling Shannon entropy of returns (higher = more uncertainty).",
+        "type": "information_theory",
+        "compute": _compute_entropy,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 200, "step": 1, "type": "int"},
+            "bins": {"label": "Bins", "default": 20, "min": 5, "max": 60, "step": 1, "type": "int"},
+            "base": {"label": "Log Base", "default": 2.0, "min": 2.0, "max": 10.0, "step": 1.0, "type": "float"},
+        },
+        "tune_ranges": {"window": (10, 60), "bins": (10, 30)},
+    },
+    "mutual_information": {
+        "display_name": "Mutual Information",
+        "description": "Rolling mutual information between returns and volume changes.",
+        "type": "information_theory",
+        "compute": _compute_mutual_information,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 200, "step": 1, "type": "int"},
+            "bins": {"label": "Bins", "default": 20, "min": 5, "max": 60, "step": 1, "type": "int"},
+            "mode": {"label": "Mode", "default": "price_volume", "type": "str"},
+        },
+        "tune_ranges": {"window": (10, 60), "bins": (10, 30)},
+    },
+    "fisher_information": {
+        "display_name": "Fisher Information",
+        "description": "Inverse-variance proxy for Fisher information of returns.",
+        "type": "information_theory",
+        "compute": _compute_fisher_information,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 200, "step": 1, "type": "int"},
+            "clip_percentile": {"label": "Clip Percentile", "default": 95.0, "min": 50.0, "max": 99.9, "step": 0.1, "type": "float"},
+        },
+        "tune_ranges": {"window": (10, 60), "clip_percentile": (85.0, 99.0)},
+    },
+    "kld_regime_shift": {
+        "display_name": "KL Divergence",
+        "description": "Symmetric KL divergence between prior and recent return distributions.",
+        "type": "information_theory",
+        "compute": _compute_kld,
+        "params": {
+            "recent_window": {"label": "Recent Window", "default": 20, "min": 5, "max": 120, "step": 1, "type": "int"},
+            "reference_window": {"label": "Reference Window", "default": 60, "min": 10, "max": 240, "step": 1, "type": "int"},
+            "bins": {"label": "Bins", "default": 20, "min": 5, "max": 60, "step": 1, "type": "int"},
+            "sigmoid_scale": {"label": "Sigmoid Scale", "default": 3.0, "min": 0.5, "max": 10.0, "step": 0.1, "type": "float"},
+        },
+        "tune_ranges": {"recent_window": (10, 40), "reference_window": (30, 120), "bins": (10, 30)},
+    },
+    "mft_signal": {
+        "display_name": "MFT Signal",
+        "description":  "Simplified Market Field Theory gradient-direction signal.",
+        "type":         "MFT",
+        "compute":      _compute_mft_signal,
+        "params": {
+            "kernel": {"label": "Kernel", "default": "gaussian", "options": ["gaussian", "exp", "linear"], "type": "select"},
+            "sigma": {"label": "Sigma", "default": 10.0, "min": 1.0, "max": 50.0, "step": 1.0, "type": "float"},
+            "threshold": {"label": "Gradient Threshold", "default": 0.0, "min": 0.0, "max": 5.0, "step": 0.05, "type": "float"},
+            "smooth_window": {"label": "Signal Smoothing", "default": 1, "min": 1, "max": 50, "step": 1, "type": "int"},
+        },
+        "tune_ranges": {"sigma": (3.0, 20.0), "threshold": (0.0, 1.0), "smooth_window": (1, 10)},
+    },
+    "mft_energy": {
+        "display_name": "MFT Energy",
+        "description":  "Relative field-energy signal (low activity bullish, high activity defensive).",
+        "type":         "MFT",
+        "compute":      _compute_mft_energy,
+        "params": {
+            "kernel": {"label": "Kernel", "default": "gaussian", "options": ["gaussian", "exp", "linear"], "type": "select"},
+            "sigma": {"label": "Sigma", "default": 10.0, "min": 1.0, "max": 50.0, "step": 1.0, "type": "float"},
+            "energy_window": {"label": "Energy Window", "default": 20, "min": 3, "max": 120, "step": 1, "type": "int"},
+        },
+        "tune_ranges": {"sigma": (3.0, 20.0), "energy_window": (10, 60)},
+    },
+
     "phi_mft": {
         "display_name": "Phi-Bot (MFT)",
-        "description":  "Full Market Field Theory composite signal — regime-aware multi-factor.",
+        "description":  "Backward-compatible alias for simplified MFT signal.",
         "type":         "MFT",
         "compute":      _compute_mft_signal,
         "params": {},
@@ -430,15 +786,15 @@ INDICATOR_REGISTRY: Dict[str, Dict[str, Any]] = {
 }
 
 
-def list_indicators() -> List[str]:
+def list_indicators() -> list[str]:
     return list(INDICATOR_REGISTRY.keys())
 
 
-def get_indicator(name: str) -> Optional[Dict[str, Any]]:
+def get_indicator(name: str) -> dict[str, Any] | None:
     return INDICATOR_REGISTRY.get(name)
 
 
-def compute_signal(name: str, ohlcv: pd.DataFrame, params: Optional[dict] = None) -> pd.Series:
+def compute_signal(name: str, ohlcv: pd.DataFrame, params: dict | None = None) -> pd.Series:
     """Compute a normalized [-1, +1] signal for the given indicator."""
     info = INDICATOR_REGISTRY.get(name)
     if info is None:
@@ -452,9 +808,9 @@ def compute_signal(name: str, ohlcv: pd.DataFrame, params: Optional[dict] = None
 
 
 def compute_all_signals(
-    names: List[str],
+    names: list[str],
     ohlcv: pd.DataFrame,
-    params_map: Optional[Dict[str, dict]] = None,
+    params_map: dict[str, dict] | None = None,
 ) -> pd.DataFrame:
     """Compute multiple indicator signals, return as DataFrame."""
     signals = {}
@@ -462,6 +818,6 @@ def compute_all_signals(
         p = (params_map or {}).get(name, {})
         try:
             signals[name] = compute_signal(name, ohlcv, p)
-        except Exception as e:
+        except Exception:
             signals[name] = pd.Series(0.0, index=ohlcv.index, name=name)
     return pd.DataFrame(signals)

@@ -18,10 +18,18 @@ from phinance.data.cache import (
     get_cached_dataset,
     list_cached_datasets,
 )
+from phinance.data.memmap_store import MemmapStore
+from phinance.data.optimised_cache import OptimisedCache
+from phinance.data.prefetcher import Prefetcher
+from phinance.data.streaming_loader import StreamingDataLoader
 
 __all__ = [
     "DataCache",
     "fetch_and_cache",
     "get_cached_dataset",
     "list_cached_datasets",
+    "OptimisedCache",
+    "MemmapStore",
+    "StreamingDataLoader",
+    "Prefetcher",
 ]

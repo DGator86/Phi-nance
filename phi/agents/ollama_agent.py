@@ -9,6 +9,10 @@ Docs: https://docs.ollama.com/api/introduction
 
 from __future__ import annotations
 
+from phi.logging import get_logger
+
+logger = get_logger(__name__)
+
 import os
 from typing import Any, Dict, List, Optional
 
