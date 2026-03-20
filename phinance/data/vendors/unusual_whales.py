@@ -48,6 +48,9 @@ Endpoint categories
   GEX adapter
     options_chain_for_gex(symbol)           — Chain normalised for GammaSurface
 
+  Equity OHLCV (backtests)
+    fetch_stock_ohlc(symbol, start, end, timeframe) — Historical bars via ``/api/stock/{t}/ohlc/{candle}``
+
 Usage
 -----
     from phinance.data.vendors.unusual_whales import UnusualWhalesClient
@@ -489,6 +492,100 @@ class UnusualWhalesClient:
         data = raw.get("data", raw) if isinstance(raw, dict) else raw
         logger.info("UnusualWhales short_interest fetched for %s", symbol)
         return data if isinstance(data, dict) else {}
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # EQUITY OHLCV (historical bars — backtests / workbench)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def fetch_stock_ohlc(
+        self,
+        symbol: str,
+        start: str,
+        end: str,
+        timeframe: str = "1D",
+        limit: int = 2500,
+    ) -> pd.DataFrame:
+        """Fetch historical OHLCV bars for an underlying equity.
+
+        Uses ``GET /api/stock/{ticker}/ohlc/{candle_size}`` with query params
+        ``date``, ``end_date``, and ``limit`` (see Unusual Whales API docs).
+
+        Parameters
+        ----------
+        symbol : str
+            Equity ticker (e.g. ``"SPY"``).
+        start, end : str
+            Inclusive-ish range as ``YYYY-MM-DD`` (passed to the API).
+        timeframe : str
+            Workbench-style code: ``1D``, ``1H``, ``15m``, ``5m``, ``1m``.
+        limit : int
+            Max bars (API cap 2500).
+
+        Returns
+        -------
+        pd.DataFrame
+            Index: bar open time (UTC-normalised to naive).
+            Columns: open, high, low, close, volume (float).
+        """
+        tl = (timeframe or "1D").strip().lower().replace(" ", "")
+        candle_map = {
+            "1d": "1d",
+            "1h": "1h",
+            "4h": "4h",
+            "15m": "15m",
+            "5m": "5m",
+            "1m": "1m",
+        }
+        candle = candle_map.get(tl, "1d")
+
+        start_s = str(start)[:10]
+        end_s = str(end)[:10]
+        path = f"/api/stock/{symbol.upper()}/ohlc/{candle}"
+        raw = self._get(
+            path,
+            params={
+                "date": start_s,
+                "end_date": end_s,
+                "limit": max(1, min(int(limit), 2500)),
+            },
+        )
+        df = self._raw_to_df(raw)
+        if df.empty:
+            return df
+
+        time_src = "start_time" if "start_time" in df.columns else None
+        if time_src is None and "end_time" in df.columns:
+            time_src = "end_time"
+        if time_src is None:
+            raise ValueError("Unusual Whales OHLC response has no start_time/end_time column")
+
+        df = df.copy()
+        df[time_src] = pd.to_datetime(df[time_src], utc=True, errors="coerce")
+        df = df.dropna(subset=[time_src]).set_index(time_src).sort_index()
+
+        rename = {c: c.lower() for c in df.columns}
+        df = df.rename(columns=rename)
+
+        for col in ("open", "high", "low", "close"):
+            if col not in df.columns:
+                raise ValueError(f"Unusual Whales OHLC response missing column {col!r}")
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        if "volume" in df.columns:
+            df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
+        elif "total_volume" in df.columns:
+            df["volume"] = pd.to_numeric(df["total_volume"], errors="coerce")
+        else:
+            raise ValueError("Unusual Whales OHLC response missing volume/total_volume")
+
+        df = df[["open", "high", "low", "close", "volume"]].dropna(subset=["close"])
+
+        start_ts = pd.Timestamp(start_s)
+        end_ts = pd.Timestamp(end_s) + pd.Timedelta(days=1)
+        df = df.loc[(df.index >= start_ts.tz_localize("UTC")) & (df.index < end_ts.tz_localize("UTC"))]
+
+        logger.info("UnusualWhales stock_ohlc: %d rows for %s (%s)", len(df), symbol, candle)
+        return df
 
     # ═══════════════════════════════════════════════════════════════════════
     # CONGRESSIONAL & INSIDER TRADES

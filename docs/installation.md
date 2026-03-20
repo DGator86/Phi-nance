@@ -19,6 +19,8 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
+The Live Backtest Workbench defaults to **Unusual Whales** for OHLCV. Set **`UNUSUAL_WHALES_API_KEY`** in `.env` (Bearer token from [Unusual Whales](https://unusualwhales.com)). To use another vendor without a UW key, pick **yfinance** or **alphavantage** in the sidebar.
+
 ### Windows / Python 3.13
 
 **Ray** is not part of the default `requirements.txt` because many platforms (notably **Windows with Python 3.13**) have no matching `ray` wheel on PyPI. The stack runs without it; distributed backtests and `RayEnvRunner` stay off until you install Ray on a supported environment. If your OS/Python has wheels, use:

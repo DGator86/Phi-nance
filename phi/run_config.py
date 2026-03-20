@@ -41,7 +41,7 @@ class RunConfig(BaseModel):
     start_date: date
     end_date: date
     timeframe: str = "1D"
-    vendor: str = "alphavantage"
+    vendor: str = "unusual_whales"
     initial_capital: float = 100_000.0
     trading_mode: Literal["equities", "options"] = "equities"
     option_params: dict[str, dict[str, Any]] = Field(default_factory=dict)

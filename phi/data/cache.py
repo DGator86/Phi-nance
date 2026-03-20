@@ -268,14 +268,16 @@ def is_cache_stale(cache_path: Path, timeframe: str, max_age_hours: float | None
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
-def _fetch_with_retry(fetcher: Any, symbol: str, start_s: str, end_s: str, **kwargs: Any) -> pd.DataFrame:
+def _fetch_with_retry(
+    fetcher: Any, symbol: str, start_s: str, end_s: str, timeframe: str, **kwargs: Any
+) -> pd.DataFrame:
     """Invoke a fetcher with retry behavior for transient network failures."""
-    return fetcher(symbol, start_s, end_s, **kwargs)
+    return fetcher(symbol, start_s, end_s, timeframe=timeframe, **kwargs)
 
 
 # ---- OHLCV fetch + cache ----
 
-def _fetch_from_yfinance(symbol: str, start_s: str, end_s: str) -> pd.DataFrame:
+def _fetch_from_yfinance(symbol: str, start_s: str, end_s: str, **_kwargs: Any) -> pd.DataFrame:
     """Fetch OHLCV data from yfinance."""
     import yfinance as yf
 
@@ -294,10 +296,30 @@ def _fetch_from_postgres(symbol: str, start_s: str, end_s: str, **kwargs: Any) -
     vendor = PostgresOptionsVendor()
     return vendor.fetch(symbol=symbol, start=start_s, end=end_s, **kwargs)
 
-def _fetch_from_alphavantage(symbol: str, start_s: str, end_s: str) -> pd.DataFrame:
+def _fetch_from_alphavantage(symbol: str, start_s: str, end_s: str, **_kwargs: Any) -> pd.DataFrame:
     """Phase-1 AlphaVantage handler (delegates to yfinance fallback)."""
     logger.warning("AlphaVantage fetch fallback active for %s; using yfinance", symbol)
     return _fetch_from_yfinance(symbol, start_s, end_s)
+
+
+def _fetch_from_unusual_whales(
+    symbol: str, start_s: str, end_s: str, timeframe: str = "1D", **_kwargs: Any
+) -> pd.DataFrame:
+    """Fetch OHLCV from Unusual Whales ``/api/stock/{ticker}/ohlc/{candle}``."""
+    from phinance.data.vendors.unusual_whales import UnusualWhalesClient
+
+    logger.info(
+        "Fetching Unusual Whales OHLC for %s (%s to %s) tf=%s",
+        symbol,
+        start_s,
+        end_s,
+        timeframe,
+    )
+    client = UnusualWhalesClient()
+    df = client.fetch_stock_ohlc(symbol, start_s, end_s, timeframe=timeframe)
+    if df is None or df.empty:
+        raise ValueError(f"No OHLC rows returned for {symbol} from Unusual Whales")
+    return _normalize_ohlcv(df)
 
 
 def _get_fetcher(vendor: str) -> Any:
@@ -310,6 +332,8 @@ def _get_fetcher(vendor: str) -> Any:
         "alpha_vantage": _fetch_from_alphavantage,
         "postgres": _fetch_from_postgres,
         "postgresql": _fetch_from_postgres,
+        "unusual_whales": _fetch_from_unusual_whales,
+        "unusualwhales": _fetch_from_unusual_whales,
     }
     if vendor_key not in fetchers:
         raise ValueError(f"Unknown vendor: {vendor!r}. Supported: {', '.join(sorted(fetchers))}")
@@ -370,7 +394,9 @@ def _fetch_with_fallback(
 
     primary_fetcher = _get_fetcher(primary_vendor)
     try:
-        primary_df = _fetch_with_retry(primary_fetcher, symbol, start_s, end_s, **kwargs)
+        primary_df = _fetch_with_retry(
+            primary_fetcher, symbol, start_s, end_s, timeframe, **kwargs
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("Primary fetch failed for %s/%s: %s", primary_vendor, symbol, exc)
         primary_df = pd.DataFrame()
@@ -380,7 +406,9 @@ def _fetch_with_fallback(
             attempted_vendors.append(fallback_vendor)
             fallback_fetcher = _get_fetcher(fallback_vendor)
             try:
-                fallback_df = _fetch_with_retry(fallback_fetcher, symbol, start_s, end_s, **kwargs)
+                fallback_df = _fetch_with_retry(
+                    fallback_fetcher, symbol, start_s, end_s, timeframe, **kwargs
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Fallback fetch failed for %s/%s: %s", fallback_vendor, symbol, exc)
                 if _is_alphavantage_vendor(fallback_vendor):
@@ -406,7 +434,9 @@ def _fetch_with_fallback(
                 attempted_vendors.append(fallback_vendor)
             fallback_fetcher = _get_fetcher(fallback_vendor)
             try:
-                fallback_df = _fetch_with_retry(fallback_fetcher, symbol, segment_start_s, segment_end_s, **kwargs)
+                fallback_df = _fetch_with_retry(
+                    fallback_fetcher, symbol, segment_start_s, segment_end_s, timeframe, **kwargs
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Fallback vendor %s failed for %s segment %s-%s: %s",

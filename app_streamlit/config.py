@@ -27,12 +27,12 @@ IndicatorParamSpec: TypeAlias = ParamRange | SelectParamSpec
 
 DEFAULT_SYMBOL = "SPY"
 DEFAULT_TIMEFRAME = "1D"
-DEFAULT_VENDOR = "alphavantage"
+DEFAULT_VENDOR = "unusual_whales"
 DEFAULT_TRADING_MODE = "equities"
 DEFAULT_INITIAL_CAPITAL = 100_000.0
 
 TIMEFRAME_OPTIONS = ["1m", "5m", "15m", "1H", "1D"]
-VENDOR_OPTIONS = ["alphavantage", "yfinance", "polygon"]
+VENDOR_OPTIONS = ["unusual_whales", "yfinance", "alphavantage", "polygon"]
 TRADING_MODE_OPTIONS = ["equities", "options"]
 BLEND_METHOD_OPTIONS = ["weighted_sum", "majority_vote", "regime_weighted"]
 
