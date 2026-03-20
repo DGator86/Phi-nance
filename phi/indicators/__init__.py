@@ -9,6 +9,12 @@ Used by BlendedWorkbenchStrategy for multi-indicator blending.
 from phi.logging import get_logger
 
 from .orderflow import OHLCVOrderFlowProvider, get_order_flow_provider, set_order_flow_provider
+from .information import (
+    compute_entropy_signal,
+    compute_fisher_information_signal,
+    compute_kld_signal,
+    compute_mutual_info_signal,
+)
 from .simple import (
     compute_bollinger,
     compute_breakout,
@@ -38,7 +44,4 @@ __all__ = [
     "compute_mutual_info_signal",
     "compute_fisher_information_signal",
     "compute_kld_signal",
-    "compute_order_flow_imbalance",
-    "compute_depth_ratio",
-    "compute_microprice",
 ]

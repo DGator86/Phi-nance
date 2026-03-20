@@ -30,6 +30,12 @@ from phi.logging import get_logger
 from phi.mft.signals import mft_energy_signal, mft_signal
 
 from phi.mft.signals import mft_energy_signal, mft_signal
+from phi.indicators.information import (
+    compute_entropy_signal,
+    compute_fisher_information_signal,
+    compute_kld_signal,
+    compute_mutual_info_signal,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -520,40 +526,6 @@ def _compute_fisher_information(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     return compute_fisher_information_signal(ohlcv, window=window, clip_percentile=clip_percentile)
 
 
-
-def _compute_tick_order_flow_imbalance(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
-    bid_volume = ohlcv.get("bid_volume", pd.Series(0.0, index=ohlcv.index)).astype(float)
-    ask_volume = ohlcv.get("ask_volume", pd.Series(0.0, index=ohlcv.index)).astype(float)
-    total = (bid_volume + ask_volume).replace(0, np.nan)
-    imbalance = ((bid_volume - ask_volume) / total).fillna(0.0)
-    return imbalance.clip(-1.0, 1.0)
-
-
-def _compute_tick_depth_ratio(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
-    bid_volume = ohlcv.get("bid_volume", pd.Series(1.0, index=ohlcv.index)).astype(float)
-    ask_volume = ohlcv.get("ask_volume", pd.Series(1.0, index=ohlcv.index)).astype(float)
-    ratio = bid_volume / ask_volume.clip(lower=1e-10)
-    return _to_signal(_safe_zscore(ratio, int(params.get("window", 60))))
-
-
-def _compute_tick_spread(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
-    bid = ohlcv.get("bid", ohlcv.get("close", pd.Series(0.0, index=ohlcv.index))).astype(float)
-    ask = ohlcv.get("ask", ohlcv.get("close", pd.Series(0.0, index=ohlcv.index))).astype(float)
-    spread = (ask - bid).clip(lower=0.0)
-    return _to_signal(-_safe_zscore(spread, int(params.get("window", 60))))
-
-
-def _compute_tick_microprice(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
-    bid = ohlcv.get("bid", ohlcv.get("close", pd.Series(0.0, index=ohlcv.index))).astype(float)
-    ask = ohlcv.get("ask", ohlcv.get("close", pd.Series(0.0, index=ohlcv.index))).astype(float)
-    bid_volume = ohlcv.get("bid_volume", pd.Series(1.0, index=ohlcv.index)).astype(float)
-    ask_volume = ohlcv.get("ask_volume", pd.Series(1.0, index=ohlcv.index)).astype(float)
-    total = (bid_volume + ask_volume).clip(lower=1e-10)
-    microprice = (ask * bid_volume + bid * ask_volume) / total
-    ref = ohlcv.get("close", (bid + ask) / 2.0).astype(float)
-    delta = (microprice - ref) / ref.replace(0, np.nan)
-    return _to_signal(delta.fillna(0.0) * 100.0)
-
 def _compute_kld(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     recent_window = int(params.get("recent_window", 20))
     reference_window = int(params.get("reference_window", 60))
@@ -764,6 +736,55 @@ INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
             "amihud_scale": {"label": "Amihud Scale", "default": 1000000.0, "min": 1000.0, "max": 10000000.0, "step": 1000.0, "type": "float"},
         },
         "tune_ranges": {"window": (10, 50), "amihud_scale": (1e4, 1e7)},
+    },
+
+    "return_entropy": {
+        "display_name": "Return Entropy",
+        "description": "Rolling Shannon entropy of returns (higher = more uncertainty).",
+        "type": "information_theory",
+        "compute": _compute_entropy,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 200, "step": 1, "type": "int"},
+            "bins": {"label": "Bins", "default": 20, "min": 5, "max": 60, "step": 1, "type": "int"},
+            "base": {"label": "Log Base", "default": 2.0, "min": 2.0, "max": 10.0, "step": 1.0, "type": "float"},
+        },
+        "tune_ranges": {"window": (10, 60), "bins": (10, 30)},
+    },
+    "mutual_information": {
+        "display_name": "Mutual Information",
+        "description": "Rolling mutual information between returns and volume changes.",
+        "type": "information_theory",
+        "compute": _compute_mutual_information,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 200, "step": 1, "type": "int"},
+            "bins": {"label": "Bins", "default": 20, "min": 5, "max": 60, "step": 1, "type": "int"},
+            "mode": {"label": "Mode", "default": "price_volume", "type": "str"},
+        },
+        "tune_ranges": {"window": (10, 60), "bins": (10, 30)},
+    },
+    "fisher_information": {
+        "display_name": "Fisher Information",
+        "description": "Inverse-variance proxy for Fisher information of returns.",
+        "type": "information_theory",
+        "compute": _compute_fisher_information,
+        "params": {
+            "window": {"label": "Window", "default": 20, "min": 5, "max": 200, "step": 1, "type": "int"},
+            "clip_percentile": {"label": "Clip Percentile", "default": 95.0, "min": 50.0, "max": 99.9, "step": 0.1, "type": "float"},
+        },
+        "tune_ranges": {"window": (10, 60), "clip_percentile": (85.0, 99.0)},
+    },
+    "kld_regime_shift": {
+        "display_name": "KL Divergence",
+        "description": "Symmetric KL divergence between prior and recent return distributions.",
+        "type": "information_theory",
+        "compute": _compute_kld,
+        "params": {
+            "recent_window": {"label": "Recent Window", "default": 20, "min": 5, "max": 120, "step": 1, "type": "int"},
+            "reference_window": {"label": "Reference Window", "default": 60, "min": 10, "max": 240, "step": 1, "type": "int"},
+            "bins": {"label": "Bins", "default": 20, "min": 5, "max": 60, "step": 1, "type": "int"},
+            "sigmoid_scale": {"label": "Sigmoid Scale", "default": 3.0, "min": 0.5, "max": 10.0, "step": 0.1, "type": "float"},
+        },
+        "tune_ranges": {"recent_window": (10, 40), "reference_window": (30, 120), "bins": (10, 30)},
     },
     "mft_signal": {
         "display_name": "MFT Signal",
