@@ -25,26 +25,89 @@ data_sources:
     enabled: true
     rate_limit: 60
     rate_window_seconds: 60
+    # Sub-category refresh cadence hints (seconds) — respected by the live
+    # scheduler when deciding whether to re-fetch each data type.
+    refresh_hints:
+      flow_alerts: 30
+      ticker_flow: 60
+      options_chain: 60
+      dark_pool: 30
+      dark_pool_ticker: 60
+      market_tide: 15
+      market_overview: 60
+      market_movers: 60
+      etf_flow: 120
+      etf_holdings: 3600
+      iv_rank: 300
+      oi_change: 300
+      options_volume: 120
+      pc_ratio: 60
+      short_interest: 3600
+      congress_trades: 3600
+      insider_trades: 3600
 
 cache_ttl_seconds:
+  # Standard OHLCV / price data
   bars: 3600
   quotes: 10
   options: 30
   fundamentals: 86400
   macro: 3600
+  # Unusual Whales — options flow
   flow_alerts: 60
+  ticker_flow: 60
+  options_chain: 60
+  # Unusual Whales — dark pool
   dark_pool: 60
+  dark_pool_ticker: 120
+  # Unusual Whales — market & breadth
   market_tide: 30
+  market_overview: 60
+  market_movers: 60
+  # Unusual Whales — sector & ETF
+  etf_flow: 120
+  etf_holdings: 3600
+  # Unusual Whales — options analytics
+  iv_rank: 300
+  oi_change: 300
+  options_volume: 120
+  pc_ratio: 60
+  # Unusual Whales — short & positioning
+  short_interest: 3600
+  # Unusual Whales — congressional & insider
+  congress_trades: 3600
+  insider_trades: 3600
 
 data_priorities:
   bars: [alpaca, yfinance, fmp]
   quotes: [alpaca]
-  options: [thetadata, yfinance]
+  options: [thetadata, yfinance, unusual_whales]
   fundamentals: [fmp, yfinance]
   macro: [fred]
+  # Options flow
   flow_alerts: [unusual_whales]
+  ticker_flow: [unusual_whales]
+  options_chain: [unusual_whales, thetadata]
+  # Dark pool
   dark_pool: [unusual_whales]
+  dark_pool_ticker: [unusual_whales]
+  # Market & breadth
   market_tide: [unusual_whales]
+  market_overview: [unusual_whales]
+  market_movers: [unusual_whales]
+  # Sector & ETF
+  etf_flow: [unusual_whales]
+  etf_holdings: [unusual_whales]
+  # Options analytics
+  iv_rank: [unusual_whales]
+  oi_change: [unusual_whales]
+  options_volume: [unusual_whales]
+  pc_ratio: [unusual_whales]
+  # Short & positioning
+  short_interest: [unusual_whales]
+  # Congressional & insider
+  congress_trades: [unusual_whales]
+  insider_trades: [unusual_whales]
 
 use_hierarchical: false
 meta_agent_checkpoint: models/meta_agent/latest.pt

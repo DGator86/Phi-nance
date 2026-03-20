@@ -24,6 +24,14 @@ Integration
   >>> spot = 175.00
   >>> features = gs.compute_features(chain_df, spot)
   # {'gamma_wall_distance': -0.012, 'gamma_net': 0.43, ...}
+
+Unusual Whales live adapter
+---------------------------
+  >>> from phinance.data.vendors.unusual_whales import UnusualWhalesClient
+  >>> client = UnusualWhalesClient()
+  >>> features = GammaSurface.compute_from_unusual_whales(
+  ...     cfg['gamma'], client, symbol='SPY', spot=520.0
+  ... )
 """
 
 from __future__ import annotations
@@ -334,3 +342,64 @@ class GammaSurface:
             "gamma_expiry_days":   30.0,
             "gex_flip_zone":       0.0,
         }
+
+    # ------------------------------------------------------------------
+    # Unusual Whales live adapter
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def compute_from_unusual_whales(
+        cls,
+        config: Dict[str, Any],
+        uw_client: Any,
+        symbol: str,
+        spot: float,
+    ) -> Dict[str, float]:
+        """Fetch a live options chain via Unusual Whales and return GEX features.
+
+        This is a convenience factory that:
+        1. Calls ``uw_client.options_chain_for_gex(symbol)`` to obtain a
+           GammaSurface-normalised options chain.
+        2. Constructs a :class:`GammaSurface` from *config*.
+        3. Returns ``compute_features(chain_df, spot)``.
+
+        Parameters
+        ----------
+        config : dict
+            The ``gamma`` sub-dict from ``config.yaml`` (same as the
+            constructor argument).
+        uw_client : UnusualWhalesClient
+            An authenticated ``UnusualWhalesClient`` instance.
+        symbol : str
+            Underlying ticker (e.g. ``"SPY"``).
+        spot : float
+            Current underlying mid-price.
+
+        Returns
+        -------
+        dict
+            Same four-feature dict as :meth:`compute_features`.
+
+        Examples
+        --------
+        >>> from phinance.data.vendors.unusual_whales import UnusualWhalesClient
+        >>> client = UnusualWhalesClient()
+        >>> cfg_gamma = {"enabled": True, "max_dte": 60, "min_oi": 100}
+        >>> features = GammaSurface.compute_from_unusual_whales(
+        ...     cfg_gamma, client, "SPY", spot=520.0
+        ... )
+        >>> features["gamma_net"]
+        0.37
+        """
+        gs = cls(config)
+        try:
+            chain_df = uw_client.options_chain_for_gex(symbol)
+        except Exception as exc:
+            logger.warning(
+                "GammaSurface.compute_from_unusual_whales: chain fetch failed "
+                "for %s — %s",
+                symbol,
+                exc,
+            )
+            return cls._zero_features()
+        return gs.compute_features(chain_df, spot)
