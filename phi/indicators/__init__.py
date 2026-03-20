@@ -1,14 +1,16 @@
-"""Public indicator compute exports."""
+"""
+Phi-nance Indicator Compute Functions
+=====================================
 
-from .information import (
-    compute_entropy_signal,
-    compute_fisher_information_signal,
-    compute_kld_signal,
-    compute_mutual_info_signal,
-)
-from .information_flow import rolling_granger_causality, rolling_transfer_entropy
+Lightweight signal computation from OHLCV (no Lumibot).
+Used by BlendedWorkbenchStrategy for multi-indicator blending.
+"""
+
+from phi.logging import get_logger
+
 from .orderflow import OHLCVOrderFlowProvider, get_order_flow_provider, set_order_flow_provider
 from .simple import (
+    INDICATOR_COMPUTERS,
     compute_bollinger,
     compute_breakout,
     compute_dual_sma,
@@ -18,7 +20,8 @@ from .simple import (
     compute_mft_signal,
     compute_rsi,
 )
-from .simple import INDICATOR_COMPUTERS
+
+logger = get_logger(__name__)
 
 __all__ = [
     "compute_rsi",

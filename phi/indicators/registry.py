@@ -31,6 +31,8 @@ from phi.mft.signals import mft_energy_signal, mft_signal
 
 logger = get_logger(__name__)
 
+logger = get_logger(__name__)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Utility helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -230,6 +232,15 @@ def _compute_mft_signal(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     threshold = float(params.get("threshold", 0.0))
     smooth_window = int(params.get("smooth_window", 1))
     return mft_signal(close=close, kernel=kernel, sigma=sigma, threshold=threshold, smooth_window=smooth_window)
+
+
+def _compute_mft_energy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT energy-derived signal from relative field activity."""
+    close = ohlcv["close"].astype(float)
+    kernel = str(params.get("kernel", "gaussian"))
+    sigma = float(params.get("sigma", 10.0))
+    energy_window = int(params.get("energy_window", 20))
+    return mft_energy_signal(close=close, kernel=kernel, sigma=sigma, energy_window=energy_window)
 
 
 def _compute_mft_energy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
