@@ -23,7 +23,8 @@ import subprocess
 
 BASE_URL = "http://localhost:3100"
 WORKSPACE_DIR = os.path.expanduser("~/.paperclip/instances/default/workspaces")
-AGENTS_DIR = "/root/Phi-nance/.github/agents"
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_SCRIPT_DIR) if os.path.basename(_SCRIPT_DIR) == "scripts" else os.path.dirname(os.path.dirname(_SCRIPT_DIR))
 
 # Agent definitions extracted from .github/agents/*.agent.md
 AGENTS = [
@@ -288,8 +289,10 @@ def find_psql_binary():
     return None
 
 
-def read_instructions(agent_def, repo_root="/root/Phi-nance"):
+def read_instructions(agent_def, repo_root=None):
     """Read the instructions markdown from the agent file (body after frontmatter)."""
+    if repo_root is None:
+        repo_root = _REPO_ROOT
     filepath = os.path.join(repo_root, agent_def["instructions_file"])
     if not os.path.exists(filepath):
         return f"# {agent_def['name']}\n\n{agent_def['description']}"
@@ -719,10 +722,7 @@ def main():
     parser.add_argument("--base-url", default=BASE_URL)
     parser.add_argument("--dry-run", action="store_true", help="Print agents without creating")
     parser.add_argument("--db", action="store_true", help="Skip API, use PostgreSQL directly")
-    # Default repo root: parent of the scripts/ directory (where this file lives)
-    _script_dir = os.path.dirname(os.path.abspath(__file__))
-    _default_repo_root = os.path.dirname(_script_dir) if os.path.basename(_script_dir) == "scripts" else "/root/Phi-nance"
-    parser.add_argument("--repo-root", default=_default_repo_root)
+    parser.add_argument("--repo-root", default=_REPO_ROOT)
     parser.add_argument("--schema", action="store_true", help="Just inspect the DB schema")
     args = parser.parse_args()
 

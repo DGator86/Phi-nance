@@ -9,11 +9,13 @@ MAIN_BRANCH="MAIN"
 FEATURE_BRANCH="claude/review-paperclip-integration-4HLI1"
 DRY_RUN=false
 
-for arg in "$@"; do
-  case "$arg" in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --dry-run) DRY_RUN=true ;;
-    --feature) shift; FEATURE_BRANCH="$1" ;;
+    --feature) shift; FEATURE_BRANCH="${1:?--feature requires a branch name}" ;;
+    *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
+  shift
 done
 
 # ── colours ────────────────────────────────────────────────────────────────────
