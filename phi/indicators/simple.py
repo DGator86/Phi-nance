@@ -20,16 +20,14 @@ from phi.indicators.orderflow import (
 )
 from phi.logging import get_logger
 from phi.mft.signals import mft_energy_signal, mft_signal
-
-logger = get_logger(__name__)
-
-from phi.mft.signals import mft_energy_signal, mft_signal
 from phi.indicators.information import (
     compute_entropy_signal,
     compute_fisher_information_signal,
     compute_kld_signal,
     compute_mutual_info_signal,
 )
+
+logger = get_logger(__name__)
 
 
 def _normalize_signal(s: pd.Series) -> pd.Series:

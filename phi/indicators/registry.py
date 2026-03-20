@@ -248,33 +248,6 @@ def _compute_mft_energy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     return mft_energy_signal(close=close, kernel=kernel, sigma=sigma, energy_window=energy_window)
 
 
-def _compute_mft_energy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
-    """MFT energy-derived signal from relative field activity."""
-    close = ohlcv["close"].astype(float)
-    kernel = str(params.get("kernel", "gaussian"))
-    sigma = float(params.get("sigma", 10.0))
-    energy_window = int(params.get("energy_window", 20))
-    return mft_energy_signal(close=close, kernel=kernel, sigma=sigma, energy_window=energy_window)
-
-
-def _compute_mft_energy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
-    """MFT energy-derived signal from relative field activity."""
-    close = ohlcv["close"].astype(float)
-    kernel = str(params.get("kernel", "gaussian"))
-    sigma = float(params.get("sigma", 10.0))
-    energy_window = int(params.get("energy_window", 20))
-    return mft_energy_signal(close=close, kernel=kernel, sigma=sigma, energy_window=energy_window)
-
-    def _entropy(x: np.ndarray) -> float:
-        hist, _ = np.histogram(x, bins=max(2, bins), density=True)
-        probs = hist / (hist.sum() + 1e-12)
-        probs = probs[probs > 0]
-        return float(-(probs * np.log(probs)).sum())
-
-    ent = returns.rolling(window, min_periods=max(5, window // 2)).apply(_entropy, raw=True)
-    return _to_signal(_safe_zscore(ent.fillna(0.0), max(30, window)))
-
-
 def _compute_mutual_information(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     """Mutual information signal between returns and lagged returns."""
     close = ohlcv["close"].astype(float)
@@ -387,16 +360,6 @@ def _compute_mft_signal(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     threshold = float(params.get("threshold", 0.0))
     smooth_window = int(params.get("smooth_window", 1))
     return mft_signal(close=close, kernel=kernel, sigma=sigma, threshold=threshold, smooth_window=smooth_window)
-
-
-def _compute_mft_energy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
-    """MFT energy-derived signal from relative field activity."""
-    close = ohlcv["close"].astype(float)
-    kernel = str(params.get("kernel", "gaussian"))
-    sigma = float(params.get("sigma", 10.0))
-    energy_window = int(params.get("energy_window", 20))
-    return mft_energy_signal(close=close, kernel=kernel, sigma=sigma, energy_window=energy_window)
-
 
 
 

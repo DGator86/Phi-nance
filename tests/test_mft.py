@@ -25,7 +25,7 @@ def test_compute_field_dynamics_columns_and_lengths() -> None:
 
     dynamics = compute_field_dynamics(close, kernel="exp", sigma=6.0)
 
-    assert set(["potential", "gradient", "laplacian", "energy"]).issubset(dynamics.columns)
+    assert {"potential", "gradient", "laplacian", "energy"}.issubset(dynamics.columns)
     assert len(dynamics) == len(close)
     assert dynamics.index.equals(close.index)
 
