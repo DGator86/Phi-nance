@@ -23,7 +23,7 @@ from app_streamlit.state import (
     transition_to,
 )
 from phi.backtest import run_direct_backtest, run_portfolio_backtest
-from phi.exceptions import BacktestError, ValidationError
+from phi.exceptions import BacktestError, DataFetchError, ValidationError
 from phi.logging import get_logger
 from phi.options import run_options_backtest
 from phi.regime import list_saved_detectors, load_detector
@@ -226,8 +226,9 @@ def handle_run_backtest(
                 if bool(payload.get("regime_detect_on_the_fly", True)):
                     regime_detector = detector
 
+            primary = data_map[cfg.symbols[0]]
             results, _ = run_equity_fn(
-                ohlcv=data,
+                ohlcv=primary,
                 symbol=cfg.symbols[0],
                 indicators=cfg.indicators,
                 blend_weights=cfg.blend_weights,
@@ -238,7 +239,7 @@ def handle_run_backtest(
             )
             if regime_series is not None:
                 results["regime_series"] = regime_series
-                results["ohlcv"] = data_map[cfg.symbols[0]]
+                results["ohlcv"] = primary
 
         history = RunHistory()
         run_id = history.create_run(cfg)
@@ -251,6 +252,9 @@ def handle_run_backtest(
         set_error("Invalid configuration. Please correct highlighted inputs.", debug=str(exc))
     except BacktestError as exc:
         logger.warning("Backtest validation failed: %s", exc)
+        set_error(str(exc), debug=traceback.format_exc())
+    except DataFetchError as exc:
+        logger.warning("Data fetch failed: %s", exc)
         set_error(str(exc), debug=traceback.format_exc())
     except Exception:  # noqa: BLE001
         logger.exception("Backtest failed")
