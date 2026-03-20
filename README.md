@@ -13,6 +13,12 @@ python -m streamlit run app_streamlit/live_workbench.py
 # Or the legacy MFT Dashboard
 python -m streamlit run legacy/dashboard.py
 
+# JupyterLab (notebooks + regime engine demos)
+pip install -r requirements-jupyter.txt
+python -m ipykernel install --user --name phinance --display-name "Python (Phi-nance)"
+jupyter lab
+# Open notebooks/00_getting_started.ipynb — first cell runs notebook_setup.py
+
 # CLI backtest
 python run_backtest.py --strategy rsi --start 2020-01-01 --end 2024-12-31 --budget 100000
 ```
