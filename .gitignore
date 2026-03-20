@@ -15,3 +15,5 @@ logs/
 backtest_output*.txt
 *.csv
 !SPY_minute.csv   # keep this test data
+
+venv/
