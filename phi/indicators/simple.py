@@ -23,6 +23,8 @@ from phi.mft.signals import mft_energy_signal, mft_signal
 
 logger = get_logger(__name__)
 
+from phi.mft.signals import mft_energy_signal, mft_signal
+
 
 def _normalize_signal(s: pd.Series) -> pd.Series:
     """Clip and scale to roughly [-1, 1]."""
@@ -222,7 +224,7 @@ def compute_mft_energy(
     )
 
 
-INDICATOR_COMPUTERS: dict[str, Callable[..., pd.Series]] = {
+INDICATOR_COMPUTERS: Dict[str, Callable[..., pd.Series]] = {
     "RSI": compute_rsi,
     "MACD": compute_macd,
     "Bollinger": compute_bollinger,

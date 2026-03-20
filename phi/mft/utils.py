@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import numpy as np
-
 from phi.logging import get_logger
 
 logger = get_logger(__name__)
+
+import numpy as np
 
 
 def build_kernel(kernel: str = "gaussian", sigma: float = 10.0) -> np.ndarray:

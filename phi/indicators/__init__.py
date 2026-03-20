@@ -10,7 +10,6 @@ from phi.logging import get_logger
 
 from .orderflow import OHLCVOrderFlowProvider, get_order_flow_provider, set_order_flow_provider
 from .simple import (
-    INDICATOR_COMPUTERS,
     compute_bollinger,
     compute_breakout,
     compute_dual_sma,
@@ -20,8 +19,7 @@ from .simple import (
     compute_mft_signal,
     compute_rsi,
 )
-
-logger = get_logger(__name__)
+from .simple import INDICATOR_COMPUTERS
 
 __all__ = [
     "compute_rsi",
