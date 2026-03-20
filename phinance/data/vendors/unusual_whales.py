@@ -12,6 +12,10 @@ directly).  The key is sent as a Bearer token::
 
     Authorization: Bearer <api_key>
 
+Official reference: https://api.unusualwhales.com/docs — OpenAPI:
+https://api.unusualwhales.com/api/openapi.  Equity OHLC for backtests:
+``GET /api/stock/{ticker}/ohlc/{candle_size}`` (stock group → OHLC).
+
 Endpoint categories
 -------------------
   Options Flow

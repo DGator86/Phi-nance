@@ -19,7 +19,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
-The Live Backtest Workbench defaults to **Unusual Whales** for OHLCV. Set **`UNUSUAL_WHALES_API_KEY`** in `.env` (Bearer token from [Unusual Whales](https://unusualwhales.com)). To use another vendor without a UW key, pick **yfinance** or **alphavantage** in the sidebar.
+The Live Backtest Workbench defaults to **Unusual Whales** for OHLCV. Set **`UNUSUAL_WHALES_API_KEY`** in `.env` (Bearer token; see [Unusual Whales](https://unusualwhales.com)). API reference: [api.unusualwhales.com/docs](https://api.unusualwhales.com/docs) (OpenAPI: [api/openapi](https://api.unusualwhales.com/api/openapi)). Equity OHLC uses `GET /api/stock/{ticker}/ohlc/{candle_size}`. Without a UW key, pick **yfinance** or **alphavantage** in the sidebar.
 
 ### Windows / Python 3.13
 
