@@ -84,18 +84,6 @@ def render_indicator_selector(selected_names: list[str]) -> tuple[dict[str, dict
                         index=default_idx,
                         key=f"{name}_{param}",
                     )
-                elif isinstance(param_spec, dict) and param_spec.get("type") == "text":
-                    params[param] = st.text_input(
-                        param,
-                        value=str(param_spec.get("default", "")),
-                        key=f"{name}_{param}",
-                    ).strip().upper()
-                elif isinstance(param_spec, dict) and param_spec.get("type") == "bool":
-                    params[param] = st.checkbox(
-                        param,
-                        value=bool(param_spec.get("default", False)),
-                        key=f"{name}_{param}",
-                    )
                 else:
                     logger.warning("Unsupported parameter spec for %s/%s: %s", name, param, param_spec)
             indicators[name] = {"enabled": True, "params": params}

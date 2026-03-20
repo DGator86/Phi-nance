@@ -27,21 +27,9 @@ from phi.indicators.orderflow import (
     get_order_flow_provider,
 )
 from phi.logging import get_logger
-from phi.mft.complex import complex_potential
-from phi.mft.fourier import rolling_spectral_power
 from phi.mft.signals import mft_energy_signal, mft_signal
-from phi.mft.volume_field import volume_price_interaction
 
 logger = get_logger(__name__)
-
-from phi.indicators.information import (
-    compute_entropy_signal,
-    compute_fisher_information_signal,
-    compute_kld_signal,
-    compute_mutual_info_signal,
-)
-from phi.indicators.information_flow import rolling_granger_causality, rolling_transfer_entropy
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Utility helpers
@@ -234,12 +222,23 @@ def _compute_adx(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
     return _to_signal(signal)
 
 
-def _compute_rolling_entropy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
-    """Rolling return entropy signal."""
+def _compute_mft_signal(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """Simplified MFT directional signal based on potential gradient."""
     close = ohlcv["close"].astype(float)
-    window = int(params.get("window", 20))
-    bins = int(params.get("bins", 10))
-    returns = close.pct_change().fillna(0.0)
+    kernel = str(params.get("kernel", "gaussian"))
+    sigma = float(params.get("sigma", 10.0))
+    threshold = float(params.get("threshold", 0.0))
+    smooth_window = int(params.get("smooth_window", 1))
+    return mft_signal(close=close, kernel=kernel, sigma=sigma, threshold=threshold, smooth_window=smooth_window)
+
+
+def _compute_mft_energy(ohlcv: pd.DataFrame, params: dict) -> pd.Series:
+    """MFT energy-derived signal from relative field activity."""
+    close = ohlcv["close"].astype(float)
+    kernel = str(params.get("kernel", "gaussian"))
+    sigma = float(params.get("sigma", 10.0))
+    energy_window = int(params.get("energy_window", 20))
+    return mft_energy_signal(close=close, kernel=kernel, sigma=sigma, energy_window=energy_window)
 
     def _entropy(x: np.ndarray) -> float:
         hist, _ = np.histogram(x, bins=max(2, bins), density=True)
@@ -747,51 +746,6 @@ INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
         },
         "tune_ranges": {"window": (10, 50), "amihud_scale": (1e4, 1e7)},
     },
-
-    "rolling_entropy": {
-        "display_name": "Rolling Entropy",
-        "description": "Shannon entropy of rolling return distributions.",
-        "type": "info_theory",
-        "compute": _compute_rolling_entropy,
-        "params": {
-            "window": {"label": "Window", "default": 20, "min": 5, "max": 120, "step": 1, "type": "int"},
-            "bins": {"label": "Bins", "default": 10, "min": 2, "max": 40, "step": 1, "type": "int"},
-        },
-        "tune_ranges": {"window": (10, 60), "bins": (5, 20)},
-    },
-    "mutual_information": {
-        "display_name": "Mutual Information",
-        "description": "Dependency between returns and lagged returns.",
-        "type": "info_theory",
-        "compute": _compute_mutual_information,
-        "params": {
-            "window": {"label": "Window", "default": 30, "min": 10, "max": 150, "step": 1, "type": "int"},
-            "bins": {"label": "Bins", "default": 8, "min": 2, "max": 30, "step": 1, "type": "int"},
-            "lag": {"label": "Lag", "default": 1, "min": 1, "max": 10, "step": 1, "type": "int"},
-        },
-        "tune_ranges": {"window": (20, 80), "bins": (4, 16), "lag": (1, 5)},
-    },
-    "fisher_information": {
-        "display_name": "Fisher Information",
-        "description": "Slope-intensity information proxy from standardized returns.",
-        "type": "info_theory",
-        "compute": _compute_fisher_information,
-        "params": {
-            "window": {"label": "Window", "default": 20, "min": 5, "max": 120, "step": 1, "type": "int"},
-        },
-        "tune_ranges": {"window": (10, 60)},
-    },
-    "kl_divergence": {
-        "display_name": "KL Divergence",
-        "description": "Divergence between adjacent rolling return distributions.",
-        "type": "info_theory",
-        "compute": _compute_kl_divergence,
-        "params": {
-            "window": {"label": "Window", "default": 30, "min": 10, "max": 150, "step": 1, "type": "int"},
-            "bins": {"label": "Bins", "default": 10, "min": 2, "max": 40, "step": 1, "type": "int"},
-        },
-        "tune_ranges": {"window": (20, 80), "bins": (5, 20)},
-    },
     "mft_signal": {
         "display_name": "MFT Signal",
         "description":  "Simplified Market Field Theory gradient-direction signal.",
@@ -817,168 +771,7 @@ INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
         },
         "tune_ranges": {"sigma": (3.0, 20.0), "energy_window": (10, 60)},
     },
-    "mft_complex_amplitude": {
-        "display_name": "MFT Complex Amplitude",
-        "description": "Hilbert analytic-signal amplitude of close.",
-        "type": "MFT",
-        "compute": _compute_mft_complex_amplitude,
-        "params": {},
-        "tune_ranges": {},
-    },
-    "mft_complex_phase": {
-        "display_name": "MFT Complex Phase",
-        "description": "Hilbert analytic-signal phase of close.",
-        "type": "MFT",
-        "compute": _compute_mft_complex_phase,
-        "params": {},
-        "tune_ranges": {},
-    },
-    "mft_phase_change": {
-        "display_name": "MFT Phase Change",
-        "description": "First difference of unwrapped analytic phase.",
-        "type": "MFT",
-        "compute": _compute_mft_phase_change,
-        "params": {},
-        "tune_ranges": {},
-    },
-    "mft_price_volume_interaction": {
-        "display_name": "MFT Price-Volume Interaction",
-        "description": "Interaction term between price and volume fields.",
-        "type": "MFT",
-        "compute": _compute_mft_price_volume_interaction,
-        "params": {
-            "kernel": {"label": "Kernel", "default": "gaussian", "type": "str"},
-            "sigma": {"label": "Sigma", "default": 10.0, "min": 1.0, "max": 50.0, "step": 1.0, "type": "float"},
-            "corr_window": {"label": "Corr Window", "default": 20, "min": 5, "max": 120, "step": 1, "type": "int"},
-        },
-        "tune_ranges": {"sigma": (3.0, 20.0), "corr_window": (10, 60)},
-    },
-    "mft_spectral_power": {
-        "display_name": "MFT Spectral Power",
-        "description": "Rolling FFT relative power in selected frequency band.",
-        "type": "MFT",
-        "compute": _compute_mft_spectral_power,
-        "params": {
-            "window": {"label": "Window", "default": 64, "min": 8, "max": 256, "step": 1, "type": "int"},
-            "band": {"label": "Band", "default": "low", "type": "str"},
-        },
-        "tune_ranges": {"window": (32, 128)},
-    },
 
-    "return_entropy": {
-        "display_name": "Return Entropy",
-        "description": "Rolling Shannon entropy of returns (higher = more uncertainty).",
-        "type": "information_theory",
-        "compute": _compute_entropy,
-        "params": {
-            "window": {"label": "Window", "default": 20, "min": 5, "max": 200, "step": 1, "type": "int"},
-            "bins": {"label": "Bins", "default": 20, "min": 5, "max": 60, "step": 1, "type": "int"},
-            "base": {"label": "Log Base", "default": 2.0, "min": 2.0, "max": 10.0, "step": 1.0, "type": "float"},
-        },
-        "tune_ranges": {"window": (10, 60), "bins": (10, 30)},
-    },
-    "mutual_information": {
-        "display_name": "Mutual Information",
-        "description": "Rolling mutual information between returns and volume changes.",
-        "type": "information_theory",
-        "compute": _compute_mutual_information,
-        "params": {
-            "window": {"label": "Window", "default": 20, "min": 5, "max": 200, "step": 1, "type": "int"},
-            "bins": {"label": "Bins", "default": 20, "min": 5, "max": 60, "step": 1, "type": "int"},
-            "mode": {"label": "Mode", "default": "price_volume", "type": "str"},
-        },
-        "tune_ranges": {"window": (10, 60), "bins": (10, 30)},
-    },
-    "fisher_information": {
-        "display_name": "Fisher Information",
-        "description": "Inverse-variance proxy for Fisher information of returns.",
-        "type": "information_theory",
-        "compute": _compute_fisher_information,
-        "params": {
-            "window": {"label": "Window", "default": 20, "min": 5, "max": 200, "step": 1, "type": "int"},
-            "clip_percentile": {"label": "Clip Percentile", "default": 95.0, "min": 50.0, "max": 99.9, "step": 0.1, "type": "float"},
-        },
-        "tune_ranges": {"window": (10, 60), "clip_percentile": (85.0, 99.0)},
-    },
-    "kld_regime_shift": {
-        "display_name": "KL Divergence",
-        "description": "Symmetric KL divergence between prior and recent return distributions.",
-        "type": "information_theory",
-        "compute": _compute_kld,
-        "params": {
-            "recent_window": {"label": "Recent Window", "default": 20, "min": 5, "max": 120, "step": 1, "type": "int"},
-            "reference_window": {"label": "Reference Window", "default": 60, "min": 10, "max": 240, "step": 1, "type": "int"},
-            "bins": {"label": "Bins", "default": 20, "min": 5, "max": 60, "step": 1, "type": "int"},
-            "sigmoid_scale": {"label": "Sigmoid Scale", "default": 3.0, "min": 0.5, "max": 10.0, "step": 0.1, "type": "float"},
-        },
-        "tune_ranges": {"recent_window": (10, 40), "reference_window": (30, 120), "bins": (10, 30)},
-    },
-
-    "transfer_entropy": {
-        "display_name": "Transfer Entropy",
-        "description": "Rolling transfer entropy from one symbol to another.",
-        "type": "information_flow",
-        "compute": _compute_transfer_entropy,
-        "params": {
-            "window": {"label": "Window", "default": 50, "min": 20, "max": 200, "step": 1, "type": "int"},
-            "from_symbol": {"label": "From Symbol", "default": "SPY", "type": "str"},
-            "to_symbol": {"label": "To Symbol", "default": "QQQ", "type": "str"},
-            "bins": {"label": "Bins", "default": 3, "min": 2, "max": 5, "step": 1, "type": "int"},
-            "normalize": {"label": "Normalize", "default": True, "type": "bool"},
-        },
-        "tune_ranges": {"window": (30, 120), "bins": (2, 5)},
-    },
-    "granger_causality": {
-        "display_name": "Granger Causality",
-        "description": "Rolling Granger-causality significance from one symbol to another.",
-        "type": "information_flow",
-        "compute": _compute_granger_causality,
-        "params": {
-            "window": {"label": "Window", "default": 50, "min": 20, "max": 200, "step": 1, "type": "int"},
-            "from_symbol": {"label": "From Symbol", "default": "SPY", "type": "str"},
-            "to_symbol": {"label": "To Symbol", "default": "QQQ", "type": "str"},
-            "maxlags": {"label": "Max Lags", "default": 2, "min": 1, "max": 5, "step": 1, "type": "int"},
-            "threshold": {"label": "Significance Threshold", "default": 0.05, "min": 0.001, "max": 0.2, "step": 0.001, "type": "float"},
-            "output": {"label": "Output", "default": "pvalue", "type": "str"},
-        },
-        "tune_ranges": {"window": (30, 120), "maxlags": (1, 5), "threshold": (0.01, 0.1)},
-    },
-    "tick_order_flow_imbalance": {
-        "display_name": "Tick Order Flow Imbalance",
-        "description": "(Bid volume - Ask volume)/(Bid+Ask) from tick/LOB data.",
-        "type": "tick",
-        "compute": _compute_tick_order_flow_imbalance,
-        "params": {},
-        "tune_ranges": {},
-    },
-    "tick_depth_ratio": {
-        "display_name": "Tick Depth Ratio",
-        "description": "Bid/ask depth ratio standardized over rolling window.",
-        "type": "tick",
-        "compute": _compute_tick_depth_ratio,
-        "params": {
-            "window": {"label": "Window", "default": 60, "min": 5, "max": 300, "step": 1, "type": "int"},
-        },
-        "tune_ranges": {"window": (20, 120)},
-    },
-    "tick_spread": {
-        "display_name": "Tick Spread",
-        "description": "Top-of-book spread transformed into a normalized signal.",
-        "type": "tick",
-        "compute": _compute_tick_spread,
-        "params": {
-            "window": {"label": "Window", "default": 60, "min": 5, "max": 300, "step": 1, "type": "int"},
-        },
-        "tune_ranges": {"window": (20, 120)},
-    },
-    "tick_microprice": {
-        "display_name": "Tick Microprice",
-        "description": "Volume-weighted mid-price deviation from reference price.",
-        "type": "tick",
-        "compute": _compute_tick_microprice,
-        "params": {},
-        "tune_ranges": {},
-    },
     "phi_mft": {
         "display_name": "Phi-Bot (MFT)",
         "description":  "Backward-compatible alias for simplified MFT signal.",
