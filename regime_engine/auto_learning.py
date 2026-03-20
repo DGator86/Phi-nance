@@ -128,11 +128,18 @@ class LearningCycleRunner:
 
     def __init__(
         self,
-        config:   Dict[str, Any],
-        registry: Optional[Any] = None,
+        config:      Dict[str, Any],
+        registry:    Optional[Any] = None,
+        tuner:       Optional[Any] = None,
+        full_config: Optional[Dict[str, Any]] = None,
     ) -> None:
-        self.cfg      = config
-        self.registry = registry
+        self.cfg         = config
+        self.registry    = registry
+        self.tuner       = tuner
+        # full_config is the complete config.yaml dict; used to build RegimeEngine
+        # in run_cycle().  Falls back to config itself (for callers that pass the
+        # full config as the first argument rather than the sub-dict).
+        self._full_config = full_config or config
 
         self.min_warmup_bars  = int(config.get('min_warmup_bars', 100))
         self.lesson_lr        = float(config.get('lesson_lr', 0.02))
@@ -175,7 +182,8 @@ class LearningCycleRunner:
 
         t0 = time.perf_counter()
 
-        cfg = config or self.cfg.get('engine_config', {})
+        # Use explicit config, else full_config (to give RegimeEngine the required keys)
+        cfg = config or self._full_config
         engine = RegimeEngine(cfg)
 
         n_bars = len(ohlcv_df)
@@ -213,10 +221,12 @@ class LearningCycleRunner:
                 continue
 
             actual_return = math.log(close_next / close_now)
-            signal        = float(getattr(result, 'composite_signal', 0.0))
-            confidence    = float(getattr(result, 'score', 0.0))
-            regime_probs  = dict(getattr(result, 'regime_probs', {}))
-            dominant      = max(regime_probs, key=lambda k: regime_probs[k]) if regime_probs else 'RANGE'
+            # result is Dict[str, pd.DataFrame] from engine.run()
+            mix_last     = result['mix'].iloc[-1]
+            signal       = float(mix_last.get('composite_signal', 0.0))
+            confidence   = float(mix_last.get('score', 0.0))
+            regime_probs = result['regime_probs'].iloc[-1].to_dict()
+            dominant     = max(regime_probs, key=lambda k: regime_probs[k]) if regime_probs else 'RANGE'
 
             predicted_dir = 1 if signal > 0 else -1
             actual_dir    = 1 if actual_return > 0 else -1
@@ -281,7 +291,7 @@ class LearningCycleRunner:
             r = self.run_cycle(ohlcv_df, window_bars, stride_bars, chain_df, config)
             results.append(r)
             if apply_after and self.registry is not None:
-                self.apply_lessons(self.registry)
+                self.apply_lessons(self.registry, tuner=self.tuner)
         return results
 
     def compute_regime_scores(self) -> Dict[str, Dict[str, float]]:
@@ -307,9 +317,10 @@ class LearningCycleRunner:
         """Return all accumulated RegimeLessons grouped by regime."""
         return dict(self._regime_stats)
 
-    def apply_lessons(self, registry: Any) -> None:
+    def apply_lessons(self, registry: Any, tuner: Optional[Any] = None) -> None:
         """
-        Feed gradient updates from accumulated lessons into VariableRegistry.
+        Feed gradient updates from accumulated lessons into VariableRegistry
+        and ParameterTuner.
 
         For each regime where accuracy < target, nudge the projection mu
         and tau toward values more consistent with observed returns.
@@ -347,8 +358,17 @@ class LearningCycleRunner:
                     pass
 
             # Log the action
-            action = "⬆ nudge mu up" if acc < self.accuracy_target else "✓ reinforce"
+            action = "nudge mu up" if acc < self.accuracy_target else "reinforce"
             logger.debug("apply_lessons: %s [%s] acc=%.1f%% edge=%.4f %s", regime, n, acc * 100, edge, action)
+
+        # Close the backtest→tuning loop: push regime scores into ParameterTuner
+        effective_tuner = tuner or self.tuner
+        if effective_tuner is not None and hasattr(effective_tuner, 'update_from_lessons'):
+            try:
+                effective_tuner.update_from_lessons(scores)
+                logger.debug("apply_lessons: ParameterTuner updated from %d regime scores", len(scores))
+            except Exception as exc:
+                logger.warning("apply_lessons: ParameterTuner.update_from_lessons failed: %s", exc)
 
     def get_all_lessons(self) -> List[Lesson]:
         """Return the full flat lesson log."""
