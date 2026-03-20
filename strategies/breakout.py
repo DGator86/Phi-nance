@@ -76,7 +76,7 @@ if __name__ == "__main__":
     backtesting_end = datetime(2024, 12, 31)
 
     # Use Alpha Vantage as primary data source
-    av_api_key = os.getenv("AV_API_KEY", "PLN25H3ESMM1IRBN")
+    av_api_key = os.getenv("AV_API_KEY", "")
 
     ChannelBreakout.run_backtest(
         datasource_class=AlphaVantageBacktesting,

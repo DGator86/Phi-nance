@@ -5,8 +5,8 @@
 
 # ── Alpha Vantage Data Source ────────────────────────────────
 alpha_vantage:
-  api_key:   "PLN25H3ESMM1IRBN"        # override with env var AV_API_KEY
-  mcp_token: "G7jhPGMv69WcDYerwJ6VZ2Tw6upJ"  # mcp.alphavantage.co bearer
+  api_key:   ""                          # set via env var AV_API_KEY
+  mcp_token: ""                          # set via env var AV_MCP_TOKEN
   mcp_url:   "https://mcp.alphavantage.co/"
   rate_limit: 12.0            # seconds between calls (5 req/min free tier)
   cache_dir:  ".av_cache"     # local response cache directory
@@ -98,6 +98,11 @@ taxonomy:
         autocorr:         0.20
         flip_rate:       -0.15
         impulse_revert:  -0.10
+        d_lambda:         0.20   # book thinning → confirms directional impetus
+        mass:            -0.15   # low mass → thin book → breakout-prone
+        d_mass_dt:       -0.20   # collapsing mass → precedes acceleration
+        ofi_proxy:        0.25   # signed order flow → directional pressure
+        dissipation_proxy: 0.15  # trending field alignment
       NDR:
         er_30:           -0.35
         autocorr:        -0.25
@@ -105,30 +110,15 @@ taxonomy:
         impulse_revert:   0.25
         median_cross:     0.15
         drift_tscore_30: -0.20
+        absorption_score:  0.20  # volume absorbed without movement → S/R holding
+        dissipation_proxy: -0.20 # opposing flow → mean-reverting field
+        d_mass_dt:         0.15  # mass growing → depth rebuilding → consolidation
       TRN:
         entropy:          0.25
         rv_delta:         0.30
         range_expansion:  0.25
         volume_zscore:    0.20
         drift_tscore_30:  0.00   # neutral — direction irrelevant at TRN
-        # MFT L2-proxy weights at KINGDOM level
-      DIR:
-        d_lambda:         0.20   # book thinning → confirms directional impetus
-        mass:            -0.15   # low mass → thin book → breakout-prone
-        d_mass_dt:       -0.20   # collapsing mass → precedes acceleration
-        ofi_proxy:        0.25   # signed order flow → directional pressure
-        dissipation_proxy: 0.15  # trending field alignment
-        ofi_dollar:       0.20   # dollar-sized flow confirms directional move
-        large_trade_proxy: 0.15  # institutional commitment to direction
-        vwap_distance:    0.20   # VWAP extension = trending
-      NDR:
-        absorption_score:  0.20  # volume absorbed without movement → S/R holding
-        dissipation_proxy: -0.20 # opposing flow → mean-reverting field
-        d_mass_dt:         0.15  # mass growing → depth rebuilding → consolidation
-        round_number_proximity: -0.20  # near round level (negative z) → ranging zone
-        gex_regime_strength: 0.25   # strong dealer pin = range
-        vwap_distance:    -0.20   # near VWAP (low |z|) = ranging (note: signed, not abs)
-      TRN:
         d_lambda:         0.20   # rapid lambda change → transitional
         d_mass_dt:       -0.15   # mass collapsing → transition incoming
         round_number_proximity: -0.25  # near round level = stop-run transition risk
@@ -144,6 +134,8 @@ taxonomy:
         true_range:      -0.30
         volume_zscore:   -0.20
         rv_delta:        -0.15
+        mass:             0.20   # high mass → deep book → bounded range
+        absorption_score:  0.25  # high absorption → vol suppression
       NV:
         rv_30:            0.00
         illiquidity:      0.10
@@ -153,18 +145,9 @@ taxonomy:
         true_range:       0.30
         volume_zscore:    0.20
         rv_delta:         0.15
-        # MFT L2-proxy weights at PHYLUM (volatility) level
         mass:            -0.25   # low mass → thin book → high vol environment
         d_mass_dt:       -0.20   # mass collapse → volatility expansion
         absorption_score: -0.15  # low absorption → no one catching the fall
-        gex_flip_zone:    0.20   # GEX flip zone → vol expansion (amplifying dealers)
-        large_trade_proxy: 0.15  # whale activity drives vol spikes
-      LV:
-        mass:             0.20   # high mass → deep book → bounded range
-        absorption_score:  0.25  # high absorption → vol suppression
-        gex_regime_strength: 0.20  # strong pin = low vol (dealers absorbing)
-      NV:
-        rebalance_pressure: 0.10  # rebalancing creates orderly medium-vol flow
 
     # ── CLASS ─────────────────────────────────────────────────
     # DIR classes
@@ -312,6 +295,7 @@ taxonomy:
         er_30:            0.30
         flip_rate:       -0.20
         autocorr:         0.10
+        d_mass_dt:       -0.20   # mass collapse → momentum run fuel
       PBM:
         impulse_revert:   0.40
         autocorr:        -0.30
@@ -322,46 +306,27 @@ taxonomy:
         er_60:            0.30
         volume_zscore:   -0.15
         flip_rate:        0.10
+        d_mass_dt:        0.15   # consolidating mass → flag continuation
       VWM:
         volume_zscore:    0.40
         illiquidity:     -0.20
         median_cross:     0.15
+        absorption_score:  0.25  # high absorption → volume wall matched
+        mass:             0.15   # deep book at strike level
       RRO:
         median_cross:     0.40
         autocorr:        -0.30
         flip_rate:        0.20
+        absorption_score:  0.20  # ranging range oscillation confirmed by absorption
       SRR:
         impulse_revert:   0.45
         autocorr:        -0.25
         flip_rate:        0.30
         rv_delta:         0.10
-        # MFT L2-proxy weights at GENUS level (most granular)
         ofi_proxy:        0.20   # directional OFI proxy for all directional genera
         dissipation_proxy: 0.20  # field character discriminator
         absorption_score:  0.15  # confirms S/R holding (VWM, RRO)
         d_mass_dt:        0.15   # mass collapse precedes RUN (momentum) genus
-        ofi_dollar:       0.15   # dollar-weighted flow discriminator
-      RUN:
-        d_mass_dt:       -0.20   # mass collapse → momentum run fuel
-        large_trade_proxy: 0.20  # institutional size drives momentum runs
-        ofi_dollar:       0.20   # dollar flow sustains run
-      VWM:
-        absorption_score:  0.25  # high absorption → volume wall matched
-        mass:             0.15   # deep book at strike level
-        round_number_proximity: -0.20  # near round = volume wall zone
-        gex_regime_strength: 0.20    # GEX wall = VWM confirmation
-      RRO:
-        absorption_score:  0.20  # ranging range oscillation confirmed by absorption
-        round_number_proximity: -0.15  # oscillates near round levels
-      FLG:
-        d_mass_dt:        0.15   # consolidating mass → flag continuation
-        vwap_distance:   -0.10   # near VWAP = flag pattern
-      PBM:
-        gex_regime_strength: 0.20   # pullback to GEX wall = PBM
-        vwap_distance:    0.15      # extended then pulling back
-      SRR:
-        fomc_proximity:   0.15      # FOMC reversal common
-        quad_witching_flag: 0.15    # expiry-day reversal
 
 # ── Projection Engine — AR(1) regime priors ─────────────────
 # x_{t+1}^r = mu_r + phi_r*(x_t - mu_r) + beta_r*Delta_x_t

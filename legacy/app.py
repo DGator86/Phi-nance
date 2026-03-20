@@ -295,10 +295,7 @@ if run_button:
         
         progress.empty()
         st.session_state.backtest_results = results
-        if hasattr(st, "rerun"):
-            st.rerun()
-        else:
-            st.experimental_rerun()
+        st.rerun()
 
 if st.session_state.backtest_results:
     st.subheader("📊 Results")
