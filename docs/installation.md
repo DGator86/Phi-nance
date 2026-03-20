@@ -19,10 +19,22 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
+### Windows / Python 3.13
+
+**Ray** is not part of the default `requirements.txt` because many platforms (notably **Windows with Python 3.13**) have no matching `ray` wheel on PyPI. The stack runs without it; distributed backtests and `RayEnvRunner` stay off until you install Ray on a supported environment. If your OS/Python has wheels, use:
+
+```bash
+pip install -r requirements-ray.txt
+```
+
+Editable install with Ray: `pip install -e ".[distributed]"`.
+
+**Polygon + yfinance + Alpaca:** the default file pins `polygon-api-client>=1.16` so `websockets` is new enough for both Polygon and yfinance. The deprecated **`alpaca-trade-api`** package is **not** installed by default (it requires `websockets<11` and cannot coexist). Live Alpaca flows use **`alpaca-py`** (already in `requirements.txt`). The legacy `phi.live.broker.AlpacaBroker` path still expects `alpaca-trade-api`; install only if you accept conflicts: `pip install -r requirements-legacy-alpaca.txt` or `pip install -e ".[legacy-alpaca]"`.
+
 ## Verify installation
 
 ```bash
-python engine_health.py
+python scripts/engine_health.py
 pytest
 ```
 

@@ -1,0 +1,3 @@
+# Optional: parallel / distributed workloads (Ray-backed runners).
+# Skip on Windows or Python versions with no ray wheel — the app runs without it.
+ray[default]>=2.30.0

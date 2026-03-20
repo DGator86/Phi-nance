@@ -9,8 +9,8 @@ pandas>=2.0
 pydantic>=2.0
 requests>=2.28
 python-dotenv>=1.0
-# Phase 3: Polygon.io live L2 feed
-polygon-api-client>=1.13
+# Phase 3: Polygon.io live L2 feed (>=1.16: websockets>=14, compatible with yfinance)
+polygon-api-client>=1.16.0
 websocket-client>=1.7
 sortedcontainers>=2.4
 # Phase 2+: options analytics
@@ -47,7 +47,11 @@ financialmodelingprep>=0.0.2
 # Phase 4: genetic programming
 deap>=1.4.1
 
-ray[default]>=2.30.0
+# Ray — NOT on default install: often missing wheels (e.g. Windows + Python 3.13).
+# Distributed backtests / RayEnvRunner degrade without it. Linux/macOS with a
+# supported Python:  pip install -r requirements-ray.txt
+#
+# ray[default]>=2.30.0
 
 # Experiment tracking
 mlflow>=2.14.0
@@ -61,7 +65,10 @@ fasteners>=0.19
 tenacity>=8.2.3
 pandera>=0.20.0
 optuna>=3.6.0
-alpaca-trade-api>=3.2.0
+
+# Legacy REST client for phi.live.broker.AlpacaBroker only — pins websockets<11 and
+# conflicts with polygon-api-client>=1.16. Prefer alpaca-py (above). If you need it:
+#   pip install -r requirements-legacy-alpaca.txt   # may force-downgrade websockets; not recommended with Polygon.
 
 # Deep regime detection
 torch>=2.2.0

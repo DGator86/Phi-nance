@@ -1,0 +1,5 @@
+# Optional: legacy Alpaca REST SDK for phi.live.broker.AlpacaBroker.
+# Conflicts with modern polygon-api-client + yfinance (websockets version clash).
+# Prefer the official alpaca-py stack from requirements.txt.
+
+alpaca-trade-api>=3.2.0
