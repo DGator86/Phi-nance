@@ -202,3 +202,96 @@ class DataSourceManager:
     def _mark_failure(self, source: str, error: str) -> None:
         self.status[source].health = "degraded"
         self.status[source].last_error = error
+
+    # ── Unusual Whales bootstrap ───────────────────────────────────────────────
+
+    def register_unusual_whales_sources(
+        self,
+        api_key: str | None = None,
+        timeout: int = 10,
+    ) -> bool:
+        """Register all Unusual Whales data types with the source manager.
+
+        Instantiates an :class:`~phinance.data.vendors.unusual_whales.UnusualWhalesClient`
+        and registers each of its methods as the canonical fetcher for the
+        corresponding data type.  The registration is silently skipped if the
+        API key is unavailable.
+
+        Data type → method mapping
+        --------------------------
+        flow_alerts     → ``fetch_flow_alerts(symbol, limit)``
+        ticker_flow     → ``fetch_ticker_flow(symbol, limit)``
+        options_chain   → ``fetch_options_chain(symbol)``
+        dark_pool       → ``fetch_dark_pool(symbol, limit)``
+        dark_pool_ticker→ ``fetch_dark_pool_ticker(symbol, limit)``
+        market_tide     → ``fetch_market_tide(symbol)``
+        market_overview → ``fetch_market_overview()``
+        market_movers   → ``fetch_market_movers(direction, limit)``
+        etf_flow        → ``fetch_etf_flow(limit)``
+        etf_holdings    → ``fetch_etf_holdings(symbol)``
+        iv_rank         → ``fetch_iv_rank(symbol)``
+        oi_change       → ``fetch_oi_change(symbol, limit)``
+        options_volume  → ``fetch_options_volume(symbol, limit)``
+        pc_ratio        → ``fetch_pc_ratio(symbol)``
+        short_interest  → ``fetch_short_interest(symbol)``
+        congress_trades → ``fetch_congress_trades(limit)``
+        insider_trades  → ``fetch_insider_trades(symbol, limit)``
+
+        Parameters
+        ----------
+        api_key : str | None
+            Bearer token.  Falls back to ``UNUSUAL_WHALES_API_KEY`` env var.
+        timeout : int
+            HTTP request timeout in seconds.
+
+        Returns
+        -------
+        bool
+            ``True`` if registration succeeded, ``False`` if the API key was
+            missing or client construction failed.
+        """
+        try:
+            from phinance.data.vendors.unusual_whales import UnusualWhalesClient
+            client = UnusualWhalesClient(api_key=api_key, timeout=timeout)
+        except Exception as exc:
+            logger.warning("register_unusual_whales_sources: skipped — %s", exc)
+            return False
+
+        _SOURCE = "unusual_whales"
+
+        _bindings: list[tuple[str, Any]] = [
+            ("flow_alerts",      client.fetch_flow_alerts),
+            ("ticker_flow",      client.fetch_ticker_flow),
+            ("options_chain",    client.fetch_options_chain),
+            ("dark_pool",        client.fetch_dark_pool),
+            ("dark_pool_ticker", client.fetch_dark_pool_ticker),
+            ("market_tide",      client.fetch_market_tide),
+            ("market_overview",  client.fetch_market_overview),
+            ("market_movers",    client.fetch_market_movers),
+            ("etf_flow",         client.fetch_etf_flow),
+            ("etf_holdings",     client.fetch_etf_holdings),
+            ("iv_rank",          client.fetch_iv_rank),
+            ("oi_change",        client.fetch_oi_change),
+            ("options_volume",   client.fetch_options_volume),
+            ("pc_ratio",         client.fetch_pc_ratio),
+            ("short_interest",   client.fetch_short_interest),
+            ("congress_trades",  client.fetch_congress_trades),
+            ("insider_trades",   client.fetch_insider_trades),
+        ]
+
+        for data_type, fetcher in _bindings:
+            self.register_source(_SOURCE, data_type, fetcher)
+
+        # Ensure the source appears in the status map
+        if _SOURCE not in self.status:
+            uw_cfg = self.config.get("data_sources", {}).get(_SOURCE, {})
+            self.status[_SOURCE] = SourceStatus(
+                enabled=bool(uw_cfg.get("enabled", True))
+            )
+
+        logger.info(
+            "register_unusual_whales_sources: registered %d data types for '%s'",
+            len(_bindings),
+            _SOURCE,
+        )
+        return True
