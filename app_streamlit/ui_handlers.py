@@ -26,6 +26,7 @@ from phi.backtest import run_direct_backtest, run_portfolio_backtest
 from phi.exceptions import BacktestError, DataFetchError, ValidationError
 from phi.logging import get_logger
 from phi.options import run_options_backtest
+from phi.options.unusual_whales_context import enrich_run_config_options_from_uw
 from phi.regime import list_saved_detectors, load_detector
 from phi.regime.train import train_regime_detector
 from phi.run_config import RunConfig, RunHistory
@@ -81,6 +82,11 @@ def validate_config_payload(payload: dict[str, Any]) -> list[str]:
         errors.append("Enable at least one indicator.")
 
     if payload.get("trading_mode") == "options":
+        vkey = str(payload.get("vendor", "")).lower().replace("-", "_").replace(" ", "")
+        if vkey not in ("unusual_whales", "unusualwhales"):
+            errors.append(
+                "Options mode requires data vendor 'unusual_whales' (ATM Greeks + options flow from Unusual Whales)."
+            )
         for field_name in ("option_strike", "option_iv", "option_qty"):
             try:
                 validate_positive_number(payload.get(field_name, 0), name=field_name)
@@ -188,9 +194,9 @@ def handle_run_backtest(
         transition_to(AppState.CONFIGURING)
         return None
 
+    uw_context: dict[str, Any] = {}
     try:
         cfg = build_run_config(payload)
-        set_config(cfg.model_dump())
         transition_to(AppState.RUNNING)
 
         data_map: dict[str, pd.DataFrame] = {}
@@ -207,7 +213,14 @@ def handle_run_backtest(
             data_map[sym] = data
 
         if cfg.trading_mode == "options":
+            cfg, uw_context = enrich_run_config_options_from_uw(cfg, data_map[cfg.symbols[0]])
+
+        set_config(cfg.model_dump())
+
+        if cfg.trading_mode == "options":
             results = run_options_fn(cfg, data_map[cfg.symbols[0]])
+            if uw_context:
+                results = {**dict(results), "unusual_whales_context": uw_context}
         else:
             regime_series = None
             regime_label_map = payload.get("regime_label_map")

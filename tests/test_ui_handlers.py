@@ -85,6 +85,11 @@ def test_handle_run_backtest_dispatches_equities(monkeypatch):
 def test_handle_run_backtest_dispatches_options(monkeypatch):
     _patch_state(monkeypatch)
     _fake_history(monkeypatch)
+    monkeypatch.setattr(
+        ui_handlers,
+        "enrich_run_config_options_from_uw",
+        lambda cfg, data: (cfg, {"flow_summary": {"alerts": 0}, "greeks_from_chain": {"delta": 0.5}}),
+    )
     calls = {"equity": 0, "options": 0}
 
     def fake_equity(**_kwargs):
@@ -95,8 +100,10 @@ def test_handle_run_backtest_dispatches_options(monkeypatch):
         calls["options"] += 1
         return {"total_return": 0.2}
 
+    p = _base_payload("options")
+    p["vendor"] = "unusual_whales"
     result = ui_handlers.handle_run_backtest(
-        _base_payload("options"),
+        p,
         load_data_fn=lambda *_a, **_k: _sample_data(),
         run_equity_fn=fake_equity,
         run_options_fn=fake_options,
@@ -104,6 +111,16 @@ def test_handle_run_backtest_dispatches_options(monkeypatch):
 
     assert result is not None
     assert calls == {"equity": 0, "options": 1}
+    assert result.get("unusual_whales_context", {}).get("flow_summary", {}).get("alerts") == 0
+
+
+def test_options_mode_requires_unusual_whales_vendor(monkeypatch):
+    sink = _patch_state(monkeypatch)
+    p = _base_payload("options")
+    p["vendor"] = "yfinance"
+    result = ui_handlers.handle_run_backtest(p)
+    assert result is None
+    assert any("unusual_whales" in m.lower() for m in sink["form_errors"])
 
 
 def test_handle_run_backtest_validation_failure_sets_form_errors(monkeypatch):

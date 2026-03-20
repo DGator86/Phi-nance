@@ -128,6 +128,10 @@ def render_config_panel() -> tuple[dict[str, Any], bool]:
         option_type = option_strike = option_expiry = option_iv = option_rate = option_qty = None
         if trading_mode == "options":
             st.markdown("#### Options setup")
+            st.caption(
+                "Vendor must be **unusual_whales**. Strike, expiry, and IV are taken from the "
+                "Unusual Whales chain (ATM row with live Greeks). Flow alerts are summarized on the results screen."
+            )
             option_type = st.selectbox("Option type", ["call", "put"], key="option_type")
             option_strike = st.number_input("Strike", min_value=0.01, value=100.0, step=1.0, key="option_strike")
             option_expiry = st.date_input("Expiry", value=end_date, key="option_expiry")
@@ -427,6 +431,23 @@ def render_results(results: dict[str, Any]) -> None:
     pv = results.get("portfolio_value", [])
     if pv:
         st.line_chart(pd.Series(pv, name="Portfolio Value"))
+
+    uw = results.get("unusual_whales_context")
+    if isinstance(uw, dict) and uw:
+        st.subheader("Unusual Whales — Greeks & flow")
+        g = uw.get("greeks_from_chain") or {}
+        if g:
+            st.markdown("**Chain Greeks (ATM selection)**")
+            st.json({k: v for k, v in g.items() if v is not None})
+        fs = uw.get("flow_summary")
+        if fs:
+            st.markdown("**Options flow (recent alerts)**")
+            st.json(fs)
+        cr = uw.get("selected_chain_columns")
+        if cr:
+            with st.expander("Selected chain snapshot"):
+                st.json(cr)
+        st.caption(f"Spot at first bar used for ATM: {uw.get('spot_at_entry_bar')}")
 
     trades = results.get("trades", [])
     transactions = results.get("transactions", [])

@@ -28,7 +28,7 @@ IndicatorParamSpec: TypeAlias = ParamRange | SelectParamSpec
 DEFAULT_SYMBOL = "SPY"
 DEFAULT_TIMEFRAME = "1D"
 DEFAULT_VENDOR = "unusual_whales"
-DEFAULT_TRADING_MODE = "equities"
+DEFAULT_TRADING_MODE = "options"
 DEFAULT_INITIAL_CAPITAL = 100_000.0
 
 TIMEFRAME_OPTIONS = ["1m", "5m", "15m", "1H", "1D"]

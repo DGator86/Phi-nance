@@ -19,7 +19,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
-The Live Backtest Workbench defaults to **Unusual Whales** for OHLCV. Set **`UNUSUAL_WHALES_API_KEY`** in `.env` (Bearer token; see [Unusual Whales](https://unusualwhales.com)). API reference: [api.unusualwhales.com/docs](https://api.unusualwhales.com/docs) (OpenAPI: [api/openapi](https://api.unusualwhales.com/api/openapi)). For **AI tools** (MCP), Unusual Whales also publishes an [MCP server setup guide](https://unusualwhales.com/public-api/mcp) — that path is separate from Phi-nance’s Python `UnusualWhalesClient`; use it when wiring Cursor/Claude/etc. directly to UW. Equity OHLC in-app uses `GET /api/stock/{ticker}/ohlc/{candle_size}`. Without a UW key, pick **yfinance** or **alphavantage** in the sidebar.
+The Live Backtest Workbench defaults to **Unusual Whales** for OHLCV and **options** trading mode: each options run loads **ATM Greeks** from the UW options chain and summarizes **options flow** alerts before the Black–Scholes backtest. Set **`UNUSUAL_WHALES_API_KEY`** in `.env` (Bearer token; see [Unusual Whales](https://unusualwhales.com)). API reference: [api.unusualwhales.com/docs](https://api.unusualwhales.com/docs) (OpenAPI: [api/openapi](https://api.unusualwhales.com/api/openapi)). For **AI tools** (MCP), Unusual Whales also publishes an [MCP server setup guide](https://unusualwhales.com/public-api/mcp) — that path is separate from Phi-nance’s Python `UnusualWhalesClient`; use it when wiring Cursor/Claude/etc. directly to UW. Equity OHLC in-app uses `GET /api/stock/{ticker}/ohlc/{candle_size}`. Without a UW key, pick **yfinance** or **alphavantage** in the sidebar.
 
 ### Windows / Python 3.13
 
