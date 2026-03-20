@@ -21,6 +21,10 @@ data_sources:
     enabled: true
     rate_limit: 120
     rate_window_seconds: 60
+  unusual_whales:
+    enabled: true
+    rate_limit: 60
+    rate_window_seconds: 60
 
 cache_ttl_seconds:
   bars: 3600
@@ -28,6 +32,9 @@ cache_ttl_seconds:
   options: 30
   fundamentals: 86400
   macro: 3600
+  flow_alerts: 60
+  dark_pool: 60
+  market_tide: 30
 
 data_priorities:
   bars: [alpaca, yfinance, fmp]
@@ -35,6 +42,9 @@ data_priorities:
   options: [thetadata, yfinance]
   fundamentals: [fmp, yfinance]
   macro: [fred]
+  flow_alerts: [unusual_whales]
+  dark_pool: [unusual_whales]
+  market_tide: [unusual_whales]
 
 use_hierarchical: false
 meta_agent_checkpoint: models/meta_agent/latest.pt

@@ -25,10 +25,12 @@ from phinance.data.vendors.base import BaseVendor
 from phinance.data.vendors.yfinance import YFinanceVendor
 from phinance.data.vendors.alphavantage import AlphaVantageVendor
 from phinance.data.vendors.binance import BinanceVendor
+from phinance.data.vendors.unusual_whales import UnusualWhalesClient
 
 __all__ = [
     "BaseVendor",
     "YFinanceVendor",
     "AlphaVantageVendor",
     "BinanceVendor",
+    "UnusualWhalesClient",
 ]
