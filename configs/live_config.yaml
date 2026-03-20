@@ -7,11 +7,6 @@ data_sources:
     enabled: true
     rate_limit: 10
     rate_window_seconds: 1
-  thetadata:
-    enabled: true
-    rate_limit: 5
-    rate_window_seconds: 1
-    daily_limit: 10000
   fmp:
     enabled: true
     rate_limit: 250
@@ -81,13 +76,13 @@ cache_ttl_seconds:
 data_priorities:
   bars: [alpaca, yfinance, fmp]
   quotes: [alpaca]
-  options: [thetadata, yfinance, unusual_whales]
+  options: [yfinance, unusual_whales]
   fundamentals: [fmp, yfinance]
   macro: [fred]
   # Options flow
   flow_alerts: [unusual_whales]
   ticker_flow: [unusual_whales]
-  options_chain: [unusual_whales, thetadata]
+  options_chain: [unusual_whales]
   # Dark pool
   dark_pool: [unusual_whales]
   dark_pool_ticker: [unusual_whales]
