@@ -53,9 +53,6 @@ def run_direct_backtest(
     position_size_pct: float = 0.95,
     regime_series: pd.Series | None = None,
     regime_label_map: dict[str, str] | None = None,
-    regime_boosts: dict[str, dict[str, float]] | None = None,
-    regime_detector: Any | None = None,
-    regime_detector_params: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """
     Run a vectorized equity backtest directly on OHLCV bars.
@@ -132,24 +129,30 @@ def run_direct_backtest(
         if regime_series is None and regime_detector is not None:
             regime_series = regime_detector.predict(df)
         if regime_series is None:
-            raise BacktestError("regime_series or regime_detector is required when blend_method='regime_weighted'")
+            raise BacktestError("regime_series is required when blend_method='regime_weighted'")
         aligned_regimes = regime_series.reindex(df.index).ffill()
+        if regime_label_map:
+            mapped_regimes = aligned_regimes.map(regime_label_map).fillna(aligned_regimes)
+        else:
+            mapped_regimes = aligned_regimes
+
         composite = pd.Series(index=signals_df.index, dtype=float, name="composite_signal")
         for idx in signals_df.index:
-            regime_value = aligned_regimes.loc[idx] if idx in aligned_regimes.index else np.nan
-            if pd.isna(regime_value):
+            regime = mapped_regimes.loc[idx]
+            if pd.isna(regime):
                 composite.loc[idx] = 0.0
                 continue
-            mapped_regime = regime_label_map.get(str(regime_value), str(regime_value)) if regime_label_map else str(regime_value)
+
             composite.loc[idx] = float(
                 blend_signals(
                     signals_df.loc[[idx]],
                     method=blend_method,
                     weights=blend_weights,
-                    regime=mapped_regime,
-                    regime_boosts=regime_boosts or {},
+                    regime=str(regime),
+                    regime_boosts={},
                 ).iloc[0]
             )
+        composite = composite.fillna(0.0)
     else:
         composite = blend_signals(
             signals_df,

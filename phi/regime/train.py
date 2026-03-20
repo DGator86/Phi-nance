@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -25,31 +26,33 @@ def train_regime_detector(
     n_regimes: int = 3,
     window: int = 20,
     save: bool = True,
+    **kwargs: Any,
 ) -> tuple[RegimeDetector, Path | None]:
-    """Train a requested detector and optionally persist it to disk.
+    """Train a regime detector.
 
     Args:
-        ohlcv: Historical OHLCV bars.
+        ohlcv: OHLCV bars used for detector fitting.
         method: Detector method key (``hmm``, ``kmeans``, ``clustering``, or ``gmm``).
-        n_regimes: Number of hidden states or clusters.
-        window: Feature extraction rolling window.
-        save: Whether to save trained model under ``settings.REGIME_MODELS_DIR``.
+        n_regimes: Number of hidden states/clusters.
+        window: Rolling feature window.
+        save: Whether to persist the fitted model.
+        **kwargs: Extra fit parameters.
 
     Returns:
-        A tuple of ``(detector, saved_path_or_none)``.
+        Tuple of fitted detector and saved path (or ``None`` when ``save=False``).
 
     Raises:
-        ValueError: If the method is unsupported.
+        ValueError: If ``method`` is unknown.
     """
     key = str(method).strip().lower()
     if key == "hmm":
-        detector: RegimeDetector = HMMRegimeDetector(n_states=n_regimes).fit(ohlcv, window=window)
+        detector: RegimeDetector = HMMRegimeDetector(n_states=n_regimes).fit(ohlcv, window=window, **kwargs)
         filename = _build_model_filename("hmm", n_regimes, ohlcv)
     elif key in {"kmeans", "clustering"}:
-        detector = ClusteringRegimeDetector(n_clusters=n_regimes, method="kmeans").fit(ohlcv, window=window)
+        detector = ClusteringRegimeDetector(n_clusters=n_regimes, method="kmeans").fit(ohlcv, window=window, **kwargs)
         filename = _build_model_filename("clustering", n_regimes, ohlcv)
     elif key == "gmm":
-        detector = ClusteringRegimeDetector(n_clusters=n_regimes, method="gmm").fit(ohlcv, window=window)
+        detector = ClusteringRegimeDetector(n_clusters=n_regimes, method="gmm").fit(ohlcv, window=window, **kwargs)
         filename = _build_model_filename("gmm", n_regimes, ohlcv)
     else:
         raise ValueError(f"Unsupported regime detection method: {method}")

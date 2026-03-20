@@ -361,17 +361,19 @@ def render_regime_chart(price_data: pd.DataFrame, regime_series: pd.Series) -> N
 
     original = regime_series.reindex(df.index)
     aligned = original.ffill().bfill()
-    filled_mask = original.isna() & aligned.notna()
-    filled_count = int(filled_mask.sum())
-    total_rows = max(len(df.index), 1)
-    filled_ratio = filled_count / total_rows
-    if filled_ratio > 0.05:
-        warning = (
-            f"Regime labels were filled for {filled_count}/{total_rows} rows "
-            f"({filled_ratio:.1%}) during index alignment. Check date ranges and frequency."
-        )
-        logger.warning(warning)
-        st.warning(warning)
+
+    filled_count = int(aligned.isna().sum())
+    if filled_count > 0:
+        st.warning(f"Regime series could not be fully aligned; {filled_count} bars have no regime.")
+    else:
+        filled_rows = int((original != aligned).fillna(False).sum())
+        total_rows = len(df)
+        if total_rows > 0 and filled_rows > total_rows * 0.05:
+            st.warning(
+                f"Large regime alignment: {filled_rows} out of {total_rows} bars "
+                f"({filled_rows/total_rows:.1%}) were filled to match price data. "
+                "Check that the training date range matches the backtest range."
+            )
 
     aligned = aligned.astype(str)
     fig = go.Figure()

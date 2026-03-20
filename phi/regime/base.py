@@ -10,29 +10,21 @@ import pandas as pd
 
 
 class RegimeDetector(ABC):
-    """Abstract contract for regime detector implementations.
+    """Abstract base class for regime detectors.
 
-    Implementations are expected to maintain a ``metadata`` dictionary containing,
-    at minimum:
-      - ``detector_class`` (str): concrete class name.
-      - ``params`` (dict[str, Any]): constructor/training parameters.
-    Additional keys such as ``feature_columns``, ``training_period``, and ``window``
-    are recommended when available.
+    Subclasses must implement ``fit``, ``predict``, ``save``, and ``load``.
+    Implementations should maintain a ``metadata`` dictionary containing at least:
+    - ``type``: detector key (for example ``hmm`` or ``kmeans``)
+    - ``params``: training/model parameters
+    - ``features``: feature column names used during training
+    - ``training_start`` and ``training_end``: training period boundaries
     """
 
     metadata: dict[str, Any]
 
     @abstractmethod
     def fit(self, ohlcv: pd.DataFrame, **kwargs: Any) -> RegimeDetector:
-        """Train detector on historical OHLCV data and return ``self``.
-
-        Args:
-            ohlcv: Price data containing OHLCV columns.
-            **kwargs: Model-specific training options.
-
-        Returns:
-            The fitted detector instance.
-        """
+        """Train detector on historical OHLCV data and return ``self``."""
 
     @abstractmethod
     def predict(self, ohlcv: pd.DataFrame) -> pd.Series:
@@ -45,9 +37,4 @@ class RegimeDetector(ABC):
     @classmethod
     @abstractmethod
     def load(cls, path: str | Path) -> RegimeDetector:
-        """Load a persisted detector instance from disk."""
-
-    @classmethod
-    def get_param_grid(cls) -> dict[str, list[Any]]:
-        """Optional coarse hyperparameter grid for simple search flows."""
-        return {}
+        """Load detector instance from disk."""
