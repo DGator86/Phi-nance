@@ -4,12 +4,16 @@ Gamma Surface — Options dealer GEX (Gamma Exposure) profile.
 Computes net dealer gamma exposure by strike from an options chain,
 then derives regime features from the GEX landscape:
 
-  gamma_wall_distance  — normalized distance to nearest |GEX| peak
-                         (positive = wall above spot, negative = below)
-  gamma_net            — net total GEX at spot (positive = pinning,
-                         negative = amplifying / dealers short gamma)
-  gamma_expiry_days    — DTE of the dominant gamma wall
-  gex_flip_zone        — 1 if spot is near a GEX zero-crossing (unstable)
+  gamma_wall_distance       — normalized distance to nearest |GEX| peak
+                             (positive = wall above spot, negative = below)
+  gamma_net                 — net total GEX at spot (positive = pinning,
+                             negative = amplifying / dealers short gamma)
+  gamma_expiry_days         — DTE of the dominant gamma wall
+  gex_flip_zone             — 1 if spot is near a GEX zero-crossing (unstable)
+  gex_term_structure_slope  — front-month vs back-month GEX concentration ratio
+                             ∈ [−1, +1]; +1 = near-expiry dominates (volatile pin)
+  gex_regime_strength       — |gamma_net| scaled by wall proximity [0, 1+]
+                             high = dealers strongly positioned AND near the wall
 
 GEX sign convention (standard dealer perspective):
   Calls → dealer is short calls → short gamma → +GEX per strike
@@ -24,6 +28,14 @@ Integration
   >>> spot = 175.00
   >>> features = gs.compute_features(chain_df, spot)
   # {'gamma_wall_distance': -0.012, 'gamma_net': 0.43, ...}
+
+Unusual Whales live adapter
+---------------------------
+  >>> from phinance.data.vendors.unusual_whales import UnusualWhalesClient
+  >>> client = UnusualWhalesClient()
+  >>> features = GammaSurface.compute_from_unusual_whales(
+  ...     cfg['gamma'], client, symbol='SPY', spot=520.0
+  ... )
 """
 
 from __future__ import annotations
@@ -64,14 +76,18 @@ class GammaSurface:
         "gamma_net",
         "gamma_expiry_days",
         "gex_flip_zone",
+        "gex_term_structure_slope",
+        "gex_regime_strength",
     ]
 
     def __init__(self, config: Dict[str, Any]) -> None:
-        self.cfg              = config
-        self.kernel_width_pct = float(config.get("kernel_width_pct",  0.005))
-        self.min_oi           = int(  config.get("min_oi",            100))
-        self.max_dte          = int(  config.get("max_dte",           60))
-        self.flip_threshold   = float(config.get("gex_flip_threshold", 0.10))
+        self.cfg                     = config
+        self.kernel_width_pct        = float(config.get("kernel_width_pct",  0.005))
+        self.min_oi                  = int(  config.get("min_oi",            100))
+        self.max_dte                 = int(  config.get("max_dte",           60))
+        self.flip_threshold          = float(config.get("gex_flip_threshold", 0.10))
+        # Term-structure split: DTE ≤ this = near-term; > this = far-term
+        self.term_split_days         = int(  config.get("term_split_days",   10))
 
     # ------------------------------------------------------------------
     # Public API
@@ -245,11 +261,28 @@ class GammaSurface:
         )
         gex_flip_zone = 1.0 if near_flip else 0.0
 
+        # ── gex_term_structure_slope: front vs back GEX concentration ───
+        # Positive → near-expiry dealers dominate (sharper pinning, more
+        # volatile response at expiry).  Negative → far-term dealers dominant
+        # (smoother / more persistent positioning effects).
+        gex_term_structure_slope = self._compute_term_structure_slope(chain_df, spot)
+
+        # ── gex_regime_strength: dealer positioning strength × wall proximity ─
+        # Combines how strongly dealers are positioned (|gamma_net|) with how
+        # close price is to the dominant wall.  High → dealers are positioned
+        # AND price is approaching the wall (imminent pin or amplification).
+        # Wall proximity: 1.0 when price is AT the wall, 0.0 when at clip limit.
+        abs_wall_dist = abs(gamma_wall_distance) / 0.20  # normalised 0..1
+        wall_proximity = max(0.0, 1.0 - abs_wall_dist)
+        gex_regime_strength = float(abs(gamma_net)) * (1.0 + wall_proximity)  # [0, ~2]
+
         return {
-            "gamma_wall_distance": float(np.clip(gamma_wall_distance, -0.20, 0.20)),
-            "gamma_net":           float(gamma_net),
-            "gamma_expiry_days":   float(gamma_expiry_days),
-            "gex_flip_zone":       float(gex_flip_zone),
+            "gamma_wall_distance":      float(np.clip(gamma_wall_distance, -0.20, 0.20)),
+            "gamma_net":                float(gamma_net),
+            "gamma_expiry_days":        float(gamma_expiry_days),
+            "gex_flip_zone":            float(gex_flip_zone),
+            "gex_term_structure_slope": float(gex_term_structure_slope),
+            "gex_regime_strength":      float(np.clip(gex_regime_strength, 0.0, 2.0)),
         }
 
     # ------------------------------------------------------------------
@@ -315,6 +348,53 @@ class GammaSurface:
             return 30.0
         return float(agg.idxmax())
 
+    def _compute_term_structure_slope(
+        self,
+        chain_df: pd.DataFrame,
+        spot: float,
+    ) -> float:
+        """Compute GEX term-structure slope.
+
+        Splits the chain into near-term (DTE ≤ term_split_days) and far-term
+        (DTE > term_split_days) buckets.  Returns:
+
+            slope = (near_gex_abs - far_gex_abs) / (near_gex_abs + far_gex_abs + ε)
+
+        Range: [−1, +1]
+          +1 = all GEX in near-expiry contracts (volatile, sharp pinning)
+          −1 = all GEX in far-expiry contracts (smoother, sustained positioning)
+           0 = balanced across term structure
+        """
+        df = chain_df.copy()
+        df.columns = [str(c).lower().replace(" ", "_").strip() for c in df.columns]
+
+        exp_col   = self._find_col(df, ["expiration", "expiry", "expiration_date"])
+        gamma_col = self._find_col(df, ["gamma"])
+        oi_col    = self._find_col(df, ["openinterest", "open_interest", "oi"])
+
+        if exp_col is None or gamma_col is None or oi_col is None:
+            return 0.0
+
+        today = date.today()
+        df["_dte"] = df[exp_col].astype(str).map(
+            lambda s: max(0, (pd.Timestamp(s).date() - today).days)
+            if s not in ("", "nan", "None") else 999
+        )
+        df = df[df["_dte"].between(0, self.max_dte)].copy()
+        if df.empty:
+            return 0.0
+
+        df["_gex_abs"] = (
+            pd.to_numeric(df[gamma_col], errors="coerce").fillna(0).clip(lower=0)
+            * pd.to_numeric(df[oi_col],   errors="coerce").fillna(0)
+            * 100.0 * spot
+        )
+
+        near = float(df.loc[df["_dte"] <= self.term_split_days, "_gex_abs"].sum())
+        far  = float(df.loc[df["_dte"] >  self.term_split_days, "_gex_abs"].sum())
+        total = near + far + 1e-15
+        return float(np.clip((near - far) / total, -1.0, 1.0))
+
     @staticmethod
     def _find_col(
         df: pd.DataFrame,
@@ -329,8 +409,71 @@ class GammaSurface:
     @staticmethod
     def _zero_features() -> Dict[str, float]:
         return {
-            "gamma_wall_distance": 0.0,
-            "gamma_net":           0.0,
-            "gamma_expiry_days":   30.0,
-            "gex_flip_zone":       0.0,
+            "gamma_wall_distance":      0.0,
+            "gamma_net":                0.0,
+            "gamma_expiry_days":        30.0,
+            "gex_flip_zone":            0.0,
+            "gex_term_structure_slope": 0.0,
+            "gex_regime_strength":      0.0,
         }
+
+    # ------------------------------------------------------------------
+    # Unusual Whales live adapter
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def compute_from_unusual_whales(
+        cls,
+        config: Dict[str, Any],
+        uw_client: Any,
+        symbol: str,
+        spot: float,
+    ) -> Dict[str, float]:
+        """Fetch a live options chain via Unusual Whales and return GEX features.
+
+        This is a convenience factory that:
+        1. Calls ``uw_client.options_chain_for_gex(symbol)`` to obtain a
+           GammaSurface-normalised options chain.
+        2. Constructs a :class:`GammaSurface` from *config*.
+        3. Returns ``compute_features(chain_df, spot)``.
+
+        Parameters
+        ----------
+        config : dict
+            The ``gamma`` sub-dict from ``config.yaml`` (same as the
+            constructor argument).
+        uw_client : UnusualWhalesClient
+            An authenticated ``UnusualWhalesClient`` instance.
+        symbol : str
+            Underlying ticker (e.g. ``"SPY"``).
+        spot : float
+            Current underlying mid-price.
+
+        Returns
+        -------
+        dict
+            Same four-feature dict as :meth:`compute_features`.
+
+        Examples
+        --------
+        >>> from phinance.data.vendors.unusual_whales import UnusualWhalesClient
+        >>> client = UnusualWhalesClient()
+        >>> cfg_gamma = {"enabled": True, "max_dte": 60, "min_oi": 100}
+        >>> features = GammaSurface.compute_from_unusual_whales(
+        ...     cfg_gamma, client, "SPY", spot=520.0
+        ... )
+        >>> features["gamma_net"]
+        0.37
+        """
+        gs = cls(config)
+        try:
+            chain_df = uw_client.options_chain_for_gex(symbol)
+        except Exception as exc:
+            logger.warning(
+                "GammaSurface.compute_from_unusual_whales: chain fetch failed "
+                "for %s — %s",
+                symbol,
+                exc,
+            )
+            return cls._zero_features()
+        return gs.compute_features(chain_df, spot)

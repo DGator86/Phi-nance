@@ -48,6 +48,7 @@ from .l2_feed import PolygonL2Client, PolygonRestClient
 from .options_engine import OptionsEngine, OptionsTrade, OptionsLeg
 from .auto_learning import LearningCycleRunner, Lesson, RegimeLessons
 from .param_tuner import ParameterTuner
+from .index_engine import IndexEngine
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -190,6 +191,8 @@ __all__ = [
     "RegimeLessons",
     # Regime × GEX × liquidity parameter tuner
     "ParameterTuner",
+    # Calendar / macro index impact engine
+    "IndexEngine",
     # Interface 4 affinity blending utilities
     "compute_entropy_weighted_affinity",
     "entropy_certainty",
