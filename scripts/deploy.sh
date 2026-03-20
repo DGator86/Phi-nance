@@ -82,7 +82,7 @@ if [[ "$COMMITS_AHEAD" -eq 0 ]]; then
 fi
 
 info "$FEATURE_BRANCH has $COMMITS_AHEAD commit(s) to merge:"
-git log --oneline "$MAIN_BRANCH..$FEATURE_BRANCH"
+git --no-pager log --oneline "$MAIN_BRANCH..$FEATURE_BRANCH"
 echo ""
 
 $DRY_RUN && { warn "Dry run — stopping before merge."; exit 0; }
@@ -120,7 +120,7 @@ section "Done"
 info "$MAIN_BRANCH is now up to date on origin."
 echo ""
 echo "  Latest 5 commits on $MAIN_BRANCH:"
-git log --oneline -5
+git --no-pager log --oneline -5
 echo ""
 echo "  App VPS startup (once SSH is reachable):"
 echo "    cd ~/Phi-nance && git pull origin MAIN"
