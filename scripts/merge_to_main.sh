@@ -17,8 +17,8 @@ info()  { echo -e "${GREEN}[info]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[warn]${NC}  $*"; }
 error() { echo -e "${RED}[error]${NC} $*"; exit 1; }
 
-# ── preflight ──────────────────────────────────────────────────────────────────
-[[ -n "$(git status --porcelain)" ]] && error "Working tree dirty — commit or stash first."
+# ── preflight (ignore untracked files — only block on staged/modified tracked files) ──
+[[ -n "$(git status --porcelain | grep -v '^??')" ]] && error "Staged or modified tracked files present — commit or stash first."
 
 info "Feature branch : $FEATURE_BRANCH"
 info "Target branch  : $MAIN_BRANCH"
