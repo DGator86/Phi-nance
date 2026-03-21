@@ -161,6 +161,7 @@ See [`docs/postgres-options-vendor.md`](docs/postgres-options-vendor.md) for set
 - Architecture: [`docs/Architecture.md`](docs/Architecture.md)
 - Contributor guide: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)
 - Easy mode (Streamlit): [`docs/easy_mode.md`](docs/easy_mode.md)
+- UI roadmap (visual backtest, future Dash, etc.): [`docs/ui_roadmap.md`](docs/ui_roadmap.md)
 - Full docs index: [`docs/quickstart.md`](docs/quickstart.md)
 - External options data landscape: [`docs/external-options-data-landscape.md`](docs/external-options-data-landscape.md)
 

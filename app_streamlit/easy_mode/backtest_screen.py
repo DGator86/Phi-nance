@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
 from app_streamlit.config import INDICATOR_SPECS, IndicatorSpec
 from phi.backtest.direct import run_direct_backtest
@@ -105,6 +106,146 @@ def _call_run_direct_backtest(**kwargs: Any) -> tuple[dict[str, Any], Any]:
     return run_direct_backtest(**filtered)
 
 
+def _thrust_style(ret: float) -> tuple[str, str]:
+    """Return (label, soft background hex) for horizon return."""
+    r = ret * 100
+    if r > 2.0:
+        return f"+{r:.1f}%", "#14532d"
+    if r > 0.5:
+        return f"+{r:.1f}%", "#166534"
+    if r < -2.0:
+        return f"{r:.1f}%", "#7f1d1d"
+    if r < -0.5:
+        return f"{r:.1f}%", "#991b1b"
+    return f"{r:+.1f}%", "#334155"
+
+
+def _mapped_regime_series(
+    ohlcv: pd.DataFrame,
+    regime_series: pd.Series,
+    regime_label_map: dict[str, str],
+) -> pd.Series:
+    raw = regime_series.reindex(ohlcv.index).ffill().astype(str)
+    if not regime_label_map:
+        return raw
+    return raw.map(lambda x: regime_label_map.get(x, x))
+
+
+def _build_visual_replay_figure(
+    ohlcv: pd.DataFrame,
+    best: dict[str, Any],
+    mapped_regimes: pd.Series,
+    title: str,
+) -> go.Figure:
+    """Price + equity (secondary Y), regime shading, buy/sell markers with trigger hover."""
+    idx = ohlcv.index
+    close = ohlcv["close"].astype(float)
+    pv = best.get("portfolio_value") or []
+    if len(pv) >= len(idx) + 1:
+        eq_x = idx
+        eq_y = list(pv[1 : 1 + len(idx)])
+    elif len(pv) == len(idx):
+        eq_x, eq_y = idx, list(pv)
+    else:
+        eq_y = list(pv[1:] if len(pv) > 1 else pv)
+        eq_x = idx[-len(eq_y) :] if len(eq_y) <= len(idx) else idx
+
+    n = min(len(eq_x), len(eq_y))
+    if n <= 0:
+        eq_x, eq_y = idx[:0], []
+    else:
+        eq_x = eq_x[-n:]
+        eq_y = eq_y[-n:]
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    mr = mapped_regimes.reindex(idx).ffill()
+    color_map = {
+        "TREND_UP": "rgba(34,197,94,0.14)",
+        "TREND_DN": "rgba(239,68,68,0.14)",
+        "RANGE": "rgba(148,163,184,0.18)",
+    }
+    changes = mr.ne(mr.shift())
+    gid = changes.cumsum()
+    for _, block in mr.groupby(gid):
+        lab = str(block.iloc[0])
+        if lab in ("nan", "None") or pd.isna(block.iloc[0]):
+            continue
+        c = color_map.get(lab, "rgba(100,116,139,0.12)")
+        fig.add_vrect(
+            x0=block.index[0],
+            x1=block.index[-1],
+            fillcolor=c,
+            layer="below",
+            line_width=0,
+        )
+
+    fig.add_trace(
+        go.Scatter(
+            x=idx,
+            y=close,
+            name="Close",
+            line=dict(color="#38bdf8", width=2),
+        ),
+        secondary_y=False,
+    )
+
+    trades = best.get("trade_events") or []
+    buys = [t for t in trades if t.get("side") == "buy"]
+    sells = [t for t in trades if t.get("side") == "sell"]
+    if buys:
+        fig.add_trace(
+            go.Scatter(
+                x=[t["date"] for t in buys],
+                y=[t["price"] for t in buys],
+                mode="markers",
+                name="Buy",
+                marker=dict(symbol="triangle-up", size=11, color="#4ade80", line=dict(width=0)),
+                customdata=[[t.get("trigger", ""), t.get("shares", "")] for t in buys],
+                hovertemplate="Buy<br>%{x}<br>px %{y:.2f}<br>%{customdata[0]}<br>sh %{customdata[1]}<extra></extra>",
+            ),
+            secondary_y=False,
+        )
+    if sells:
+        fig.add_trace(
+            go.Scatter(
+                x=[t["date"] for t in sells],
+                y=[t["price"] for t in sells],
+                mode="markers",
+                name="Sell",
+                marker=dict(symbol="triangle-down", size=11, color="#f87171", line=dict(width=0)),
+                customdata=[[t.get("trigger", ""), t.get("shares", "")] for t in sells],
+                hovertemplate="Sell<br>%{x}<br>px %{y:.2f}<br>%{customdata[0]}<br>sh %{customdata[1]}<extra></extra>",
+            ),
+            secondary_y=False,
+        )
+
+    if eq_y:
+        fig.add_trace(
+            go.Scatter(
+                x=eq_x,
+                y=eq_y,
+                name="Equity ($)",
+                line=dict(color="#c4b5fd", width=2),
+            ),
+            secondary_y=True,
+        )
+
+    fig.update_layout(
+        template="plotly_dark",
+        title=title,
+        height=520,
+        paper_bgcolor="rgba(15,23,42,0.6)",
+        plot_bgcolor="rgba(15,23,42,0.25)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        margin=dict(l=50, r=50, t=70, b=40),
+        hovermode="x unified",
+    )
+    fig.update_yaxes(title_text="Price", secondary_y=False, showgrid=True)
+    fig.update_yaxes(title_text="Equity", secondary_y=True, showgrid=False)
+    return fig
+
+
 def render_auto_backtest() -> None:
     st.markdown('<p class="phinance-hero">Automatic backtest</p>', unsafe_allow_html=True)
     st.caption(
@@ -196,6 +337,80 @@ def render_auto_backtest() -> None:
         f"**Best fit this run:** {best_name} (highest Sharpe among presets). "
         f"Stack: **{nran}** indicators · cluster map → {rmap or 'n/a'}."
     )
+
+    ohlcv = state["ohlcv"]
+    regime_series = state["regime_series"]
+    mapped = _mapped_regime_series(ohlcv, regime_series, rmap)
+    best_res = results_by_name[best_name]
+    last_reg = str(mapped.dropna().iloc[-1]) if len(mapped.dropna()) else "—"
+    if last_reg in ("nan", "NaT", "None"):
+        last_reg = "—"
+    reg_colors = {
+        "TREND_UP": ("#22c55e", "Bullish bias"),
+        "TREND_DN": ("#ef4444", "Bearish bias"),
+        "RANGE": ("#94a3b8", "Range / chop"),
+    }
+    rc, rlabel = reg_colors.get(last_reg, ("#64748b", "Mixed / unmapped"))
+
+    close_s = ohlcv["close"].astype(float)
+    r5 = float(close_s.iloc[-1] / close_s.iloc[-6] - 1) if len(close_s) > 5 else 0.0
+    r20 = float(close_s.iloc[-1] / close_s.iloc[-21] - 1) if len(close_s) > 20 else 0.0
+    t5, c5 = _thrust_style(r5)
+    t20, c20 = _thrust_style(r20)
+
+    st.markdown("##### Market context (at last bar)")
+    tc1, tc2, tc3 = st.columns(3)
+    tc1.markdown(
+        f'<div style="background:{rc}22;border:1px solid {rc}55;border-radius:10px;padding:12px">'
+        f'<div style="font-size:0.75rem;opacity:0.85">Regime model</div>'
+        f'<div style="font-size:1.35rem;font-weight:700;color:{rc}">{last_reg}</div>'
+        f'<div style="font-size:0.8rem;opacity:0.8">{rlabel}</div></div>',
+        unsafe_allow_html=True,
+    )
+    tc2.markdown(
+        f'<div style="background:{c5};border-radius:10px;padding:12px">'
+        f'<div style="font-size:0.75rem;opacity:0.85">Short thrust (5 bars)</div>'
+        f'<div style="font-size:1.35rem;font-weight:700">{t5}</div>'
+        f'<div style="font-size:0.8rem;opacity:0.8">Micro momentum</div></div>',
+        unsafe_allow_html=True,
+    )
+    tc3.markdown(
+        f'<div style="background:{c20};border-radius:10px;padding:12px">'
+        f'<div style="font-size:0.75rem;opacity:0.85">Medium thrust (20 bars)</div>'
+        f'<div style="font-size:1.35rem;font-weight:700">{t20}</div>'
+        f'<div style="font-size:0.8rem;opacity:0.8">Swing drift</div></div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("##### Visual replay (best preset)")
+    st.caption("Shaded bands = mapped regime · triangles = fills/flats · purple line = equity (right axis). Hover a marker for the rule text.")
+    fig_replay = _build_visual_replay_figure(
+        ohlcv,
+        best_res,
+        mapped,
+        title=f"{state['symbol']} — {best_name.split('(')[0].strip()} preset",
+    )
+    st.plotly_chart(fig_replay, use_container_width=True)
+
+    with st.expander("Trade log & last-bar signal mix", expanded=False):
+        te = best_res.get("trade_events") or []
+        if te:
+            st.dataframe(pd.DataFrame(te), use_container_width=True, hide_index=True)
+        else:
+            st.caption("No round-trip trades in this window (threshold may be too strict).")
+        st.markdown("**Composite** (last bar)")
+        st.write(
+            f"Blended signal: **{float(best_res.get('composite_last', 0)):.4f}** · "
+            f"threshold ±**{float(best_res.get('signal_threshold_used', 0)):.4f}**"
+        )
+        snap = best_res.get("signal_snapshot_last") or {}
+        if snap:
+            top = sorted(snap.items(), key=lambda kv: abs(kv[1]), reverse=True)[:12]
+            st.dataframe(
+                pd.DataFrame([{"indicator": k, "signal": round(v, 4)} for k, v in top]),
+                use_container_width=True,
+                hide_index=True,
+            )
 
     cols = st.columns(len(_PRESETS))
     for i, (label, _) in enumerate(_PRESETS):

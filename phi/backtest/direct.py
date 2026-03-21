@@ -209,6 +209,7 @@ def run_direct_backtest(
     position = 0  # shares
     portfolio_values: list[float] = [cap]
     prediction_log: list[dict] = []
+    trade_events: list[dict[str, Any]] = []
     closes = df["close"].values
 
     for i in range(len(composite)):
@@ -225,9 +226,28 @@ def run_direct_backtest(
                 if qty > 0:
                     position = qty
                     cap -= qty * price
+                    trade_events.append(
+                        {
+                            "date": df.index[i],
+                            "side": "buy",
+                            "price": price,
+                            "shares": int(qty),
+                            "trigger": f"composite>{float(signal_threshold):.4f}",
+                        }
+                    )
         elif sig < -signal_threshold:
             direction = "DOWN"
             if position > 0:
+                sold = int(position)
+                trade_events.append(
+                    {
+                        "date": df.index[i],
+                        "side": "sell",
+                        "price": price,
+                        "shares": sold,
+                        "trigger": f"composite<-{float(signal_threshold):.4f}",
+                    }
+                )
                 cap += position * price
                 position = 0
         else:
@@ -244,7 +264,18 @@ def run_direct_backtest(
 
     # Close any remaining position at last price
     if position > 0:
-        cap += position * float(closes[-1])
+        sold = int(position)
+        px_last = float(closes[-1])
+        trade_events.append(
+            {
+                "date": df.index[-1],
+                "side": "sell",
+                "price": px_last,
+                "shares": sold,
+                "trigger": "eod_liquidation",
+            }
+        )
+        cap += position * px_last
         position = 0
 
     pv_series = np.array(portfolio_values)
@@ -266,6 +297,19 @@ def run_direct_backtest(
     else:
         sharpe = 0.0
 
+    signal_snapshot_last: dict[str, float] = {}
+    try:
+        if len(signals_df) > 0:
+            lr = signals_df.iloc[-1]
+            for col in signals_df.columns:
+                v = lr[col]
+                if pd.notna(v) and np.isfinite(float(v)):
+                    signal_snapshot_last[str(col)] = float(v)
+    except Exception as exc:
+        logger.debug("run_direct_backtest: signal snapshot skipped: %s", exc)
+
+    comp_last = float(composite.iloc[-1]) if len(composite) else 0.0
+
     results = {
         "total_return": total_return,
         "cagr": cagr,
@@ -273,6 +317,10 @@ def run_direct_backtest(
         "sharpe": sharpe,
         "portfolio_value": list(pv_series),
         "net_pl": pv_series[-1] - initial_capital,
+        "trade_events": trade_events,
+        "composite_last": comp_last,
+        "signal_snapshot_last": signal_snapshot_last,
+        "signal_threshold_used": float(signal_threshold),
     }
 
     # Strat-like object for _display_results / compute_prediction_accuracy
@@ -441,6 +489,10 @@ def _empty_results(cap: float) -> dict[str, Any]:
         "sharpe": 0,
         "portfolio_value": [cap],
         "net_pl": 0,
+        "trade_events": [],
+        "composite_last": 0.0,
+        "signal_snapshot_last": {},
+        "signal_threshold_used": 0.0,
     }
 
 
