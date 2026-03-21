@@ -18,4 +18,6 @@ backtest_output*.txt
 *.csv
 !SPY_minute.csv   # keep this test data
 
-venv/
+# Jupyter / accidental artifacts
+.ipynb_checkpoints/
+%temp%/
