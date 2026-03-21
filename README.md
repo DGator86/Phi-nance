@@ -16,6 +16,7 @@ Phi-nance is a quantitative trading research platform for building, blending, an
 - Equity and options backtesting paths.
 - Streamlit workbench and dashboards for interactive workflows.
 - Centralized configuration, logging, custom exceptions, and validation helpers.
+- **Ecosystem:** canonical OHLCV for Lumibot / TensorTrade / agent-cli adapters — see [docs/ecosystem_integration.md](docs/ecosystem_integration.md).
 
 ## Quick Start
 

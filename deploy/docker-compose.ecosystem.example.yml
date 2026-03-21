@@ -1,0 +1,39 @@
+# Example: run Phi-nance beside sibling clones (adjust paths / branches).
+# Copy to docker-compose.yml locally; not used by CI.
+#
+# Prereqs: ../Phi-nance, ../lumibot, ../tensortrade, ../agent-cli on same host.
+
+services:
+  phinance-workbench:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - DATA_CACHE_DIR=/data/cache
+    volumes:
+      - phinance_data:/data
+    # If no Dockerfile at repo root, replace `build` with `image` + bind-mount.
+
+  # lumibot-backtest:
+  #   build: ../../lumibot
+  #   volumes:
+  #     - phinance_data:/data
+  #   command: ["python", "-m", "lumibot.example_strategies.stock_buy_and_hold"]
+
+  # tensortrade-train:
+  #   build: ../../tensortrade
+  #   volumes:
+  #     - phinance_data:/data
+  #     - rl_models:/models
+
+  # agent-cli-apex:
+  #   build: ../../agent-cli
+  #   env_file: ../../agent-cli/.env
+  #   volumes:
+  #     - phinance_data:/data
+
+volumes:
+  phinance_data:
+  # rl_models:

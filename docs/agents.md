@@ -42,5 +42,6 @@ Runs the full MFT pipeline on synthetic OHLCV data (no API key needed). Exit cod
 - **`IS_BACKTESTING` env var**: Set before importing lumibot (e.g. Streamlit entrypoints and `notebook_setup.py`). Without it, lumibot's `credentials.py` can crash when instantiating live brokers.
 - **Tests**: `pytest` is configured under `tests/`; `python scripts/engine_health.py` validates the MFT pipeline on synthetic data.
 - **`.env` file**: Copy `.env.example` to `.env`. The default `AV_API_KEY` in `.env.example` is a free-tier Alpha Vantage key (rate-limited to 5 req/min). Backtests and data fetching require this key.
+- **Ecosystem OHLCV**: For Lumibot / TensorTrade / agent-cli glue, use `phi.data.get_ohlcv` (see `phi/data/unified_data.py` and `docs/ecosystem_integration.md`). Optional live hook: env `PHINANCE_ECOSYSTEM_OHLCV_HOOK=module:callable`.
 - **Optional services**: Ollama (for Plutus Bot tab) and Polygon.io (for L2 feed) are optional and the app gracefully degrades without them.
 - **`python3.12-venv` system package**: Required to create the venv; install with `sudo apt-get install -y python3.12-venv` if not already present.

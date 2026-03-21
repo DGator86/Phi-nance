@@ -17,6 +17,12 @@ from .cache import (
     is_cache_stale,
     list_cached_datasets,
 )
+from .unified_data import (
+    get_ohlcv,
+    get_ohlcv_with_optional_hook,
+    load_ohlcv_cached_first,
+    try_external_ohlcv,
+)
 
 from .vendor_postgres import PostgresOptionsVendor
 
@@ -30,6 +36,10 @@ __all__ = [
     "fetch_and_cache",
     "auto_fetch_and_cache",
     "get_cached_dataset",
+    "get_ohlcv",
+    "get_ohlcv_with_optional_hook",
+    "load_ohlcv_cached_first",
+    "try_external_ohlcv",
     "is_cache_stale",
     "list_cached_datasets",
     "PostgresOptionsVendor",
