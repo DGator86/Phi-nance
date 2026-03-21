@@ -47,3 +47,12 @@ Deleting stale branches on GitHub is safe **after** they are merged and you no l
 ## CI
 
 GitHub Actions (e.g. `.github/workflows/test.yml`) should stay green before merging risky changes. Run `pytest`, `ruff`, and targeted `mypy` locally as in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+## Quick checks
+
+```bash
+python scripts/quick_import_check.py   # fast: can core packages import?
+python scripts/engine_health.py        # full MFT synthetic pipeline
+```
+
+Repository hygiene: `.gitattributes` (line endings), `.pre-commit-config.yaml` (includes `check-case-conflict`).

@@ -64,6 +64,9 @@ streamlit run app_streamlit/expert_workbench.py --server.headless true
 # Engine health validation
 python scripts/engine_health.py
 
+# Quick import smoke test (venv + paths)
+python scripts/quick_import_check.py
+
 # CLI backtest
 python scripts/run_backtest.py --symbol SPY --start 2020-01-01 --end 2024-12-31 --capital 100000
 ```
@@ -168,6 +171,15 @@ See [`docs/postgres-options-vendor.md`](docs/postgres-options-vendor.md) for set
 ## Contributing
 
 Please follow the standards and workflow in [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md), including logging, validation, exception usage, typing, testing, and docs updates for user-facing behavior changes.
+
+Optional [pre-commit](https://pre-commit.com/) hooks are configured in `.pre-commit-config.yaml` (`pip install pre-commit && pre-commit install`).
+
+## Troubleshooting
+
+- **`127.0.0.1 refused to connect` / Streamlit won’t open** — The server is not running or the port is taken. Keep the terminal open, use [`run_local.ps1`](run_local.ps1) on Windows (it picks the next free port after 8501), or see [`docs/easy_mode.md`](docs/easy_mode.md).
+- **Wrong or missing packages** — Activate the project **venv** and reinstall: `pip install -r requirements.txt`. Quick check: `python scripts/quick_import_check.py`. Full engine smoke test: `python scripts/engine_health.py`.
+- **Doc links 404 on Linux/macOS** — Use **`docs/Architecture.md`** and **`docs/CONTRIBUTING.md`** (capital **A** / **C**). Duplicate lowercase paths were removed; see git history on `MAIN` if you see missing files after an old pull.
+- **Backtest / easy-mode errors** — `git pull origin MAIN` and confirm you run the repo’s `phi` (not an older global install): `python -c "import phi.backtest.direct as d; print(d.__file__)"`.
 
 ## License
 
