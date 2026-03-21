@@ -2,7 +2,8 @@
 
 ## Entry points
 
-- `app_streamlit/main.py` (primary modular app)
+- `app_streamlit/main.py` (default: **easy mode** — three-screen layperson UI)
+- `app_streamlit/expert_workbench.py` (full modular workbench)
 - `legacy/dashboard.py` (legacy app)
 
 ## Design

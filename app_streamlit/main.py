@@ -1,97 +1,15 @@
-"""Main entry point for the modular Streamlit live backtest workbench."""
+"""Default Streamlit entry: layperson-friendly Phi-nance (easy mode).
+
+For the full workbench: `streamlit run app_streamlit/expert_workbench.py`
+"""
 
 from __future__ import annotations
 
-from phi.logging import get_logger
-
-logger = get_logger(__name__)
-
-import os
-
-import streamlit as st
-from dotenv import load_dotenv
-
-from app_streamlit.live_dashboard import render_live_dashboard
-from app_streamlit.lob_dashboard import render_lob_dashboard
-from app_streamlit.state import AppState, init_session_state, reset_state
-from app_streamlit.ui_components import (
-    render_config_panel,
-    render_error,
-    render_form_errors,
-    render_loaded_config_summary,
-    render_results,
-    render_run_history,
-)
-from app_streamlit.trading_desk import render_trading_desk
-from app_streamlit.ui_handlers import handle_load_run, handle_run_backtest, handle_train_regime_detector
-from phi.config import settings
-
-os.environ.setdefault("IS_BACKTESTING", "True")
-load_dotenv()
+from app_streamlit.easy_mode.app import run_easy_app
 
 
 def main() -> None:
-    """Render app layout and dispatch actions based on state machine value."""
-    st.set_page_config(page_title="Phi-nance Live Workbench", layout="wide")
-    init_session_state()
-
-    page = st.sidebar.radio(
-        "Page",
-        ["Trading desk", "Backtest Workbench", "Live Trading", "LOB Simulation"],
-    )
-    if page == "Trading desk":
-        render_trading_desk()
-        return
-    if page == "Live Trading":
-        render_live_dashboard()
-        return
-    if page == "LOB Simulation":
-        render_lob_dashboard()
-        return
-
-    st.title("Live Backtest Workbench")
-    render_loaded_config_summary(st.session_state.get("config"))
-
-    with st.sidebar:
-        st.header("Configuration")
-        payload, run_clicked = render_config_panel()
-        if st.button("Reset workbench"):
-            reset_state()
-            st.rerun()
-
-        selected_run_id = render_run_history()
-        if selected_run_id:
-            handle_load_run(selected_run_id)
-            st.rerun()
-
-
-    if payload.get("regime_train_clicked"):
-        try:
-            _detector, _series, model_path = handle_train_regime_detector(payload)
-            if model_path:
-                st.sidebar.success(f"Regime model trained and saved: {model_path}")
-            else:
-                st.sidebar.success("Regime model trained.")
-        except Exception as exc:  # noqa: BLE001
-            st.sidebar.error(f"Regime training failed: {exc}")
-
-    if run_clicked:
-        handle_run_backtest(payload)
-
-    if st.session_state.form_errors:
-        render_form_errors(st.session_state.form_errors)
-
-    state = st.session_state.app_state
-    if state == AppState.IDLE:
-        st.info("Configure your backtest in the sidebar, then click Run backtest.")
-    elif state == AppState.CONFIGURING:
-        st.info("Configuration validated. Click Run backtest when ready.")
-    elif state == AppState.RUNNING:
-        st.info("Running backtest...")
-    elif state == AppState.RESULTS:
-        render_results(st.session_state.results or {})
-    elif state == AppState.ERROR:
-        render_error(st.session_state.error, st.session_state.error_debug, settings.DEBUG)
+    run_easy_app()
 
 
 if __name__ == "__main__":

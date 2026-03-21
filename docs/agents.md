@@ -8,10 +8,18 @@ Phi-nance is a quantitative trading platform built around a Market Field Theory 
 
 ### Running the app
 
+**Default (easy mode — overview, automatic backtest, ticker spotlight):**
+
 ```bash
 source venv/bin/activate
 streamlit run app_streamlit/main.py --server.headless true
 ```
+
+Same UI via `app_streamlit/live_workbench.py` (thin wrapper around `main`).
+
+**Full workbench** (trading desk, regime tuning, LOB, live trading): `streamlit run app_streamlit/expert_workbench.py`.
+
+See `docs/easy_mode.md` for env vars (`PHINANCE_UNIVERSE`, optional nightly learning JSON).
 
 Dashboard serves on **port 8501**. The `.streamlit/config.toml` binds to `0.0.0.0`.
 

@@ -13,7 +13,7 @@ else
 fi
 
 echo "Starting Phi-nance on port 8501..."
-python -m streamlit run app_streamlit/app.py \
+python -m streamlit run app_streamlit/live_workbench.py \
     --server.port 8501 \
     --server.address 0.0.0.0 \
     --server.headless true
