@@ -10,6 +10,15 @@ from phi.data import cache as cache_mod
 from phi.data.cache import CacheCorruptedError, DataCache, DataFetchError, fetch_and_cache, is_cache_stale
 
 
+def test_get_fetcher_accepts_unusual_whales_aliases() -> None:
+    from phi.data.cache import _get_fetcher
+
+    f1 = _get_fetcher("unusual_whales")
+    f2 = _get_fetcher("Unusual Whales")
+    f3 = _get_fetcher("unusualwhales")
+    assert callable(f1) and f1 is f2 is f3
+
+
 def _make_ohlcv(rows: int = 5) -> pd.DataFrame:
     idx = pd.date_range("2024-01-01", periods=rows, freq="D")
     base = [100.0 + i for i in range(rows)]

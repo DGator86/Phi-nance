@@ -322,9 +322,21 @@ def _fetch_from_unusual_whales(
     return _normalize_ohlcv(df)
 
 
+def _normalize_vendor_key(vendor: str) -> str:
+    """Normalize UI / config vendor string to fetcher registry key."""
+    k = vendor.lower().replace("-", "_").replace(" ", "")
+    aliases = {
+        "uw": "unusual_whales",
+        "unusual": "unusual_whales",
+        "unusualwhales": "unusual_whales",
+        "whales": "unusual_whales",
+    }
+    return aliases.get(k, k)
+
+
 def _get_fetcher(vendor: str) -> Any:
     """Resolve vendor key to fetcher function."""
-    vendor_key = vendor.lower().replace("-", "_").replace(" ", "")
+    vendor_key = _normalize_vendor_key(vendor)
     fetchers = {
         "yfinance": _fetch_from_yfinance,
         "yf": _fetch_from_yfinance,
@@ -333,7 +345,6 @@ def _get_fetcher(vendor: str) -> Any:
         "postgres": _fetch_from_postgres,
         "postgresql": _fetch_from_postgres,
         "unusual_whales": _fetch_from_unusual_whales,
-        "unusualwhales": _fetch_from_unusual_whales,
     }
     if vendor_key not in fetchers:
         raise ValueError(f"Unknown vendor: {vendor!r}. Supported: {', '.join(sorted(fetchers))}")
@@ -500,8 +511,8 @@ def fetch_and_cache(
             timeframe=timeframe,
             start_s=start_s,
             end_s=end_s,
-            primary_vendor=vendor,
-            fallback_vendors=fallback_vendors,
+            primary_vendor=_normalize_vendor_key(vendor),
+            fallback_vendors=[_normalize_vendor_key(v) for v in (fallback_vendors or [])],
             **kwargs,
         )
     except Exception as exc:  # noqa: BLE001
@@ -511,7 +522,7 @@ def fetch_and_cache(
     if fetched.empty:
         raise DataFetchError(f"Failed to fetch data for {vendor}/{symbol_u}: no rows returned")
 
-    vendor_key = vendor.lower().replace("-", "_").replace(" ", "")
+    vendor_key = _normalize_vendor_key(vendor)
     if vendor_key in {"postgres", "postgresql"}:
         validated = fetched
     else:

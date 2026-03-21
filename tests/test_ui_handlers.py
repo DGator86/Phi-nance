@@ -3,8 +3,20 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from app_streamlit import ui_handlers
+
+
+@pytest.fixture(autouse=True)
+def _stub_regime_detector_load(monkeypatch):
+    """Workbench defaults require a regime detector path; stub loader for handler tests."""
+
+    class _FD:
+        def predict(self, data):
+            return pd.Series(["state_0"] * len(data), index=data.index)
+
+    monkeypatch.setattr(ui_handlers, "load_detector_from_payload", lambda _p: _FD())
 
 
 def _base_payload(trading_mode: str = "equities") -> dict:
@@ -17,8 +29,13 @@ def _base_payload(trading_mode: str = "equities") -> dict:
         "initial_capital": 100000.0,
         "trading_mode": trading_mode,
         "indicators": {"RSI": {"enabled": True, "params": {"rsi_period": 14}}},
-        "blend_method": "weighted_sum",
+        "blend_method": "regime_weighted",
         "blend_weights": {"RSI": 1.0},
+        "regime_enabled": True,
+        "regime_use_precomputed": False,
+        "regime_selected_model_path": "stub.pkl",
+        "regime_label_map": {},
+        "regime_boost_matrix": {},
         "option_type": "call",
         "option_strike": 100.0,
         "option_expiry": date(2023, 12, 31),

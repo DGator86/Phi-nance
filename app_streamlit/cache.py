@@ -17,7 +17,11 @@ from phi.indicators.simple import compute_indicator
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_historical_data(symbol: str, start: str, end: str, timeframe: str, vendor: str) -> pd.DataFrame:
-    """Fetch and cache OHLCV data for one symbol/config tuple."""
+    """Fetch and cache OHLCV data for one symbol/config tuple.
+
+    If you upgraded the app and still see stale vendor errors, use Streamlit
+    **Clear cache** (hamburger menu) or restart the server so this function reloads.
+    """
     return fetch_and_cache(vendor, symbol, timeframe, start, end)
 
 

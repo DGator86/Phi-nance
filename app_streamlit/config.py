@@ -35,6 +35,8 @@ TIMEFRAME_OPTIONS = ["1m", "5m", "15m", "1H", "1D"]
 VENDOR_OPTIONS = ["unusual_whales", "yfinance", "alphavantage", "polygon"]
 TRADING_MODE_OPTIONS = ["equities", "options"]
 BLEND_METHOD_OPTIONS = ["weighted_sum", "majority_vote", "regime_weighted"]
+# Workbench defaults: regime-weighted composite; per-regime multipliers in sidebar matrix.
+DEFAULT_BLEND_METHOD = "regime_weighted"
 
 DEFAULT_START_DATE = date.today() - timedelta(days=365)
 DEFAULT_END_DATE = date.today()

@@ -126,6 +126,15 @@ def validate_config_payload(payload: dict[str, Any]) -> list[str]:
     if not payload.get("indicators"):
         errors.append("Enable at least one indicator.")
 
+    if payload.get("blend_method") == "regime_weighted" and payload.get("regime_enabled"):
+        if not payload.get("regime_use_precomputed"):
+            path = str(payload.get("regime_selected_model_path") or "").strip()
+            if not path:
+                errors.append(
+                    "Regime mode: pick a **saved regime detector** below, or train one, "
+                    "or check **Use pre-computed regime series** if you already trained this session."
+                )
+
     if payload.get("trading_mode") == "options":
         vkey = str(payload.get("vendor", "")).lower().replace("-", "_").replace(" ", "")
         if vkey not in ("unusual_whales", "unusualwhales"):
@@ -270,13 +279,13 @@ def handle_run_backtest(
 
             opt_regime_series: pd.Series | None = None
             if payload.get("regime_enabled"):
-                detector = load_detector_from_payload(payload)
                 use_precomputed = bool(payload.get("regime_use_precomputed"))
                 precomputed = st.session_state.get("regime_series")
                 primary_ohlcv = data_map[cfg.symbols[0]]
                 if use_precomputed and isinstance(precomputed, pd.Series) and not precomputed.empty:
                     opt_regime_series = precomputed.reindex(primary_ohlcv.index).ffill()
                 else:
+                    detector = load_detector_from_payload(payload)
                     opt_regime_series = detector.predict(primary_ohlcv)
                     st.session_state["regime_series"] = opt_regime_series
 
@@ -295,16 +304,17 @@ def handle_run_backtest(
             regime_boosts = None
             regime_detector = None
             if payload.get("regime_enabled"):
-                detector = load_detector_from_payload(payload)
                 use_precomputed = bool(payload.get("regime_use_precomputed"))
                 precomputed = st.session_state.get("regime_series")
+                detector = None
                 if use_precomputed and isinstance(precomputed, pd.Series) and not precomputed.empty:
-                    regime_series = precomputed
+                    regime_series = precomputed.reindex(primary.index).ffill()
                 else:
+                    detector = load_detector_from_payload(payload)
                     regime_series = detector.predict(primary)
                     st.session_state["regime_series"] = regime_series
                 regime_boosts = build_regime_boosts_from_payload(payload)
-                if bool(payload.get("regime_detect_on_the_fly", True)):
+                if bool(payload.get("regime_detect_on_the_fly", True)) and detector is not None:
                     regime_detector = detector
 
             if len(cfg.symbols) > 1:

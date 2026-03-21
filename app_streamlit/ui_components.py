@@ -12,7 +12,7 @@ import streamlit as st
 from pydantic import ValidationError as PydanticValidationError
 
 from app_streamlit.config import (
-    BLEND_METHOD_OPTIONS,
+    DEFAULT_BLEND_METHOD,
     DEFAULT_END_DATE,
     DEFAULT_INITIAL_CAPITAL,
     DEFAULT_START_DATE,
@@ -66,70 +66,65 @@ def render_options_playbook_sidebar() -> None:
             st.caption("Directional hint: neutral / range structures often fit ranging regimes.")
 
 
-def render_indicator_selector(selected_names: list[str]) -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
-    """Render indicator multiselect and per-indicator parameter controls."""
-    categories: dict[str, list[str]] = {}
-    for indicator_name, spec in INDICATOR_SPECS.items():
-        categories.setdefault(spec.category, []).append(indicator_name)
+def render_regime_workbench_indicators() -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
+    """All catalog indicators active; base weights + regime matrix control effective mix per bar."""
+    from phi.indicators.simple import INDICATOR_COMPUTERS
 
-    ordered_options: list[str] = []
-    for category in sorted(categories.keys()):
-        ordered_options.extend(sorted(categories[category]))
-
-    selected_names = st.multiselect(
-        "Indicators",
-        options=ordered_options,
-        default=selected_names,
-        key="selected_indicators",
+    names = sorted(set(INDICATOR_SPECS.keys()) & set(INDICATOR_COMPUTERS.keys()))
+    st.markdown("#### Signals (all active)")
+    st.caption(
+        "Composite signal is **regime-weighted**: these base weights are scaled each bar by the "
+        "per-regime multipliers in **Regime model & per-regime weights** (pick a saved detector first)."
     )
+    by_cat: dict[str, list[str]] = {}
+    for n in names:
+        by_cat.setdefault(INDICATOR_SPECS[n].category, []).append(n)
 
-    category_labels = []
-    for category in sorted(categories.keys()):
-        names = ", ".join(sorted(categories[category]))
-        category_labels.append(f"**{category}:** {names}")
-    st.caption(" | ".join(category_labels))
     indicators: dict[str, dict[str, Any]] = {}
+    for cat in sorted(by_cat.keys()):
+        with st.expander(cat, expanded=(cat == "Core")):
+            for name in sorted(by_cat[cat]):
+                spec = INDICATOR_SPECS[name]
+                st.markdown(f"**{name}** — {spec.description}")
+                params: dict[str, Any] = {}
+                for param, param_spec in spec.params.items():
+                    if isinstance(param_spec, tuple):
+                        min_v, max_v, default_v, step = param_spec
+                        params[param] = st.number_input(
+                            param,
+                            min_value=float(min_v),
+                            max_value=float(max_v),
+                            value=float(default_v),
+                            step=float(step),
+                            key=f"{name}_{param}",
+                        )
+                    elif isinstance(param_spec, dict) and param_spec.get("type") == "select":
+                        options = list(param_spec.get("options", []))
+                        default_value = param_spec.get("default", options[0] if options else "")
+                        default_idx = options.index(default_value) if default_value in options else 0
+                        params[param] = st.selectbox(
+                            param,
+                            options=options,
+                            index=default_idx,
+                            key=f"{name}_{param}",
+                        )
+                    else:
+                        logger.warning("Unsupported parameter spec for %s/%s: %s", name, param, param_spec)
+                indicators[name] = {"enabled": True, "params": params}
+
+    n = len(names)
+    default_w = round(1.0 / n, 4) if n else 1.0
+    st.caption("Base blend weights (0–1 each; combined with per-regime multipliers when you run)")
     blend_weights: dict[str, float] = {}
-
-    for name in selected_names:
-        spec = INDICATOR_SPECS[name]
-        with st.expander(name, expanded=False):
-            st.caption(spec.description)
-            params: dict[str, Any] = {}
-            for param, param_spec in spec.params.items():
-                if isinstance(param_spec, tuple):
-                    min_v, max_v, default_v, step = param_spec
-                    params[param] = st.number_input(
-                        param,
-                        min_value=float(min_v),
-                        max_value=float(max_v),
-                        value=float(default_v),
-                        step=float(step),
-                        key=f"{name}_{param}",
-                    )
-                elif isinstance(param_spec, dict) and param_spec.get("type") == "select":
-                    options = list(param_spec.get("options", []))
-                    default_value = param_spec.get("default", options[0] if options else "")
-                    default_idx = options.index(default_value) if default_value in options else 0
-                    params[param] = st.selectbox(
-                        param,
-                        options=options,
-                        index=default_idx,
-                        key=f"{name}_{param}",
-                    )
-                else:
-                    logger.warning("Unsupported parameter spec for %s/%s: %s", name, param, param_spec)
-            indicators[name] = {"enabled": True, "params": params}
-
-    if selected_names:
-        st.caption("Blend weights (used for weighted_sum mode)")
-        default_weight = round(1.0 / len(selected_names), 4)
-        for name in selected_names:
+    ncols = min(3, max(1, n))
+    cols = st.columns(ncols)
+    for i, name in enumerate(names):
+        with cols[i % ncols]:
             blend_weights[name] = st.slider(
-                f"Weight: {name}",
+                name,
                 min_value=0.0,
                 max_value=1.0,
-                value=float(default_weight),
+                value=float(default_w),
                 step=0.01,
                 key=f"blend_weight_{name}",
             )
@@ -155,8 +150,8 @@ def render_config_panel() -> tuple[dict[str, Any], bool]:
         start_date, end_date = render_date_picker(DEFAULT_START_DATE, DEFAULT_END_DATE)
         initial_capital = st.number_input("Initial capital", min_value=1000.0, value=float(DEFAULT_INITIAL_CAPITAL), step=1000.0, key="initial_capital")
         trading_mode = st.selectbox("Trading mode", TRADING_MODE_OPTIONS, index=TRADING_MODE_OPTIONS.index(DEFAULT_TRADING_MODE), key="trading_mode")
-        blend_method = st.selectbox("Blend method", BLEND_METHOD_OPTIONS, key="blend_method")
-        indicators, blend_weights = render_indicator_selector(st.session_state.get("selected_indicators", []))
+        blend_method = DEFAULT_BLEND_METHOD
+        indicators, blend_weights = render_regime_workbench_indicators()
 
         option_type = option_strike = option_expiry = option_iv = option_rate = option_qty = None
         if trading_mode == "options":
@@ -247,9 +242,13 @@ def render_portfolio_panel(symbols: list[str]) -> dict[str, Any]:
     }
 
 def render_regime_detection_panel(indicators: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """Render sidebar controls for regime-aware blending configuration."""
-    with st.expander("Regime-Aware Blending", expanded=False):
-        regime_enabled = st.checkbox("Enable regime-aware blending", value=False, key="regime_enabled")
+    """Regime model selection and per-regime indicator multipliers (workbench is regime-first)."""
+    regime_enabled = True
+    with st.expander("Regime model & per-regime weights", expanded=True):
+        st.caption(
+            "Regime-weighted blending is always on. Choose a **saved detector** (or train), then edit "
+            "the multiplier matrix so each regime emphasizes different signals."
+        )
         method_label = st.selectbox(
             "Method",
             options=["HMM", "Clustering (KMeans)", "GMM", "Deep Learning (LSTM)", "Deep Learning (Transformer)"],
@@ -331,7 +330,7 @@ def render_regime_detection_panel(indicators: dict[str, dict[str, Any]]) -> dict
 
         regime_label_map: dict[str, str] = {}
         regime_boost_matrix: dict[str, dict[str, float]] = {}
-        if regime_enabled and selected_model_path:
+        if selected_model_path:
             detector = load_detector(selected_model_path)
             metadata = selected_model_meta or getattr(detector, "metadata", {})
             params = metadata.get("params", {})
