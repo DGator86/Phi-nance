@@ -3,7 +3,7 @@
 The default app (`app_streamlit/main.py` → `live_workbench.py`) is a **three-screen** experience:
 
 1. **Overview** — Optional nightly learning JSON, recent saved runs, universe regime snapshot.
-2. **Automatic backtest** — One button: fits a 3-state regime model, runs three entry presets (signal threshold), plots equity curves, highlights best Sharpe.
+2. **Automatic backtest** — One button: fits a 3-state k-means model, maps clusters to **TREND_DN / RANGE / TREND_UP** (by average bar return), applies **`DEFAULT_REGIME_BOOSTS`** like the expert workbench, runs the **full indicator catalog** (core + order-flow + information theory + MFT), three signal-threshold presets, best Sharpe highlighted. Uses a kwargs shim so older `run_direct_backtest` signatures still run (falls back to plain weighted blend if regime args are missing).
 3. **Ticker spotlight** — Pick a universe ticker; price, regime lane, RSI & MACD signals.
 
 ## Environment

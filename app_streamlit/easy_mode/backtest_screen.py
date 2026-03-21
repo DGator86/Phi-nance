@@ -1,32 +1,23 @@
-"""One-click regime-weighted backtest: multiple entry strictness presets, best curve highlighted."""
+"""One-click regime-weighted backtest: full catalog, semantic cluster boosts, API-compat shim."""
 
 from __future__ import annotations
 
+import inspect
+from copy import deepcopy
 from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from app_streamlit.config import INDICATOR_SPECS, IndicatorSpec
 from phi.backtest.direct import run_direct_backtest
+from phi.blending.blender import DEFAULT_REGIME_BOOSTS
+from phi.indicators.simple import INDICATOR_COMPUTERS
 from phi.regime.train import train_regime_detector
 
 from app_streamlit.easy_mode.constants import LOOKBACK_DAYS, PRIMARY_BACKTEST_SYMBOL
 from app_streamlit.easy_mode.data import load_ohlcv
-
-# Curated stack — same for every run; only entry strictness (signal threshold) varies.
-_AUTO_INDICATORS: dict[str, dict[str, Any]] = {
-    "RSI": {"enabled": True, "params": {"rsi_period": 14, "oversold": 30, "overbought": 70}},
-    "MACD": {"enabled": True, "params": {"fast_period": 12, "slow_period": 26, "signal_period": 9}},
-    "Bollinger": {"enabled": True, "params": {"bb_period": 20, "num_std": 2}},
-    "Dual SMA": {"enabled": True, "params": {"fast_period": 10, "slow_period": 50}},
-    "Buy & Hold": {"enabled": True, "params": {}},
-}
-_n_ind = len(_AUTO_INDICATORS)
-_BASE_WEIGHTS = {k: round(1.0 / _n_ind, 4) for k in _AUTO_INDICATORS}
-# Slight drift fix
-_first = next(iter(_BASE_WEIGHTS))
-_BASE_WEIGHTS[_first] = round(_BASE_WEIGHTS[_first] + (1.0 - sum(_BASE_WEIGHTS.values())), 4)
 
 _PRESETS: tuple[tuple[str, float], ...] = (
     ("Cautious (fewer trades)", 0.22),
@@ -35,16 +26,106 @@ _PRESETS: tuple[tuple[str, float], ...] = (
 )
 
 
+def _default_params_from_spec(spec: IndicatorSpec) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for param, ps in spec.params.items():
+        if isinstance(ps, tuple) and len(ps) >= 3:
+            out[param] = ps[2]
+        elif isinstance(ps, dict) and ps.get("type") == "select":
+            opts = list(ps.get("options", []))
+            dv = ps.get("default", opts[0] if opts else "")
+            out[param] = dv
+    return out
+
+
+def build_auto_indicators_and_weights() -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
+    """Same universe as the expert regime workbench: INDICATOR_SPECS ∩ INDICATOR_COMPUTERS."""
+    names = sorted(set(INDICATOR_SPECS.keys()) & set(INDICATOR_COMPUTERS.keys()))
+    indicators = {
+        n: {"enabled": True, "params": _default_params_from_spec(INDICATOR_SPECS[n])} for n in names
+    }
+    if not indicators:
+        raise RuntimeError("No indicators available (catalog intersection empty).")
+    n = len(indicators)
+    w = round(1.0 / n, 6)
+    weights = dict.fromkeys(indicators, w)
+    first = next(iter(weights))
+    weights[first] = round(w + (1.0 - sum(weights.values())), 6)
+    return indicators, weights
+
+
+def semantic_label_map_for_clusters(ohlcv: pd.DataFrame, regime_series: pd.Series) -> dict[str, str]:
+    """Map cluster_* labels to DEFAULT_REGIME_BOOSTS keys using mean return per cluster."""
+    rs = regime_series.reindex(ohlcv.index).dropna().astype(str)
+    if rs.empty:
+        return {}
+    close = ohlcv["close"].astype(float)
+    rets = close.pct_change()
+    labels = sorted(
+        rs.unique(),
+        key=lambda s: int(s.rsplit("_", 1)[-1]) if str(s).startswith("cluster_") else str(s),
+    )
+    scored: list[tuple[str, float]] = []
+    for lab in labels:
+        m = rs == lab
+        seg = rets.where(m).dropna()
+        scored.append((lab, float(seg.mean()) if len(seg) else 0.0))
+    scored.sort(key=lambda x: x[1])
+    templates = ("TREND_DN", "RANGE", "TREND_UP")
+    n = len(scored)
+    if n == 1:
+        return {scored[0][0]: "RANGE"}
+    if n == 2:
+        return {scored[0][0]: "TREND_DN", scored[1][0]: "TREND_UP"}
+    out: dict[str, str] = {}
+    for i, (lab, _) in enumerate(scored):
+        if n == 3:
+            out[lab] = templates[i]
+        else:
+            bucket = min(2, int(3 * i / max(n - 1, 1)))
+            out[lab] = templates[bucket]
+    return out
+
+
+def _call_run_direct_backtest(**kwargs: Any) -> tuple[dict[str, Any], Any]:
+    """Forward only kwargs accepted by this environment's ``run_direct_backtest``."""
+    sig = inspect.signature(run_direct_backtest)
+    allowed = set(sig.parameters)
+    filtered = {k: v for k, v in kwargs.items() if k in allowed}
+    if kwargs.get("blend_method") == "regime_weighted" and "regime_series" not in allowed:
+        filtered["blend_method"] = "weighted_sum"
+        for drop in (
+            "regime_series",
+            "regime_label_map",
+            "regime_boosts",
+            "regime_detector",
+            "regime_detector_params",
+        ):
+            filtered.pop(drop, None)
+    return run_direct_backtest(**filtered)
+
+
 def render_auto_backtest() -> None:
     st.markdown('<p class="phinance-hero">Automatic backtest</p>', unsafe_allow_html=True)
     st.caption(
-        f"Regime detection runs in the background (3 clusters on {PRIMARY_BACKTEST_SYMBOL}). "
-        "Signals are blended **regime-weighted** with the stack below — you only choose when to run."
+        f"Regime detection (3 clusters on {PRIMARY_BACKTEST_SYMBOL}) plus the **full workbench signal stack** "
+        "(core, order-flow, information theory, MFT). Clusters are ranked by average bar return and mapped to "
+        "**TREND_DN / RANGE / TREND_UP** so the same per-regime boost table as the expert UI applies."
     )
+    auto_inds, _ = build_auto_indicators_and_weights()
+    n_ind = len(auto_inds)
+    cats: dict[str, int] = {}
+    for name in auto_inds:
+        cats[INDICATOR_SPECS[name].category] = cats.get(INDICATOR_SPECS[name].category, 0) + 1
     with st.expander("What’s under the hood (read-only)", expanded=False):
         st.write(
-            "**Indicators:** RSI, MACD, Bollinger, Dual SMA, Buy & Hold — equal base weights; "
-            "per-bar regime adjusts effective weights via the engine defaults."
+            f"**Indicators ({n_ind}):** all names in `INDICATOR_SPECS` that have a computer — "
+            "including MFT Signal / MFT Energy, order-flow proxies, entropy / MI / Fisher / KL, plus core oscillators."
+        )
+        st.caption("By category: " + " · ".join(f"{k} ({v})" for k, v in sorted(cats.items())))
+        st.write(
+            "**Regime boosts:** `DEFAULT_REGIME_BOOSTS` from the blending engine (e.g. MACD emphasis in trends, "
+            "RSI/Bollinger in range) after cluster→semantic mapping."
         )
         st.write("**Entry / exit:** long when composite signal clears the threshold; flat when it fades.")
         st.json({"presets": [{"name": n, "signal_threshold": t} for n, t in _PRESETS]})
@@ -57,6 +138,8 @@ def render_auto_backtest() -> None:
                 st.error(str(exc))
                 return
 
+            indicators, base_weights = build_auto_indicators_and_weights()
+
             detector, _ = train_regime_detector(
                 ohlcv,
                 method="kmeans",
@@ -65,21 +148,23 @@ def render_auto_backtest() -> None:
                 save=False,
             )
             regime_series = detector.predict(ohlcv)
+            regime_label_map = semantic_label_map_for_clusters(ohlcv, regime_series)
+            regime_boosts = deepcopy(DEFAULT_REGIME_BOOSTS)
 
             results_by_name: dict[str, dict[str, Any]] = {}
             for label, thresh in _PRESETS:
-                res, _ = run_direct_backtest(
+                res, _ = _call_run_direct_backtest(
                     ohlcv=ohlcv,
                     symbol=PRIMARY_BACKTEST_SYMBOL,
-                    indicators=_AUTO_INDICATORS,
-                    blend_weights=dict(_BASE_WEIGHTS),
+                    indicators=indicators,
+                    blend_weights=dict(base_weights),
                     blend_method="regime_weighted",
                     signal_threshold=float(thresh),
                     initial_capital=100_000.0,
                     position_size_pct=0.95,
                     regime_series=regime_series,
-                    regime_label_map=None,
-                    regime_boosts={},
+                    regime_label_map=regime_label_map or None,
+                    regime_boosts=regime_boosts,
                 )
                 results_by_name[label] = res
 
@@ -94,6 +179,8 @@ def render_auto_backtest() -> None:
                 "results": results_by_name,
                 "regime_series": regime_series,
                 "ohlcv": ohlcv,
+                "regime_label_map": regime_label_map,
+                "n_indicators": len(indicators),
             }
 
     state = st.session_state.get("easy_last_backtest")
@@ -103,8 +190,12 @@ def render_auto_backtest() -> None:
 
     results_by_name: dict[str, dict[str, Any]] = state["results"]
     best_name = state["best"]
-
-    st.success(f"**Best fit this run:** {best_name} (highest Sharpe among presets).")
+    nran = state.get("n_indicators", "?")
+    rmap = state.get("regime_label_map") or {}
+    st.success(
+        f"**Best fit this run:** {best_name} (highest Sharpe among presets). "
+        f"Stack: **{nran}** indicators · cluster map → {rmap or 'n/a'}."
+    )
 
     cols = st.columns(len(_PRESETS))
     for i, (label, _) in enumerate(_PRESETS):
