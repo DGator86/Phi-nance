@@ -13,11 +13,20 @@ from phi.regime.train import train_regime_detector
 
 from app_streamlit.easy_mode.constants import LOOKBACK_DAYS, UNIVERSE
 from app_streamlit.easy_mode.data import load_ohlcv
+from app_streamlit.easy_mode.time_helpers import seconds_until_next_us_equity_daily_close
 
 
 def render_ticker_spotlight() -> None:
     st.markdown('<p class="phinance-hero">Ticker spotlight</p>', unsafe_allow_html=True)
     st.caption("Price, detected regime lane, and two normalized signal tracks.")
+
+    sec, close_lbl = seconds_until_next_us_equity_daily_close()
+    h, m, s = sec // 3600, (sec % 3600) // 60, sec % 60
+    st.metric(
+        "Countdown to next US cash close (daily bar context)",
+        f"{h}h {m}m {s}s",
+        help=f"Next weekday 4pm ET target: {close_lbl}. Weekends roll to Monday.",
+    )
 
     sym = st.selectbox("Ticker", options=list(UNIVERSE), index=0, key="easy_ticker_pick")
 

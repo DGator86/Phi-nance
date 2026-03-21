@@ -39,6 +39,7 @@ pip install -r requirements-jupyter.txt
 python -m ipykernel install --user --name phinance --display-name "Python (Phi-nance)"
 jupyter lab
 # Open notebooks/00_getting_started.ipynb (first cell runs notebook_setup.py)
+# Easy-mode helpers without Streamlit: notebooks/10_easy_strategy_lab.ipynb
 
 # 4) Configure environment
 cp .env.example .env
@@ -69,6 +70,10 @@ python scripts/quick_import_check.py
 
 # CLI backtest
 python scripts/run_backtest.py --symbol SPY --start 2020-01-01 --end 2024-12-31 --capital 100000
+
+# Optional: Dash wallboard (SPY daily, 60s refresh) — separate from Streamlit
+pip install -r requirements-dash.txt
+python app_dash/app.py
 ```
 
 ## Project Layout

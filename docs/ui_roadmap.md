@@ -12,18 +12,22 @@ This doc tracks **trading-UI patterns** we adopt over time. It is not a commitme
 | **Context cards** (regime + 5d / 20d thrust) | Done (thrust = simple horizon returns; not multi-timeframe models) |
 | Last-bar **indicator snapshot** | Done (`signal_snapshot_last` on results) |
 | Three-preset **equity comparison** | Existing |
+| **Multi-window regimes** (SHORT / MEDIUM / LONG k-means) | Done (`backtest_extras.train_multi_window_regimes`) |
+| **Playback scrubber** (end index + truncated chart) | Done (`slice_replay_window`) |
+| **Side-by-side preset compare** | Done (best vs selectbox) |
+| **Robustness bootstrap** (shuffled returns → Sharpe) | Done (`bootstrap_sharpe_distribution`) |
+| **RSI × threshold heatmap** | Done (`run_rsi_threshold_heatmap`) |
+| **US daily close countdown** (ticker spotlight) | Done (`time_helpers`) |
+| **Optional Dash wallboard** | Done (`app_dash/app.py`, `requirements-dash.txt`) |
+| **Jupyter easy lab** | Done (`notebooks/10_easy_strategy_lab.ipynb`) |
 
 ## Backlog (higher effort)
 
 | Idea | Notes |
-|------|--------|
-| **Playback scrubber** (time slider) | Needs Streamlit state + subset chart; consider `st.fragment` |
-| **Side-by-side strategy replay** | Two result bundles same index; duplicate figure factory |
-| **True LONG / MED / SHORT regimes** | Separate detectors or resampled OHLCV per timeframe |
-| **Dash / real-time wallboard** | New app + deps; keep Streamlit as default |
-| **Robustness one-click** | Wire PhiAI / walk-forward to a button |
-| **Parameter heatmap** | Grid search + Plotly heatmap; cache results |
-| **Candle countdown** | Only meaningful for intraday bars + live clock |
+|------|-------|
+| **True multi-timeframe OHLCV** regimes | Resample bars per window instead of same bars + different k |
+| **Intraday candle countdown** | Needs bar interval + exchange calendar |
+| **PhiAI walk-forward one-click** | Wire existing PhiAI paths to easy-mode button |
 
 ## Principles
 

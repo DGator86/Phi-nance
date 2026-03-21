@@ -1,0 +1,2 @@
+# Optional Dash wallboard (see app_dash/app.py). Not required for Streamlit.
+dash>=2.14.0

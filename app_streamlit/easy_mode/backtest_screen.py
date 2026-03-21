@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from copy import deepcopy
 from typing import Any
 
@@ -11,99 +10,24 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from app_streamlit.config import INDICATOR_SPECS, IndicatorSpec
-from phi.backtest.direct import run_direct_backtest
+from app_streamlit.config import INDICATOR_SPECS
 from phi.blending.blender import DEFAULT_REGIME_BOOSTS
-from phi.indicators.simple import INDICATOR_COMPUTERS
 from phi.regime.train import train_regime_detector
 
+from app_streamlit.easy_mode.backtest_core import (
+    PRESETS,
+    build_auto_indicators_and_weights,
+    call_run_direct_backtest,
+    semantic_label_map_for_clusters,
+)
+from app_streamlit.easy_mode.backtest_extras import (
+    bootstrap_sharpe_distribution,
+    run_rsi_threshold_heatmap,
+    slice_replay_window,
+    train_multi_window_regimes,
+)
 from app_streamlit.easy_mode.constants import LOOKBACK_DAYS, PRIMARY_BACKTEST_SYMBOL
 from app_streamlit.easy_mode.data import load_ohlcv
-
-_PRESETS: tuple[tuple[str, float], ...] = (
-    ("Cautious (fewer trades)", 0.22),
-    ("Balanced", 0.16),
-    ("Responsive (more trades)", 0.10),
-)
-
-
-def _default_params_from_spec(spec: IndicatorSpec) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for param, ps in spec.params.items():
-        if isinstance(ps, tuple) and len(ps) >= 3:
-            out[param] = ps[2]
-        elif isinstance(ps, dict) and ps.get("type") == "select":
-            opts = list(ps.get("options", []))
-            dv = ps.get("default", opts[0] if opts else "")
-            out[param] = dv
-    return out
-
-
-def build_auto_indicators_and_weights() -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
-    """Same universe as the expert regime workbench: INDICATOR_SPECS ∩ INDICATOR_COMPUTERS."""
-    names = sorted(set(INDICATOR_SPECS.keys()) & set(INDICATOR_COMPUTERS.keys()))
-    indicators = {
-        n: {"enabled": True, "params": _default_params_from_spec(INDICATOR_SPECS[n])} for n in names
-    }
-    if not indicators:
-        raise RuntimeError("No indicators available (catalog intersection empty).")
-    n = len(indicators)
-    w = round(1.0 / n, 6)
-    weights = dict.fromkeys(indicators, w)
-    first = next(iter(weights))
-    weights[first] = round(w + (1.0 - sum(weights.values())), 6)
-    return indicators, weights
-
-
-def semantic_label_map_for_clusters(ohlcv: pd.DataFrame, regime_series: pd.Series) -> dict[str, str]:
-    """Map cluster_* labels to DEFAULT_REGIME_BOOSTS keys using mean return per cluster."""
-    rs = regime_series.reindex(ohlcv.index).dropna().astype(str)
-    if rs.empty:
-        return {}
-    close = ohlcv["close"].astype(float)
-    rets = close.pct_change()
-    labels = sorted(
-        rs.unique(),
-        key=lambda s: int(s.rsplit("_", 1)[-1]) if str(s).startswith("cluster_") else str(s),
-    )
-    scored: list[tuple[str, float]] = []
-    for lab in labels:
-        m = rs == lab
-        seg = rets.where(m).dropna()
-        scored.append((lab, float(seg.mean()) if len(seg) else 0.0))
-    scored.sort(key=lambda x: x[1])
-    templates = ("TREND_DN", "RANGE", "TREND_UP")
-    n = len(scored)
-    if n == 1:
-        return {scored[0][0]: "RANGE"}
-    if n == 2:
-        return {scored[0][0]: "TREND_DN", scored[1][0]: "TREND_UP"}
-    out: dict[str, str] = {}
-    for i, (lab, _) in enumerate(scored):
-        if n == 3:
-            out[lab] = templates[i]
-        else:
-            bucket = min(2, int(3 * i / max(n - 1, 1)))
-            out[lab] = templates[bucket]
-    return out
-
-
-def _call_run_direct_backtest(**kwargs: Any) -> tuple[dict[str, Any], Any]:
-    """Forward only kwargs accepted by this environment's ``run_direct_backtest``."""
-    sig = inspect.signature(run_direct_backtest)
-    allowed = set(sig.parameters)
-    filtered = {k: v for k, v in kwargs.items() if k in allowed}
-    if kwargs.get("blend_method") == "regime_weighted" and "regime_series" not in allowed:
-        filtered["blend_method"] = "weighted_sum"
-        for drop in (
-            "regime_series",
-            "regime_label_map",
-            "regime_boosts",
-            "regime_detector",
-            "regime_detector_params",
-        ):
-            filtered.pop(drop, None)
-    return run_direct_backtest(**filtered)
 
 
 def _thrust_style(ret: float) -> tuple[str, str]:
@@ -269,7 +193,7 @@ def render_auto_backtest() -> None:
             "RSI/Bollinger in range) after cluster→semantic mapping."
         )
         st.write("**Entry / exit:** long when composite signal clears the threshold; flat when it fades.")
-        st.json({"presets": [{"name": n, "signal_threshold": t} for n, t in _PRESETS]})
+        st.json({"presets": [{"name": n, "signal_threshold": t} for n, t in PRESETS]})
 
     if st.button("Run automatic analysis", type="primary", use_container_width=True):
         with st.spinner("Fitting regime model and running presets…"):
@@ -291,10 +215,11 @@ def render_auto_backtest() -> None:
             regime_series = detector.predict(ohlcv)
             regime_label_map = semantic_label_map_for_clusters(ohlcv, regime_series)
             regime_boosts = deepcopy(DEFAULT_REGIME_BOOSTS)
+            multi_regime = train_multi_window_regimes(ohlcv)
 
             results_by_name: dict[str, dict[str, Any]] = {}
-            for label, thresh in _PRESETS:
-                res, _ = _call_run_direct_backtest(
+            for label, thresh in PRESETS:
+                res, _ = call_run_direct_backtest(
                     ohlcv=ohlcv,
                     symbol=PRIMARY_BACKTEST_SYMBOL,
                     indicators=indicators,
@@ -322,6 +247,7 @@ def render_auto_backtest() -> None:
                 "ohlcv": ohlcv,
                 "regime_label_map": regime_label_map,
                 "n_indicators": len(indicators),
+                "multi_regime": multi_regime,
             }
 
     state = st.session_state.get("easy_last_backtest")
@@ -382,6 +308,27 @@ def render_auto_backtest() -> None:
         unsafe_allow_html=True,
     )
 
+    multi = state.get("multi_regime") or {}
+    if multi:
+        st.markdown("##### Three-window regime stack (k-means, different feature windows)")
+        st.caption("SHORT=12 bars · MEDIUM=20 · LONG=40 — same 3-cluster idea, different smoothing.")
+        mw1, mw2, mw3 = st.columns(3)
+        tier_cols = (mw1, mw2, mw3)
+        tier_order = ("SHORT", "MEDIUM", "LONG")
+        for col, tag in zip(tier_cols, tier_order):
+            block = multi.get(tag) or {}
+            rs_t = block.get("series")
+            mp = block.get("label_map") or {}
+            w = block.get("window", "?")
+            if rs_t is None or len(rs_t.dropna()) == 0:
+                col.metric(f"{tag} (w={w})", "—")
+                continue
+            mser = _mapped_regime_series(ohlcv, rs_t, mp)
+            lab = str(mser.dropna().iloc[-1]) if len(mser.dropna()) else "—"
+            if lab in ("nan", "NaT", "None"):
+                lab = "—"
+            col.metric(f"{tag} (w={w})", lab)
+
     st.markdown("##### Visual replay (best preset)")
     st.caption("Shaded bands = mapped regime · triangles = fills/flats · purple line = equity (right axis). Hover a marker for the rule text.")
     fig_replay = _build_visual_replay_figure(
@@ -391,6 +338,89 @@ def render_auto_backtest() -> None:
         title=f"{state['symbol']} — {best_name.split('(')[0].strip()} preset",
     )
     st.plotly_chart(fig_replay, use_container_width=True)
+
+    n_bars = len(ohlcv)
+    min_pb = min(60, n_bars)
+    end_ix = st.slider(
+        "Playback: show history through this bar (end of window)",
+        min_value=min_pb,
+        max_value=n_bars,
+        value=n_bars,
+        key="easy_replay_end_ix",
+    )
+    if end_ix < n_bars:
+        sub_o, sub_m, sub_best = slice_replay_window(ohlcv, mapped, best_res, end_ix)
+        fig_pb = _build_visual_replay_figure(
+            sub_o,
+            sub_best,
+            sub_m,
+            title=f"Replay through {sub_o.index[-1]} — {best_name.split('(')[0].strip()}",
+        )
+        st.plotly_chart(fig_pb, use_container_width=True)
+
+    other_presets = [p for p in results_by_name if p != best_name]
+    if other_presets:
+        compare = st.selectbox("Compare best preset side-by-side with", options=other_presets, key="easy_compare_preset")
+        c_left, c_right = st.columns(2)
+        with c_left:
+            st.caption(f"Best: {best_name.split('(')[0].strip()}")
+            st.plotly_chart(
+                _build_visual_replay_figure(ohlcv, best_res, mapped, title="Best"),
+                use_container_width=True,
+            )
+        with c_right:
+            st.caption(compare.split("(")[0].strip())
+            alt = results_by_name[compare]
+            st.plotly_chart(
+                _build_visual_replay_figure(ohlcv, alt, mapped, title="Alternate"),
+                use_container_width=True,
+            )
+
+    st.markdown("##### Robustness (return shuffle)")
+    st.caption("Monte Carlo on bar returns: if original Sharpe sits far above random permutations, the path is less likely pure luck.")
+    if st.button("Run robustness check (best preset)", key="easy_robust"):
+        with st.spinner("Bootstrapping…"):
+            dist = bootstrap_sharpe_distribution(best_res.get("portfolio_value") or [], n_sims=300)
+        r1, r2, r3, r4 = st.columns(4)
+        r1.metric("Original Sharpe", f"{dist['original']:.3f}")
+        r2.metric("Shuffle mean", f"{dist['mean']:.3f}")
+        r3.metric("5th pct", f"{dist['p05']:.3f}")
+        r4.metric("95th pct", f"{dist['p95']:.3f}")
+        if dist["original"] < dist["p50"]:
+            st.warning("Original Sharpe is **below** the median shuffle — treat edge as fragile.")
+        else:
+            st.success("Original Sharpe beats the median shuffled path.")
+
+    st.markdown("##### Parameter heatmap (probe stack)")
+    st.caption("5 indicators only (RSI/MACD/Bollinger/Dual SMA/Buy&Hold) × same regime tags — ~25 fast backtests.")
+    if st.button("Build RSI period × threshold Sharpe grid", key="easy_heat"):
+        with st.spinner("Grid search (may take a minute)…"):
+            mat = run_rsi_threshold_heatmap(
+                ohlcv,
+                regime_series,
+                rmap,
+                deepcopy(DEFAULT_REGIME_BOOSTS),
+                symbol=str(state["symbol"]),
+            )
+        st.session_state["easy_heatmap_df"] = mat
+    hm = st.session_state.get("easy_heatmap_df")
+    if hm is not None:
+        fig_hm = go.Figure(
+            data=go.Heatmap(
+                z=hm.values,
+                x=list(hm.columns),
+                y=list(hm.index),
+                colorscale="Viridis",
+                colorbar=dict(title="Sharpe"),
+            )
+        )
+        fig_hm.update_layout(
+            template="plotly_dark",
+            title="Sharpe: rows = signal threshold, cols = RSI period",
+            height=420,
+            paper_bgcolor="rgba(15,23,42,0.6)",
+        )
+        st.plotly_chart(fig_hm, use_container_width=True)
 
     with st.expander("Trade log & last-bar signal mix", expanded=False):
         te = best_res.get("trade_events") or []
@@ -412,8 +442,8 @@ def render_auto_backtest() -> None:
                 hide_index=True,
             )
 
-    cols = st.columns(len(_PRESETS))
-    for i, (label, _) in enumerate(_PRESETS):
+    cols = st.columns(len(PRESETS))
+    for i, (label, _) in enumerate(PRESETS):
         r = results_by_name[label]
         cols[i].metric(
             label.split("(")[0].strip(),
@@ -423,7 +453,7 @@ def render_auto_backtest() -> None:
 
     fig = go.Figure()
     colors = ("#64748b", "#38bdf8", "#a78bfa")
-    for idx, (label, _) in enumerate(_PRESETS):
+    for idx, (label, _) in enumerate(PRESETS):
         pv = results_by_name[label].get("portfolio_value") or []
         if not pv:
             continue

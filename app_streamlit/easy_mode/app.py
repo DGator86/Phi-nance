@@ -63,7 +63,10 @@ def run_easy_app() -> None:
         f"Now watching: **{', '.join(UNIVERSE)}**."
     )
     st.sidebar.caption(
-        "Advanced controls: `streamlit run app_streamlit/expert_workbench.py`"
+        "Expert: `streamlit run app_streamlit/expert_workbench.py`"
+    )
+    st.sidebar.caption(
+        "Optional Dash wallboard: `pip install -r requirements-dash.txt` then `python app_dash/app.py`"
     )
 
     if page == "Overview":
