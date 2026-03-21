@@ -62,6 +62,8 @@ class RunConfig(BaseModel):
     allocation_params: dict[str, Any] = Field(default_factory=dict)
     rebalance_frequency: str | int | None = "M"
     rebalance_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Optional inline override for options regime playbook (see phi.options.regime_playbook)
+    options_regime_playbook: dict[str, Any] | None = None
     schema_version: int = Field(default=1, frozen=True)
 
     @field_validator("symbols")

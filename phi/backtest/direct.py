@@ -5,7 +5,7 @@ Uses OHLCV DataFrame directly. Guaranteed to work with pipeline data.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -53,6 +53,9 @@ def run_direct_backtest(
     position_size_pct: float = 0.95,
     regime_series: pd.Series | None = None,
     regime_label_map: dict[str, str] | None = None,
+    regime_boosts: Optional[dict[str, dict[str, float]]] = None,
+    regime_detector: Any | None = None,
+    regime_detector_params: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """
     Run a vectorized equity backtest directly on OHLCV bars.
@@ -86,6 +89,7 @@ def run_direct_backtest(
     if initial_capital <= 0:
         raise BacktestError(f"initial_capital must be > 0, got {initial_capital}")
     position_size_pct = float(np.clip(position_size_pct, 0.01, 1.0))
+    resolved_boosts = regime_boosts if regime_boosts is not None else {}
 
     df = ohlcv.copy()
     cols = {c.lower(): c for c in df.columns}
@@ -149,7 +153,7 @@ def run_direct_backtest(
                     method=blend_method,
                     weights=blend_weights,
                     regime=str(regime),
-                    regime_boosts={},
+                    regime_boosts=resolved_boosts,
                 ).iloc[0]
             )
         composite = composite.fillna(0.0)

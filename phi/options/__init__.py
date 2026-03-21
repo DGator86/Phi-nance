@@ -10,6 +10,17 @@ from .data_adapter import adapt_for_backtesting, fetch_options_data
 from .market import fetch_options_market_data
 from .position import OptionPosition
 from .pricing import black_scholes_price, delta, gamma, theta, vega
+from .regime_playbook import (
+    OptionsRegimePlaybook,
+    RegimePlaybookEntry,
+    build_default_options_regime_playbook,
+    get_default_options_regime_playbook,
+    load_options_regime_playbook,
+    playbook_entry_for_label,
+    playbook_to_summary_dict,
+    quick_detailed_regime_from_ohlcv,
+    resolve_playbook_regime_key,
+)
 from .regime_strategy_map import (
     APPROVED_STRATEGIES,
     REGIME_STRATEGY_MAP,
@@ -37,4 +48,13 @@ __all__ = [
     "strategies_for_regime",
     "map_regime_probabilities_to_strategies",
     "is_approved_strategy",
+    "OptionsRegimePlaybook",
+    "RegimePlaybookEntry",
+    "build_default_options_regime_playbook",
+    "get_default_options_regime_playbook",
+    "load_options_regime_playbook",
+    "playbook_entry_for_label",
+    "playbook_to_summary_dict",
+    "quick_detailed_regime_from_ohlcv",
+    "resolve_playbook_regime_key",
 ]

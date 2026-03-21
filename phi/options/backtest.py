@@ -86,9 +86,39 @@ def _compute_metrics(values: Iterable[float], initial_capital: float) -> Dict[st
     }
 
 
+def _attribute_daily_pnl_by_regime(
+    portfolio_values: list[float],
+    index: pd.Index,
+    regime_series: pd.Series,
+) -> dict[str, dict[str, float]]:
+    """Attribute day-over-day portfolio changes to the regime label on that bar."""
+    if not portfolio_values or len(portfolio_values) != len(index):
+        return {}
+    aligned = regime_series.reindex(index)
+    aligned = aligned.ffill()
+    pv = np.array(portfolio_values, dtype=float)
+    buckets: dict[str, list[float]] = {}
+    for i in range(1, len(pv)):
+        raw = aligned.iloc[i]
+        label = "_unknown" if pd.isna(raw) else str(raw)
+        d = float(pv[i] - pv[i - 1])
+        buckets.setdefault(label, []).append(d)
+    out: dict[str, dict[str, float]] = {}
+    for lab, vals in buckets.items():
+        arr = np.array(vals, dtype=float)
+        out[lab] = {
+            "attributed_pnl": float(arr.sum()),
+            "days": float(len(vals)),
+            "mean_daily": float(arr.mean()) if len(vals) else 0.0,
+        }
+    return out
+
+
 def run_options_backtest(
     data_or_config: pd.DataFrame | RunConfig,
     data: Optional[pd.DataFrame] = None,
+    *,
+    regime_series: Optional[pd.Series] = None,
     **legacy_kwargs: Any,
 ) -> Dict[str, Any]:
     """Run a single-position European options backtest.
@@ -102,12 +132,17 @@ def run_options_backtest(
     if isinstance(data_or_config, RunConfig):
         if data is None:
             raise ValueError("data is required when passing a RunConfig")
-        return _run_from_config(data_or_config, data)
+        return _run_from_config(data_or_config, data, regime_series=regime_series)
 
     return _run_legacy(data_or_config, **legacy_kwargs)
 
 
-def _run_from_config(config: RunConfig, data: pd.DataFrame) -> Dict[str, Any]:
+def _run_from_config(
+    config: RunConfig,
+    data: pd.DataFrame,
+    *,
+    regime_series: Optional[pd.Series] = None,
+) -> Dict[str, Any]:
     logger.info("Starting options backtest for symbols=%s from %s to %s", config.symbols, config.start_date, config.end_date)
     if data is None or data.empty:
         raise ValueError("data must contain underlying OHLCV history")
@@ -139,6 +174,12 @@ def _run_from_config(config: RunConfig, data: pd.DataFrame) -> Dict[str, Any]:
     position: OptionPosition | None = None
     trade_log: list[dict[str, Any]] = []
     portfolio_values: list[float] = []
+    regime_at_entry: str | None = None
+    regime_aligned = (
+        regime_series.reindex(close.index).ffill()
+        if regime_series is not None and not regime_series.empty
+        else None
+    )
 
     for ts, price in close.items():
         as_of = _to_date(ts)
@@ -153,6 +194,12 @@ def _run_from_config(config: RunConfig, data: pd.DataFrame) -> Dict[str, Any]:
             position = OptionPosition.from_contract(contract=contract, quantity=quantity, entry_cost=total_cost, entry_date=as_of)
             logger.info("Opened %s position: symbol=%s strike=%.2f expiry=%s qty=%d premium=%.4f", contract.option_type.value, symbol, contract.strike, contract.expiry, quantity, premium)
             trade_log.append({"date": as_of.isoformat(), "action": "buy", "price": premium, "value": total_cost})
+            if regime_aligned is not None:
+                try:
+                    rv = regime_aligned.loc[ts]
+                    regime_at_entry = None if pd.isna(rv) else str(rv)
+                except (KeyError, TypeError, ValueError):
+                    regime_at_entry = None
 
         position_value = position.mark_to_market(as_of=as_of, r=r, sigma=iv, underlying_price=float(price)) if position else 0.0
         portfolio_values.append(cash + position_value)
@@ -168,12 +215,18 @@ def _run_from_config(config: RunConfig, data: pd.DataFrame) -> Dict[str, Any]:
     final_value = cash + (position.mark_to_market(as_of=_to_date(close.index[-1]), r=r, sigma=iv, underlying_price=float(close.iloc[-1])) if position else 0.0)
     metrics = _compute_metrics(portfolio_values, config.initial_capital)
     logger.info("Completed options backtest for %s: final_value=%.2f trades=%d", symbol, final_value, len(trade_log))
-    return {
+    out: Dict[str, Any] = {
         "portfolio_value": portfolio_values,
         "final_value": final_value,
         "trades": trade_log,
         **metrics,
     }
+    if regime_series is not None and not regime_series.empty:
+        out["regime_series"] = regime_series
+        out["ohlcv"] = data
+        out["metrics_by_regime"] = _attribute_daily_pnl_by_regime(portfolio_values, close.index, regime_series)
+        out["regime_at_entry"] = regime_at_entry
+    return out
 
 
 def _run_legacy(

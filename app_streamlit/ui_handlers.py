@@ -26,6 +26,11 @@ from phi.backtest import run_direct_backtest, run_portfolio_backtest
 from phi.exceptions import BacktestError, DataFetchError, ValidationError
 from phi.logging import get_logger
 from phi.options import run_options_backtest
+from phi.options.regime_playbook import (
+    OptionsRegimePlaybook,
+    load_options_regime_playbook,
+    playbook_to_summary_dict,
+)
 from phi.options.unusual_whales_context import enrich_run_config_options_from_uw
 from phi.regime import list_saved_detectors, load_detector
 from phi.regime.train import train_regime_detector
@@ -45,6 +50,46 @@ REGIME_METHOD_MAP = {
     "Clustering (KMeans)": "kmeans",
     "GMM": "gmm",
 }
+
+
+def build_regime_boosts_from_payload(payload: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """Map raw detector state keys to friendly regime labels for regime_weighted blending."""
+    label_map: dict[str, str] = {str(k): str(v) for k, v in (payload.get("regime_label_map") or {}).items()}
+    matrix = payload.get("regime_boost_matrix") or {}
+    out: dict[str, dict[str, float]] = {}
+    for raw_state, weights in matrix.items():
+        if not isinstance(weights, dict):
+            continue
+        friendly = label_map.get(str(raw_state), str(raw_state))
+        out[friendly] = {str(k): float(v) for k, v in weights.items()}
+    return out
+
+
+def load_detector_from_payload(payload: dict[str, Any]) -> Any:
+    """Load persisted regime detector from sidebar selection."""
+    path = payload.get("regime_selected_model_path")
+    if not path or not str(path).strip():
+        raise BacktestError("Select a saved regime model in the sidebar, or train one first.")
+    return load_detector(str(path))
+
+
+def _json_safe_results(results: dict[str, Any]) -> dict[str, Any]:
+    """Convert Series/DataFrame so RunHistory JSON save does not rely on str()."""
+    out: dict[str, Any] = {}
+    for k, v in results.items():
+        if isinstance(v, pd.Series):
+            out[k] = {str(ix): str(val) for ix, val in v.items()}
+        elif isinstance(v, pd.DataFrame):
+            out[k] = v.reset_index().to_dict(orient="list")
+        else:
+            out[k] = v
+    return out
+
+
+def _strip_heavy_results_for_storage(results: dict[str, Any]) -> dict[str, Any]:
+    """Drop large frames from the persisted run artifact."""
+    slim = {k: v for k, v in results.items() if k not in {"ohlcv"}}
+    return _json_safe_results(slim)
 
 
 def validate_config_payload(payload: dict[str, Any]) -> list[str]:
@@ -141,6 +186,7 @@ def build_run_config(payload: dict[str, Any]) -> RunConfig:
         allocation_params=payload.get("allocation_params", {}),
         rebalance_frequency=payload.get("rebalance_frequency", "M"),
         rebalance_threshold=payload.get("rebalance_threshold"),
+        options_regime_playbook=payload.get("options_regime_playbook"),
     )
 
 
@@ -218,12 +264,34 @@ def handle_run_backtest(
         set_config(cfg.model_dump())
 
         if cfg.trading_mode == "options":
-            results = run_options_fn(cfg, data_map[cfg.symbols[0]])
+            playbook = load_options_regime_playbook()
+            if cfg.options_regime_playbook:
+                playbook = OptionsRegimePlaybook.model_validate(cfg.options_regime_playbook)
+
+            opt_regime_series: pd.Series | None = None
+            if payload.get("regime_enabled"):
+                detector = load_detector_from_payload(payload)
+                use_precomputed = bool(payload.get("regime_use_precomputed"))
+                precomputed = st.session_state.get("regime_series")
+                primary_ohlcv = data_map[cfg.symbols[0]]
+                if use_precomputed and isinstance(precomputed, pd.Series) and not precomputed.empty:
+                    opt_regime_series = precomputed.reindex(primary_ohlcv.index).ffill()
+                else:
+                    opt_regime_series = detector.predict(primary_ohlcv)
+                    st.session_state["regime_series"] = opt_regime_series
+
+            results = run_options_fn(
+                cfg, data_map[cfg.symbols[0]], regime_series=opt_regime_series
+            )
+            results = {
+                **dict(results),
+                "options_regime_playbook": playbook_to_summary_dict(playbook),
+            }
             if uw_context:
-                results = {**dict(results), "unusual_whales_context": uw_context}
+                results["unusual_whales_context"] = uw_context
         else:
+            primary = data_map[cfg.symbols[0]]
             regime_series = None
-            regime_label_map = payload.get("regime_label_map")
             regime_boosts = None
             regime_detector = None
             if payload.get("regime_enabled"):
@@ -233,30 +301,48 @@ def handle_run_backtest(
                 if use_precomputed and isinstance(precomputed, pd.Series) and not precomputed.empty:
                     regime_series = precomputed
                 else:
-                    regime_series = detector.predict(data)
+                    regime_series = detector.predict(primary)
                     st.session_state["regime_series"] = regime_series
                 regime_boosts = build_regime_boosts_from_payload(payload)
                 if bool(payload.get("regime_detect_on_the_fly", True)):
                     regime_detector = detector
 
-            primary = data_map[cfg.symbols[0]]
-            results, _ = run_equity_fn(
-                ohlcv=primary,
-                symbol=cfg.symbols[0],
-                indicators=cfg.indicators,
-                blend_weights=cfg.blend_weights,
-                blend_method=cfg.blend_method,
-                initial_capital=cfg.initial_capital,
-                regime_series=regime_series,
-                regime_label_map=None,
-            )
-            if regime_series is not None:
-                results["regime_series"] = regime_series
-                results["ohlcv"] = primary
+            if len(cfg.symbols) > 1:
+                results = run_portfolio_backtest(
+                    data_dict=data_map,
+                    indicators=cfg.indicators,
+                    blend_weights=cfg.blend_weights,
+                    blend_method=cfg.blend_method,
+                    initial_capital=cfg.initial_capital,
+                    allocation_strategy=cfg.allocation_strategy,
+                    allocation_params=cfg.allocation_params or {},
+                    rebalance_frequency=cfg.rebalance_frequency,
+                    rebalance_threshold=cfg.rebalance_threshold,
+                    regime_series=regime_series,
+                )
+                if regime_series is not None:
+                    results["regime_series"] = regime_series
+                    results["ohlcv"] = primary
+            else:
+                results, _ = run_equity_fn(
+                    ohlcv=primary,
+                    symbol=cfg.symbols[0],
+                    indicators=cfg.indicators,
+                    blend_weights=cfg.blend_weights,
+                    blend_method=cfg.blend_method,
+                    initial_capital=cfg.initial_capital,
+                    regime_series=regime_series,
+                    regime_label_map=payload.get("regime_label_map") if payload.get("regime_enabled") else None,
+                    regime_boosts=regime_boosts,
+                    regime_detector=regime_detector,
+                )
+                if regime_series is not None:
+                    results["regime_series"] = regime_series
+                    results["ohlcv"] = primary
 
         history = RunHistory()
         run_id = history.create_run(cfg)
-        history.save_results(run_id, dict(results))
+        history.save_results(run_id, _strip_heavy_results_for_storage(dict(results)))
         results_with_run = {**dict(results), "run_id": run_id}
         set_results(results_with_run)
         return results_with_run

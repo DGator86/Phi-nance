@@ -33,6 +33,39 @@ from phi.run_config import RunConfig, RunHistory
 logger = get_logger(__name__)
 
 
+def render_options_playbook_sidebar() -> None:
+    """Show composite regime × vol playbook rows next to options fields."""
+    from phi.options.regime_playbook import get_default_options_regime_playbook
+
+    pb = get_default_options_regime_playbook()
+    with st.expander("Regime playbook (options cheat sheet)", expanded=False):
+        st.caption(
+            "Each row ties a **trend × volatility** label to approved structures and a risk envelope. "
+            "Enable **regime-aware blending** below and select a saved model to tag options backtests "
+            "and see PnL by regime in results."
+        )
+        rk = st.selectbox(
+            "Inspect row",
+            options=sorted(pb.regimes.keys()),
+            key="options_playbook_regime_key",
+        )
+        entry = pb.regimes[rk]
+        st.markdown(f"**{entry.display_name}** — {entry.summary}")
+        st.write(
+            f"DTE **{entry.dte_days_min}–{entry.dte_days_max}** trading days | "
+            f"Δ **{entry.delta_band[0]:.2f}–{entry.delta_band[1]:.2f}** | "
+            f"max risk guideline **~{entry.max_risk_pct_portfolio * 100:.1f}%** of portfolio"
+        )
+        structs = entry.allowed_structures
+        st.caption("Structures: " + ", ".join(structs[:10]) + (" …" if len(structs) > 10 else ""))
+        if rk.startswith("BULL"):
+            st.caption("Directional hint: bullish structures / calls more natural in this row.")
+        elif rk.startswith("BEAR"):
+            st.caption("Directional hint: bearish structures / puts more natural in this row.")
+        else:
+            st.caption("Directional hint: neutral / range structures often fit ranging regimes.")
+
+
 def render_indicator_selector(selected_names: list[str]) -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
     """Render indicator multiselect and per-indicator parameter controls."""
     categories: dict[str, list[str]] = {}
@@ -138,6 +171,7 @@ def render_config_panel() -> tuple[dict[str, Any], bool]:
             option_iv = st.number_input("Implied volatility", min_value=0.01, max_value=5.0, value=0.3, step=0.01, key="option_iv")
             option_rate = st.number_input("Risk-free rate", min_value=0.0, max_value=0.5, value=0.02, step=0.005, key="option_rate")
             option_qty = st.number_input("Contracts", min_value=1, max_value=1000, value=1, step=1, key="option_qty")
+            render_options_playbook_sidebar()
 
         portfolio_payload = render_portfolio_panel(symbols)
         run_clicked = st.form_submit_button("Run backtest", type="primary")
@@ -431,6 +465,31 @@ def render_results(results: dict[str, Any]) -> None:
     pv = results.get("portfolio_value", [])
     if pv:
         st.line_chart(pd.Series(pv, name="Portfolio Value"))
+
+    rae = results.get("regime_at_entry")
+    if rae:
+        st.info(f"**Regime at option entry:** `{rae}`")
+
+    mbr = results.get("metrics_by_regime")
+    if isinstance(mbr, dict) and mbr:
+        st.subheader("Attributed daily PnL by regime")
+        st.caption("Day-over-day portfolio change summed by the regime label on that bar (requires regime model + options run).")
+        st.dataframe(
+            pd.DataFrame.from_dict(mbr, orient="index"),
+            use_container_width=True,
+        )
+
+    opb = results.get("options_regime_playbook")
+    if isinstance(opb, dict) and opb.get("transitions"):
+        with st.expander("Regime transition map (what to watch)"):
+            for row in opb["transitions"]:
+                f = row.get("from") or row.get("from_regime", "")
+                t = row.get("to") or row.get("to_regime", "")
+                st.markdown(
+                    f"**{f} → {t}**  \n"
+                    f"- Trigger: {row.get('trigger', '')}  \n"
+                    f"- Response: *{row.get('action', '')}*"
+                )
 
     uw = results.get("unusual_whales_context")
     if isinstance(uw, dict) and uw:

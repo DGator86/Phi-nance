@@ -22,6 +22,7 @@ from app_streamlit.ui_components import (
     render_results,
     render_run_history,
 )
+from app_streamlit.trading_desk import render_trading_desk
 from app_streamlit.ui_handlers import handle_load_run, handle_run_backtest, handle_train_regime_detector
 from phi.config import settings
 
@@ -34,7 +35,13 @@ def main() -> None:
     st.set_page_config(page_title="Phi-nance Live Workbench", layout="wide")
     init_session_state()
 
-    page = st.sidebar.radio("Page", ["Backtest Workbench", "Live Trading", "LOB Simulation"])
+    page = st.sidebar.radio(
+        "Page",
+        ["Trading desk", "Backtest Workbench", "Live Trading", "LOB Simulation"],
+    )
+    if page == "Trading desk":
+        render_trading_desk()
+        return
     if page == "Live Trading":
         render_live_dashboard()
         return

@@ -223,8 +223,31 @@ def test_handle_load_run_rejects_unsafe_run_id(monkeypatch):
 
 
 def test_handle_train_regime_detector_unknown_method_warns_and_falls_back(monkeypatch):
+    class _SessionState:
+        """Minimal Streamlit-like session_state (attribute + key assignment)."""
+
+        def __init__(self) -> None:
+            object.__setattr__(self, "_data", {})
+
+        def __getitem__(self, key: str):
+            return self._data[key]
+
+        def __setitem__(self, key: str, value) -> None:
+            self._data[key] = value
+
+        def __getattr__(self, name: str):
+            if name == "_data":
+                raise AttributeError(name)
+            return self._data[name]
+
+        def __setattr__(self, name: str, value) -> None:
+            if name == "_data":
+                object.__setattr__(self, name, value)
+            else:
+                object.__getattribute__(self, "_data")[name] = value
+
     class FakeSt:
-        session_state = {}
+        session_state = _SessionState()
 
     captured: dict[str, object] = {}
 
@@ -266,10 +289,7 @@ def test_handle_run_backtest_passes_regime_label_map(monkeypatch):
         def predict(self, data):
             return pd.Series(["state_0"] * len(data), index=data.index)
 
-    class FakeSt:
-        session_state = {"regime_detector": FakeDetector()}
-
-    monkeypatch.setattr(ui_handlers, "st", FakeSt)
+    monkeypatch.setattr(ui_handlers, "load_detector_from_payload", lambda _p: FakeDetector())
 
     seen: dict[str, object] = {}
 
