@@ -1,5 +1,7 @@
 # Phi-nance Architecture
 
+For a **folder-by-folder map** (phi vs phinance vs legacy, where to add code), see [`architecture_layout.md`](architecture_layout.md).
+
 ## High-Level Overview
 
 Phi-nance is organized as a modular research platform with clear separation between data access, strategy logic, optimization, and user interfaces.

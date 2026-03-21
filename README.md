@@ -46,15 +46,20 @@ cp .env.example .env
 # 5) Build/refresh local data spine
 python scripts/setup_data_spine.py --tickers SPY QQQ --years 2
 
-# 6) Run the modular Streamlit app
+# 6) Run the modular Streamlit app (easy mode by default)
 streamlit run app_streamlit/main.py --server.headless true
 ```
+
+**Windows:** from repo root, `.\run_local.ps1` uses the venv and binds `127.0.0.1` (auto-picks the next free port if 8501 is busy).
 
 Useful commands:
 
 ```bash
-# Streamlit workbench
+# Streamlit (easy mode: overview / auto backtest / ticker)
 streamlit run app_streamlit/main.py --server.headless true
+
+# Full expert workbench (trading desk, all tuning)
+streamlit run app_streamlit/expert_workbench.py --server.headless true
 
 # Engine health validation
 python scripts/engine_health.py
@@ -67,17 +72,20 @@ python scripts/run_backtest.py --symbol SPY --start 2020-01-01 --end 2024-12-31 
 
 ```text
 Phi-nance/
-├── app_streamlit/         # Streamlit UI modules and pages
+├── app_streamlit/         # Streamlit UI (main=easy mode, expert_workbench, pages)
 ├── phi/                   # Core runtime package (config, logging, data, indicators, options)
 ├── phinance/              # Research/optimization and agent framework package
 ├── regime_engine/         # MFT regime engine and feature pipeline components
 ├── strategies/            # Strategy implementations used by backtest adapters
+├── legacy/                # Deprecated Streamlit/Lumibot apps (do not extend)
 ├── scripts/               # Operational CLI scripts (fetching, backtests, setup)
 ├── tests/                 # Unit and integration-style tests
 ├── docs/                  # End-user and contributor documentation
-├── docs/Architecture.md   # System architecture and module map
-└── docs/CONTRIBUTING.md   # Contributor workflow and standards
+├── run_local.ps1          # Windows: venv + Streamlit on localhost
+└── start.sh               # Linux/macOS: venv + Streamlit
 ```
+
+Deeper map: [`docs/architecture_layout.md`](docs/architecture_layout.md).
 
 ## Configuration
 
@@ -131,10 +139,25 @@ optimized, explanation = run_phiai_optimization(
 )
 ```
 
+```python
+from phi.options.data_adapter import fetch_options_data
+
+options_df = fetch_options_data(
+    symbol="SPY",
+    start="2022-01-10",
+    end="2022-01-15",
+)
+```
+
+See [`docs/postgres-options-vendor.md`](docs/postgres-options-vendor.md) for setup details.
+
 ## Documentation
 
+- Repository layout: [`docs/architecture_layout.md`](docs/architecture_layout.md)
+- Branching / workflow: [`docs/DEV_WORKFLOW.md`](docs/DEV_WORKFLOW.md)
 - Architecture: [`docs/Architecture.md`](docs/Architecture.md)
 - Contributor guide: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)
+- Easy mode (Streamlit): [`docs/easy_mode.md`](docs/easy_mode.md)
 - Full docs index: [`docs/quickstart.md`](docs/quickstart.md)
 - External options data landscape: [`docs/external-options-data-landscape.md`](docs/external-options-data-landscape.md)
 
@@ -149,16 +172,3 @@ Please follow the standards and workflow in [`docs/CONTRIBUTING.md`](docs/CONTRI
 ## License
 
 MIT. See [`LICENSE`](LICENSE).
-
-
-```python
-from phi.options.data_adapter import fetch_options_data
-
-options_df = fetch_options_data(
-    symbol="SPY",
-    start="2022-01-10",
-    end="2022-01-15",
-)
-```
-
-See `docs/postgres-options-vendor.md` for setup details.

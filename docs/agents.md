@@ -6,6 +6,8 @@
 
 Phi-nance is a quantitative trading platform built around a Market Field Theory (MFT) regime detection engine with a Streamlit dashboard UI. Single Python application (not a monorepo) with two internal packages: `regime_engine/` and `strategies/`.
 
+**Where code lives:** `docs/architecture_layout.md` (phi vs phinance vs app_streamlit vs legacy). **Branching:** `docs/DEV_WORKFLOW.md`.
+
 ### Running the app
 
 **Default (easy mode — overview, automatic backtest, ticker spotlight):**

@@ -47,6 +47,11 @@ For refactors, add or update tests that cover:
 - error/validation paths,
 - regression scenarios introduced by the change.
 
+## Branching
+
+- Integrate on **`MAIN`**; use short-lived feature branches. See [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) for conventions and cleanup tips.
+- Avoid history-rewriting “clean slate” branches unless the whole team agrees on a migration plan.
+
 ## Pull Request Process
 
 1. Create a focused branch and keep commits logically grouped.
