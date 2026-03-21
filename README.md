@@ -176,6 +176,9 @@ Optional [pre-commit](https://pre-commit.com/) hooks are configured in `.pre-com
 
 ## Troubleshooting
 
+- **Windows: use the venv interpreter** — Running `python -m streamlit ...` may use **AppData** Python 3.13 (wrong deps, slow protobuf import, or crashes). Prefer **`.\run_local.ps1`** or **`.\venv\Scripts\python.exe -m streamlit run ...`** from the repo root.
+- **PowerShell 5.x** — `&&` is not valid; chain with **`;`** (e.g. `cd path; git pull origin MAIN`).
+- **Port 8501 already in use** — [`run_local.ps1`](run_local.ps1) scans upward for a free port. To free 8501: `Get-NetTCPConnection -LocalPort 8501 -State Listen | Select-Object -ExpandProperty OwningProcess -Unique` then **`Stop-Process -Id <that_pid> -Force`** (use the real PID, not an example).
 - **`127.0.0.1 refused to connect` / Streamlit won’t open** — The server is not running or the port is taken. Keep the terminal open, use [`run_local.ps1`](run_local.ps1) on Windows (it picks the next free port after 8501), or see [`docs/easy_mode.md`](docs/easy_mode.md).
 - **Wrong or missing packages** — Activate the project **venv** and reinstall: `pip install -r requirements.txt`. Quick check: `python scripts/quick_import_check.py`. Full engine smoke test: `python scripts/engine_health.py`.
 - **Doc links 404 on Linux/macOS** — Use **`docs/Architecture.md`** and **`docs/CONTRIBUTING.md`** (capital **A** / **C**). Duplicate lowercase paths were removed; see git history on `MAIN` if you see missing files after an old pull.

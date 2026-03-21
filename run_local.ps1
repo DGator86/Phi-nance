@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 if (-not (Test-Path ".\venv\Scripts\python.exe")) {
-    Write-Host "venv not found. Create it from repo root: python -m venv venv && .\venv\Scripts\pip install -r requirements.txt"
+    Write-Host "venv not found. From repo root: python -m venv venv; .\venv\Scripts\pip install -r requirements.txt"
     exit 1
 }
 
@@ -51,5 +51,11 @@ if ($chosen -ne $Port) {
     Write-Host "Using first free port: $chosen"
 }
 
+# Env overrides beat .streamlit/config.toml (fixes wrong URL when we bump port e.g. 8502).
+$env:STREAMLIT_SERVER_PORT = "$chosen"
+$env:STREAMLIT_SERVER_ADDRESS = "127.0.0.1"
+$env:STREAMLIT_BROWSER_SERVER_PORT = "$chosen"
+
 Write-Host "Starting Streamlit - keep this window open. Open: http://localhost:$chosen"
+Write-Host "(Use repo venv only - not AppData Python - so Streamlit/protobuf match this project.)"
 & .\venv\Scripts\python.exe -m streamlit run app_streamlit/live_workbench.py --server.port $chosen --server.address 127.0.0.1

@@ -1,4 +1,4 @@
-# Phi-nance Premium v3.0 — Quantitative Research Platform
+# Phi-nance Premium v3.0 - Quantitative Research Platform
 # Dark glassmorphism + neural purple/orange theme
 
 [server]
@@ -9,7 +9,7 @@ enableXsrfProtection = false
 
 [browser]
 gatherUsageStats = false
-# Use localhost so Windows browsers open a valid URL (0.0.0.0 is not a usable host in most browsers).
+# Use localhost so Windows browsers open a valid URL (avoid 0.0.0.0 in the browser bar).
 serverAddress = "localhost"
 serverPort = 8501
 
