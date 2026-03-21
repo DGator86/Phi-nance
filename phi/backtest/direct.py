@@ -21,6 +21,30 @@ logger = get_logger(__name__)
 _TRADING_MINUTES_PER_YEAR = 252 * 390  # US equity market
 
 
+def _align_blend_weights_to_columns(
+    columns: pd.Index,
+    blend_weights: dict[str, float],
+) -> dict[str, float]:
+    """Match weights to columns that actually exist on ``signals_df`` (some indicators may fail).
+
+    Extra keys in ``blend_weights`` are ignored. Missing keys default to 1.0 before normalization.
+    """
+    cols = list(columns)
+    if not cols:
+        return {}
+    w: dict[str, float] = {}
+    for c in cols:
+        key = c if c in blend_weights else str(c)
+        if key in blend_weights:
+            w[c] = max(0.0, float(blend_weights[key]))
+        else:
+            w[c] = 1.0
+    total = sum(w.values())
+    if total <= 0:
+        return {c: 1.0 / len(cols) for c in cols}
+    return {c: v / total for c, v in w.items()}
+
+
 def _bars_per_year(df: pd.DataFrame) -> float:
     """Infer annualised bar count from the DataFrame index.
 
@@ -120,6 +144,10 @@ def run_direct_backtest(
     signals_df = pd.DataFrame(signals_dict)
     signals_df = signals_df.reindex(df.index).ffill().bfill()
 
+    blend_weights = _align_blend_weights_to_columns(signals_df.columns, blend_weights)
+    if not blend_weights:
+        return _empty_results(initial_capital), _empty_strat()
+
     from phi.blending import blend_signals
 
     if regime_detector is None and regime_detector_params:
@@ -140,23 +168,30 @@ def run_direct_backtest(
         else:
             mapped_regimes = aligned_regimes
 
-        composite = pd.Series(index=signals_df.index, dtype=float, name="composite_signal")
-        for idx in signals_df.index:
-            regime = mapped_regimes.loc[idx]
-            if pd.isna(regime):
-                composite.loc[idx] = 0.0
+        # One blend per distinct regime label (same weights for all bars in that regime).
+        composite = pd.Series(0.0, index=signals_df.index, dtype=float, name="composite_signal")
+        mapped = mapped_regimes.reindex(signals_df.index)
+        for regime_label in mapped.dropna().unique():
+            mask = mapped == regime_label
+            if not bool(mask.any()):
                 continue
-
-            composite.loc[idx] = float(
-                blend_signals(
-                    signals_df.loc[[idx]],
+            sub = signals_df.loc[mask]
+            try:
+                comp_part = blend_signals(
+                    sub,
                     method=blend_method,
                     weights=blend_weights,
-                    regime=str(regime),
+                    regime=str(regime_label),
                     regime_boosts=resolved_boosts,
-                ).iloc[0]
-            )
-        composite = composite.fillna(0.0)
+                )
+                composite.loc[sub.index] = comp_part.reindex(sub.index).fillna(0.0).to_numpy()
+            except Exception as exc:
+                logger.warning(
+                    "run_direct_backtest: regime_weighted blend failed for regime=%r: %s",
+                    regime_label,
+                    exc,
+                )
+                composite.loc[sub.index] = 0.0
     else:
         composite = blend_signals(
             signals_df,
