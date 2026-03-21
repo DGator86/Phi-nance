@@ -9,7 +9,8 @@ enableXsrfProtection = false
 
 [browser]
 gatherUsageStats = false
-serverAddress = "0.0.0.0"
+# Use localhost so Windows browsers open a valid URL (0.0.0.0 is not a usable host in most browsers).
+serverAddress = "localhost"
 serverPort = 8501
 
 [theme]
