@@ -18,7 +18,7 @@ Phi-nance is a quantitative trading research platform for building, blending, an
 - Centralized configuration, logging, custom exceptions, and validation helpers.
 - **Ecosystem:** canonical OHLCV for Lumibot / TensorTrade / agent-cli adapters — see [docs/ecosystem_integration.md](docs/ecosystem_integration.md).
 - **Options playbook:** regime × vol rows, transition map, and regime-tagged options metrics — see [docs/options_regime_playbook.md](docs/options_regime_playbook.md); Streamlit hub: sidebar **Trading desk**.
-- **Options signal vision (MTF + regime + info-theory + ML tuning):** gap analysis and phased plan — [docs/signals_research_roadmap.md](docs/signals_research_roadmap.md).
+- **Options signal vision (MTF + regime + info-theory + ML tuning):** gap analysis and phased plan — [docs/signals_research_roadmap.md](docs/signals_research_roadmap.md). **Trading desk** has a live **Build signal** card (`phi.options.build_options_signal_card`).
 
 ## Quick Start
 

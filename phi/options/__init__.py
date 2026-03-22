@@ -28,6 +28,8 @@ from .regime_strategy_map import (
     map_regime_probabilities_to_strategies,
     strategies_for_regime,
 )
+from .signal_card import OptionsSignalCard
+from .signal_generator import build_options_signal_card
 
 __all__ = [
     "OptionType",
@@ -57,4 +59,6 @@ __all__ = [
     "playbook_to_summary_dict",
     "quick_detailed_regime_from_ohlcv",
     "resolve_playbook_regime_key",
+    "OptionsSignalCard",
+    "build_options_signal_card",
 ]

@@ -92,8 +92,8 @@ This maps your five goals to **what Phi-nance already has** and **what still nee
 
 | Phase | Deliverable | Touches |
 |-------|-------------|---------|
-| **A** | `OptionsSignalCard` schema + generator from OHLCV + playbook + composite signal | `phi/options/`, small test |
-| **B** | Trading desk (or expert) panel: one card with entry / target% / stop% / DTE / strikes placeholder | `app_streamlit/` |
+| **A** | `OptionsSignalCard` schema + generator from OHLCV + playbook + composite signal | **Done:** `phi/options/signal_card.py`, `signal_generator.py`, `tests/test_options_signal_card.py` |
+| **B** | Trading desk panel: one card with entry / target% / stop% / DTE | **Done:** `app_streamlit/trading_desk.py` — **Build signal** button |
 | **C** | Wire `mtf_matrix` + confluence into generator as optional filters | `phi/regime/mtf_matrix.py`, generator |
 | **D** | Reasoning string + last-bar info metrics on card | playbook + indicators snapshot |
 | **E** | PhiAI promotion file + env to load promoted params in generator | `phi/phiai/`, docs |
