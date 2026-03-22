@@ -7,7 +7,7 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
-from phi.data import fetch_and_cache
+from phi.data import fetch_ohlcv_uw_then_yf
 from phi.options.regime_playbook import (
     get_default_options_regime_playbook,
     playbook_entry_for_label,
@@ -17,19 +17,12 @@ from phi.options.signal_generator import build_options_signal_card
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def _load_ohlcv_for_signal(symbol: str, days: int, day_key: str) -> pd.DataFrame:
+def _load_ohlcv_for_signal(symbol: str, days: int, day_key: str) -> tuple[pd.DataFrame, str]:
+    """OHLCV + which vendor supplied it (``unusual_whales`` preferred, else ``yfinance``)."""
     sym = symbol.strip().upper()
     end = date.today()
     start = end - timedelta(days=max(days, 80))
-    last_exc: Exception | None = None
-    for vendor in ("unusual_whales", "yfinance"):
-        try:
-            df = fetch_and_cache(vendor, sym, "1D", start.isoformat(), end.isoformat())
-            if df is not None and not df.empty:
-                return df
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-    raise RuntimeError(f"No data for {sym}: {last_exc}")
+    return fetch_ohlcv_uw_then_yf(sym, start.isoformat(), end.isoformat(), timeframe="1D")
 
 
 def render_trading_desk() -> None:
@@ -41,8 +34,8 @@ def render_trading_desk() -> None:
 
     st.subheader("Options signal card (entry · target · stop · MTF · regime · info · PhiAI)")
     st.caption(
-        "Generates a structured suggestion from **playbook regime**, **MTF confluence**, "
-        "**information-theoretic** last-bar metrics, and optional **PhiAI** promoted params. "
+        "OHLCV loads **Unusual Whales first**, then **yfinance** (same as easy mode). "
+        "With `UNUSUAL_WHALES_API_KEY`, the card also pulls **ATM chain + flow** for the suggested structure. "
         "Not financial advice — validate in Backtest Workbench before risking capital."
     )
     c_sym, c_days, c_go = st.columns([2, 1, 1])
@@ -57,12 +50,13 @@ def render_trading_desk() -> None:
 
     if run_sig:
         try:
-            ohl = _load_ohlcv_for_signal(sig_sym, int(sig_days), date.today().isoformat())
+            ohl, v_used = _load_ohlcv_for_signal(sig_sym, int(sig_days), date.today().isoformat())
         except Exception as exc:  # noqa: BLE001
             st.error(str(exc))
             ohl = None
+            v_used = ""
         if ohl is not None:
-            card = build_options_signal_card(ohlcv=ohl, symbol=sig_sym)
+            card = build_options_signal_card(ohlcv=ohl, symbol=sig_sym, ohlcv_vendor=v_used)
             st.session_state["desk_options_signal"] = card.model_dump()
 
     dumped = st.session_state.get("desk_options_signal")
@@ -81,6 +75,7 @@ def render_trading_desk() -> None:
         m3.metric("Stop (premium %)", f"-{float(dumped.get('stop_exit_pct', 0))*100:.0f}%")
         mc = dumped.get("mtf_confluence")
         m4.metric("MTF confluence", f"{mc:+.2f}" if mc is not None else "—")
+        st.caption(f"OHLCV vendor: **{dumped.get('ohlcv_vendor') or 'unknown'}**")
         st.write("**Composite regime:**", f"`{dumped.get('composite_regime', '')}`")
         st.write("**MTF alignment:**", dumped.get("mtf_alignment"), "—", dumped.get("mtf_notes", ""))
         st.write("**Entry / sizing envelope:**", dumped.get("entry_trigger", ""))
@@ -100,6 +95,10 @@ def render_trading_desk() -> None:
             st.json(info)
             if dumped.get("info_notes"):
                 st.caption(dumped["info_notes"])
+        uw = dumped.get("unusual_whales_snapshot") or {}
+        if uw:
+            with st.expander("Unusual Whales (ATM chain + flow)", expanded=False):
+                st.json(uw)
         with st.expander("MTF columns present", expanded=False):
             st.write(dumped.get("mtf_timeframes_present") or [])
         ph = dumped.get("phiai_promoted")

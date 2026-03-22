@@ -7,7 +7,7 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
-from phi.data import fetch_and_cache
+from phi.data import fetch_ohlcv_uw_then_yf
 from phi.logging import get_logger
 
 from app_streamlit.easy_mode.constants import LOOKBACK_DAYS
@@ -22,16 +22,14 @@ def load_ohlcv_cached(symbol: str, days: int, day_key: str) -> pd.DataFrame:
     end = date.today()
     start = end - timedelta(days=max(days, 60))
     start_s, end_s = start.isoformat(), end.isoformat()
-    last_exc: Exception | None = None
-    for vendor in ("unusual_whales", "yfinance"):
-        try:
-            df = fetch_and_cache(vendor, sym, "1D", start_s, end_s)
-            if df is not None and not df.empty:
-                return df
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            logger.warning("easy_mode fetch %s via %s failed: %s", sym, vendor, exc)
-    raise RuntimeError(f"Could not load data for {sym}. Set UNUSUAL_WHALES_API_KEY or check network. ({last_exc})")
+    try:
+        df, _vendor = fetch_ohlcv_uw_then_yf(sym, start_s, end_s, timeframe="1D")
+        return df
+    except RuntimeError as exc:
+        logger.warning("easy_mode OHLCV failed for %s: %s", sym, exc)
+        raise RuntimeError(
+            f"Could not load data for {sym}. Set UNUSUAL_WHALES_API_KEY or check network. ({exc})"
+        ) from exc
 
 
 def load_ohlcv(symbol: str, days: int | None = None) -> pd.DataFrame:

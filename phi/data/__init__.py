@@ -17,6 +17,7 @@ from .cache import (
     is_cache_stale,
     list_cached_datasets,
 )
+from .ohlcv_fallback import OHLCV_VENDOR_FALLBACK, fetch_ohlcv_uw_then_yf
 from .unified_data import (
     get_ohlcv,
     get_ohlcv_with_optional_hook,
@@ -42,6 +43,8 @@ __all__ = [
     "try_external_ohlcv",
     "is_cache_stale",
     "list_cached_datasets",
+    "OHLCV_VENDOR_FALLBACK",
+    "fetch_ohlcv_uw_then_yf",
     "PostgresOptionsVendor",
     "logger",
 ]

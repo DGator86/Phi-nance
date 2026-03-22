@@ -2,6 +2,8 @@
 
 This maps your five goals to **what Phi-nance already has** and **what still needs to be built** so the product feels like one system—not scattered tabs.
 
+**OHLCV policy:** use `phi.data.fetch_ohlcv_uw_then_yf` everywhere you need price history — **Unusual Whales first**, **yfinance** fallback (easy mode + trading desk + signal card lineage).
+
 ## 1. Trade signals for options (entry, target exit, stop)
 
 **Already in the codebase**

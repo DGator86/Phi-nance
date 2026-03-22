@@ -16,6 +16,13 @@ class OptionsSignalCard(BaseModel):
     composite_regime: str = ""
     playbook_regime_key: str | None = None
 
+    # Data lineage (Unusual Whales → yfinance via ``phi.data.fetch_ohlcv_uw_then_yf``)
+    ohlcv_vendor: str = ""
+    unusual_whales_snapshot: dict[str, Any] = Field(
+        default_factory=dict,
+        description="ATM chain row + flow summary when UW API key is set and enrich succeeds.",
+    )
+
     action: Literal["ENTER", "WAIT", "SKIP"] = "WAIT"
     structure: str = ""
     structure_rationale: str = ""

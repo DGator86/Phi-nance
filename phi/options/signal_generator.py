@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+from datetime import date
 from typing import Any, Literal
 
 import numpy as np
@@ -139,6 +141,18 @@ def _info_last_bar(ohlcv: pd.DataFrame) -> tuple[dict[str, float], str]:
     return out, " ".join(notes) if notes else ""
 
 
+def _want_call_for_uw_chain(structure: str) -> bool:
+    """Pick call vs put chain leg for ATM snapshot (IV/Greeks)."""
+    s = (structure or "").lower()
+    if not s:
+        return True
+    if "long_put" in s or "bear_put" in s or "cash_secured_put" in s or "bull_put" in s:
+        return False
+    if "put" in s and "call" not in s:
+        return False
+    return True
+
+
 def _default_dataset_id(symbol: str, ohlcv: pd.DataFrame) -> str:
     base = f"{symbol.upper()}|{len(ohlcv)}|{ohlcv.index[0]}|{ohlcv.index[-1]}"
     return f"sig_{hashlib.sha1(base.encode()).hexdigest()[:12]}"
@@ -148,20 +162,30 @@ def build_options_signal_card(
     ohlcv: pd.DataFrame,
     *,
     symbol: str = "SPY",
+    ohlcv_vendor: str | None = None,
     mtf_bull_min: float = 0.12,
     mtf_bear_threshold: float = 0.05,
     min_bars: int = 60,
     dataset_id: str | None = None,
+    enrich_unusual_whales_chain: bool = True,
 ) -> OptionsSignalCard:
     """Compose regime playbook, MTF matrix confluence, info indicators, and risk envelope."""
+    vendor_tag = (ohlcv_vendor or "").strip().lower()
+
     if ohlcv is None or ohlcv.empty:
-        return OptionsSignalCard(symbol=symbol, action="SKIP", reasoning=["No OHLCV data."])
+        return OptionsSignalCard(
+            symbol=symbol,
+            action="SKIP",
+            ohlcv_vendor=vendor_tag,
+            reasoning=["No OHLCV data."],
+        )
 
     df = _normalize_ohlcv_columns(ohlcv)
     if len(df) < min_bars:
         return OptionsSignalCard(
             symbol=symbol,
             action="WAIT",
+            ohlcv_vendor=vendor_tag,
             reasoning=[f"Need at least {min_bars} bars; got {len(df)}."],
         )
 
@@ -256,11 +280,43 @@ def build_options_signal_card(
         f"use {dte_min}-{dte_max} DTE, delta between {d_lo:.2f} and {d_hi:.2f}."
     )
 
+    uw_snap: dict[str, Any] = {}
+    if (
+        enrich_unusual_whales_chain
+        and structure
+        and os.environ.get("UNUSUAL_WHALES_API_KEY", "").strip()
+    ):
+        try:
+            from phi.options.unusual_whales_context import build_uw_options_context
+
+            spot = float(df["close"].iloc[-1])
+            want_call = _want_call_for_uw_chain(structure)
+            uw_ctx = build_uw_options_context(
+                symbol.upper(),
+                spot=spot,
+                want_call=want_call,
+                as_of=date.today(),
+            )
+            uw_snap = {
+                "chain_row": dict(uw_ctx.get("chain_row") or {}),
+                "flow_summary": dict(uw_ctx.get("flow_summary") or {}),
+            }
+            cr = uw_snap.get("chain_row") or {}
+            fs = uw_snap.get("flow_summary") or {}
+            reasoning.append(
+                f"Unusual Whales: ATM **strike {cr.get('strike')}** · IV **{float(cr.get('implied_volatility', 0)):.3f}** · "
+                f"flow alerts **{fs.get('alerts', 0)}** (same API as OHLC when key is set)."
+            )
+        except Exception as exc:  # noqa: BLE001
+            reasoning.append(f"Unusual Whales chain/flow enrich skipped: {exc}")
+
     pb_key = resolve_playbook_regime_key(composite)
     return OptionsSignalCard(
         symbol=symbol.upper(),
         composite_regime=composite,
         playbook_regime_key=pb_key,
+        ohlcv_vendor=vendor_tag,
+        unusual_whales_snapshot=uw_snap,
         action=action,
         structure=structure,
         structure_rationale=struct_rat,
