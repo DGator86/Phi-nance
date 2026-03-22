@@ -13,6 +13,7 @@ This doc tracks **trading-UI patterns** we adopt over time. It is not a commitme
 | Last-bar **indicator snapshot** | Done (`signal_snapshot_last` on results) |
 | Three-preset **equity comparison** | Existing |
 | **Multi-window regimes** (SHORT / MEDIUM / LONG k-means) | Done (`backtest_extras.train_multi_window_regimes`) |
+| **Timeframe regime matrix** (resample OHLCV → k-means per TF) | Done (`phi.regime.mtf_matrix`, easy-mode panel + `docs/regime_timeframe_matrix.md`) |
 | **Playback scrubber** (end index + truncated chart) | Done (`slice_replay_window`) |
 | **Side-by-side preset compare** | Done (best vs selectbox) |
 | **Robustness bootstrap** (shuffled returns → Sharpe) | Done (`bootstrap_sharpe_distribution`) |

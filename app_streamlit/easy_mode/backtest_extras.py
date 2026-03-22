@@ -14,9 +14,20 @@ from app_streamlit.easy_mode.backtest_core import (
     semantic_label_map_for_clusters,
 )
 from phi.indicators.simple import INDICATOR_COMPUTERS
+from phi.regime.mtf_matrix import build_regime_matrix, confluence_score
 from phi.regime.train import train_regime_detector
 
 PROBE_NAMES = ("RSI", "MACD", "Bollinger", "Dual SMA", "Buy & Hold")
+
+
+def run_mtf_regime_matrix_bundle(ohlcv: pd.DataFrame) -> dict[str, Any]:
+    """True calendar-timeframe regime columns (resampled OHLCV) + confluence series."""
+    matrix, meta = build_regime_matrix(ohlcv)
+    if matrix.shape[1] > 0:
+        conf = confluence_score(matrix)
+    else:
+        conf = pd.Series(0.0, index=ohlcv.index)
+    return {"matrix": matrix, "meta": meta, "confluence": conf}
 
 
 def train_multi_window_regimes(

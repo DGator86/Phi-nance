@@ -28,6 +28,10 @@ Regimes (bull, bear, range, high-volatility) are useful context for dynamic weig
 - ATR ratio
 - volume change
 
+## Multi-timeframe regime matrix
+
+See [regime_timeframe_matrix.md](regime_timeframe_matrix.md) for **resampled** timeframe columns vs the easy-mode **three-window** feature ladder vs `regime_engine` taxonomy.
+
 ## Programmatic usage
 
 ```python

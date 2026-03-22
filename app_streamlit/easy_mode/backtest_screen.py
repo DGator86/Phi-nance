@@ -22,6 +22,7 @@ from app_streamlit.easy_mode.backtest_core import (
 )
 from app_streamlit.easy_mode.backtest_extras import (
     bootstrap_sharpe_distribution,
+    run_mtf_regime_matrix_bundle,
     run_rsi_threshold_heatmap,
     slice_replay_window,
     train_multi_window_regimes,
@@ -216,6 +217,7 @@ def render_auto_backtest() -> None:
             regime_label_map = semantic_label_map_for_clusters(ohlcv, regime_series)
             regime_boosts = deepcopy(DEFAULT_REGIME_BOOSTS)
             multi_regime = train_multi_window_regimes(ohlcv)
+            mtf_bundle = run_mtf_regime_matrix_bundle(ohlcv)
 
             results_by_name: dict[str, dict[str, Any]] = {}
             for label, thresh in PRESETS:
@@ -248,6 +250,7 @@ def render_auto_backtest() -> None:
                 "regime_label_map": regime_label_map,
                 "n_indicators": len(indicators),
                 "multi_regime": multi_regime,
+                "mtf_regime": mtf_bundle,
             }
 
     state = st.session_state.get("easy_last_backtest")
@@ -309,6 +312,7 @@ def render_auto_backtest() -> None:
     )
 
     multi = state.get("multi_regime") or {}
+    mtf = state.get("mtf_regime") or {}
     if multi:
         st.markdown("##### Three-window regime stack (k-means, different feature windows)")
         st.caption("SHORT=12 bars · MEDIUM=20 · LONG=40 — same 3-cluster idea, different smoothing.")
@@ -328,6 +332,35 @@ def render_auto_backtest() -> None:
             if lab in ("nan", "NaT", "None"):
                 lab = "—"
             col.metric(f"{tag} (w={w})", lab)
+
+    if mtf:
+        st.markdown("##### Timeframe regime matrix (resampled OHLCV)")
+        st.caption(
+            "Each column is k-means→TREND_DN/RANGE/TREND_UP on bars aggregated to that pandas offset. "
+            "**Daily easy-mode data only populates ≥1D** (e.g. 1D / 1W / 1ME); 1m–4H need intraday history."
+        )
+        mdf: pd.DataFrame = mtf.get("matrix")  # type: ignore[assignment]
+        meta = mtf.get("meta") or {}
+        conf_s = mtf.get("confluence")
+        if mdf is not None and mdf.shape[1] > 0:
+            last = mdf.iloc[-1]
+            tf_cols = st.columns(min(len(last), 6))
+            for i, col_name in enumerate(last.index[: len(tf_cols)]):
+                tf_cols[i].metric(str(col_name), str(last[col_name]))
+            if conf_s is not None and len(conf_s):
+                st.metric(
+                    "Regime confluence (equal weight across TFs)",
+                    f"{float(conf_s.iloc[-1]):.3f}",
+                    help="Average of TREND_UP=+1, RANGE=0, TREND_DN=-1. +1 = all bullish, -1 = all bearish.",
+                )
+            with st.expander("Last 24 bars × timeframe (download from … menu)", expanded=False):
+                st.dataframe(mdf.tail(24), use_container_width=True)
+        else:
+            st.info("No compatible timeframe columns (need enough history after resample). See skipped rules below.")
+        skipped = meta.get("skipped") if isinstance(meta, dict) else {}
+        if skipped:
+            with st.expander("Skipped timeframe rules", expanded=False):
+                st.json(dict(skipped))
 
     st.markdown("##### Visual replay (best preset)")
     st.caption("Shaded bands = mapped regime · triangles = fills/flats · purple line = equity (right axis). Hover a marker for the rule text.")
