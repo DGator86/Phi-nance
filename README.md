@@ -75,6 +75,11 @@ python scripts/run_backtest.py --symbol SPY --start 2020-01-01 --end 2024-12-31 
 # Optional: Dash wallboard (SPY daily, 60s refresh) — separate from Streamlit
 pip install -r requirements-dash.txt
 python app_dash/app.py
+
+# Alpaca paper: account snapshot + optional MTF confirmation (keys in .env only)
+# See docs/alpaca_paper_options.md
+python scripts/alpaca_paper_options_health.py
+python scripts/alpaca_paper_options_health.py --confirm-mtf --symbol SPY
 ```
 
 ## Project Layout
