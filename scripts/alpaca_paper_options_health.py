@@ -31,6 +31,13 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / ".env")
+except ImportError:
+    pass
+
 
 def _keys() -> tuple[str, str, str]:
     key = (os.getenv("ALPACA_API_KEY") or os.getenv("BROKER_API_KEY") or "").strip()
