@@ -18,12 +18,25 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_first_non_empty(*names: str, default: str = "") -> str:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is not None and raw.strip():
+            return raw
+    return default
+
 
 def _env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     raw = os.getenv(name)
     if raw is None or not raw.strip():
         return tuple(default)
     return tuple(item.strip().upper() for item in raw.split(",") if item.strip())
+
+
+def _broker_env(suffix: str, *, default: str = "") -> str:
+    profile = os.getenv("BROKER_PROFILE", "PRIMARY").strip().upper()
+    profile_key = f"BROKER_{profile}_{suffix}" if profile else ""
+    return _env_first_non_empty(profile_key, f"BROKER_{suffix}", default=default)
 
 
 @dataclass(frozen=True)
@@ -51,9 +64,14 @@ class Settings:
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "")
 
-    BROKER_API_KEY: str = os.getenv("BROKER_API_KEY", "")
-    BROKER_SECRET_KEY: str = os.getenv("BROKER_SECRET_KEY", "")
-    BROKER_BASE_URL: str = os.getenv("BROKER_BASE_URL", "https://paper-api.alpaca.markets")
+    BROKER_PROFILE: str = os.getenv("BROKER_PROFILE", "PRIMARY").strip().upper()
+    BROKER_ACCOUNT_ID: str = _broker_env("ACCOUNT_ID", default="")
+    BROKER_API_KEY: str = _env_first_non_empty("ALPACA_API_KEY", _broker_env("API_KEY", default=""))
+    BROKER_SECRET_KEY: str = _env_first_non_empty("ALPACA_SECRET_KEY", _broker_env("SECRET_KEY", default=""))
+    BROKER_BASE_URL: str = _env_first_non_empty(
+        "ALPACA_BASE_URL",
+        _broker_env("BASE_URL", default="https://paper-api.alpaca.markets"),
+    )
     LIVE_MODE: str = os.getenv("LIVE_MODE", "paper")
     LIVE_SYMBOLS: tuple[str, ...] = _env_list("LIVE_SYMBOLS", ("SPY",))
     LIVE_UPDATE_INTERVAL: int = int(os.getenv("LIVE_UPDATE_INTERVAL", "60"))

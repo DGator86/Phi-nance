@@ -18,8 +18,24 @@ The health script and `phinance.live.alpaca.AlpacaBroker` accept either naming s
 Aliases (from `phi.config` / `.env.example`):
 
 - `BROKER_API_KEY`, `BROKER_SECRET_KEY`, `BROKER_BASE_URL`
+- `BROKER_ACCOUNT_ID` (optional)
 
-**Two paper accounts (e.g. PDT vs non-PDT):** keep **one** set of vars active in `.env`. To switch, swap keys and restart the process—do not store both sets in the repo.
+**Two paper accounts (e.g. PDT vs non-PDT):** you can keep both in local `.env` using profile-prefixed vars and switch with `BROKER_PROFILE`.
+
+```bash
+BROKER_PROFILE=PHINANCE_PDT
+BROKER_PHINANCE_PDT_ACCOUNT_ID=PAxxxxxxxxxx
+BROKER_PHINANCE_PDT_API_KEY=PK...
+BROKER_PHINANCE_PDT_SECRET_KEY=...
+BROKER_PHINANCE_PDT_BASE_URL=https://paper-api.alpaca.markets/v2
+
+BROKER_PAPER_2_ACCOUNT_ID=PAyyyyyyyyyy
+BROKER_PAPER_2_API_KEY=PK...
+BROKER_PAPER_2_SECRET_KEY=...
+BROKER_PAPER_2_BASE_URL=https://paper-api.alpaca.markets/v2
+```
+
+You can still use a single default `BROKER_*` set. Never commit real keys.
 
 ## $5k account and PDT
 
