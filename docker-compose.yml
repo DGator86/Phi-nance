@@ -17,6 +17,11 @@
 #   MARKETDATAAPP_TOKEN
 #   DATA_CACHE_ROOT  (default: /app/data_cache)
 #   PHINANCE_LOG_LEVEL (default: INFO)
+#   PHINANCE_LOG_JSON  (set to 1 for JSON logs on stdout)
+#   PHINANCE_QC_EXPORT_DIR — qc-export service output directory
+#
+# QuantConnect export API (optional):
+#   docker compose --profile quantconnect up -d qc-export
 # ─────────────────────────────────────────────────────────────────────────────
 
 version: "3.9"
@@ -96,12 +101,38 @@ services:
       timeout: 5s
       retries: 3
 
+  # ── QuantConnect bundle export API (profile: quantconnect) ─────────────────────
+  qc-export:
+    profiles: ["quantconnect"]
+    build:
+      context: .
+      dockerfile: Dockerfile.qc-export
+      target: runtime-qc
+    image: phinance-qc-export:latest
+    container_name: phinance-qc-export
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PHINANCE_LOG_LEVEL=${PHINANCE_LOG_LEVEL:-INFO}
+      - PHINANCE_LOG_JSON=${PHINANCE_LOG_JSON:-0}
+      - DATA_CACHE_ROOT=${DATA_CACHE_ROOT:-/app/data_cache}
+      - PHINANCE_QC_EXPORT_DIR=/exports
+    volumes:
+      - data_cache:/app/data_cache
+      - qc_exports:/exports
+    ports:
+      - "8088:8080"
+    networks:
+      - phinance-net
+
 volumes:
   data_cache:
     driver: local
   model_store:
     driver: local
   run_store:
+    driver: local
+  qc_exports:
     driver: local
 
 networks:

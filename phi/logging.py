@@ -2,14 +2,38 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import sys
 from pathlib import Path
-from typing import Optional
-
+from typing import Any, Optional
 
 
 _FORMAT = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
+
+
+class _JsonFormatter(logging.Formatter):
+    """One JSON object per line for log aggregators (Docker / Loki / CloudWatch)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
+            "ts": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(payload, default=str)
+
+
+def _use_json_logs() -> bool:
+    return os.environ.get("PHINANCE_LOG_JSON", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _resolve_level(log_level: Optional[str]) -> int:
@@ -33,7 +57,11 @@ def setup_logging(
     level = _resolve_level(log_level)
     logger.setLevel(level)
 
-    formatter = logging.Formatter(_FORMAT)
+    formatter: logging.Formatter
+    if _use_json_logs():
+        formatter = _JsonFormatter()
+    else:
+        formatter = logging.Formatter(_FORMAT)
     if log_file is None:
         from phi.config import settings
 

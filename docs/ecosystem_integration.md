@@ -96,6 +96,15 @@ An **example** multi-service layout lives at `deploy/docker-compose.ecosystem.ex
 
 Automating that loop is repo-specific; start with `scripts/export_ohlcv_for_rl.py` and your metrics JSON schema.
 
+## 7. QuantConnect (Lean) bridge
+
+Export OHLCV + manifest (and optional options **signal card** JSON) for custom data or Object Store on QC:
+
+- **Guide:** [quantconnect_deployment.md](quantconnect_deployment.md)
+- **CLI:** `scripts/export_quantconnect_bundle.py`
+- **HTTP (optional):** `phi.api.qc_export` with `pip install -e ".[quantconnect]"` or Docker `Dockerfile.qc-export` / Compose profile `quantconnect`
+- **Lean starter:** `deployments/quantconnect/main.py` (copy into the QC web IDE)
+
 ---
 
 **Related:** Unusual Whales REST + MCP — [API docs](https://api.unusualwhales.com/docs), [MCP guide](https://unusualwhales.com/public-api/mcp).

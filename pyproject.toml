@@ -85,6 +85,10 @@ jupyter = [
     "ipykernel>=6.29.0",
     "matplotlib>=3.8.0",
 ]
+quantconnect = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+]
 all = [
     "scipy>=1.11",
     "numba>=0.59",
