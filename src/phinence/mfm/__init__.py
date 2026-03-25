@@ -1,5 +1,2 @@
-"""MarketFieldMap: single object the composer consumes. Deterministic and replayable."""
-
-from phinence.mfm.merger import MarketFieldMap, build_mfm
-
-__all__ = ["MarketFieldMap", "build_mfm"]
+"""Backward-compat shim -> phi.mft.mfm.__init__"""
+from phi.mft.mfm.__init__ import *  # noqa: F401,F403

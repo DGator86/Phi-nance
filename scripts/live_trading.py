@@ -14,7 +14,7 @@ import yaml
 from phi.data.fetchers import fetch
 from phi.options.data_adapter import fetch_options_data
 from phi.regime import get_detailed_regime_for_symbol
-from strategies.options_regime import STRATEGY_CLASS_MAP
+from lumibot_strategies.options_regime import STRATEGY_CLASS_MAP
 
 
 def load_best_models(config_path: str) -> dict[str, dict[str, Any]]:

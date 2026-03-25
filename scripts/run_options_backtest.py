@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from phi.backtest.engine import run_options_backtest
-from strategies.options_basic import BasicOptionsStrategy
+from lumibot_strategies.options_basic import BasicOptionsStrategy
 
 
 def main() -> None:

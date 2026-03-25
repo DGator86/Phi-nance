@@ -9,7 +9,7 @@ import pandas as pd
 
 from phi.backtest.engine import run_options_backtest
 from phi.regime import get_detailed_regime_for_symbol, strategies_for_regime
-from strategies.options_regime import STRATEGY_CLASS_MAP
+from lumibot_strategies.options_regime import STRATEGY_CLASS_MAP
 
 
 class RegimeMappedStrategy:

@@ -1,5 +1,2 @@
-"""Composer: drift + diffusion + cones. Calibration targets explicit."""
-
-from phinence.composer.composer import Composer
-
-__all__ = ["Composer"]
+"""Backward-compat shim -> phi.mft.composer.__init__"""
+from phi.mft.composer.__init__ import *  # noqa: F401,F403

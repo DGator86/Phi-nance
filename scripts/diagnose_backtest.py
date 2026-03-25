@@ -51,7 +51,7 @@ def test_config():
 def test_imports():
     from regime_engine.scanner import RegimeEngine
     from lumibot.backtesting import YahooDataBacktesting
-    from strategies.blended_mft_strategy import BlendedMFTStrategy
+    from lumibot_strategies.blended_mft_strategy import BlendedMFTStrategy
 
 def main():
     print("="*60)

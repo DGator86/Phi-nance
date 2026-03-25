@@ -1,6 +1,2 @@
-"""Pydantic contracts: ProjectionPacket, AssignedPacket, MFM. No strategy/routing/sizing."""
-
-from phinence.contracts.projection_packet import ProjectionPacket
-from phinence.contracts.assigned_packet import AssignedPacket
-
-__all__ = ["ProjectionPacket", "AssignedPacket"]
+"""Backward-compat shim -> phi.mft.contracts.__init__"""
+from phi.mft.contracts.__init__ import *  # noqa: F401,F403

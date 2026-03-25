@@ -1,22 +1,20 @@
-"""Simplified Market Field Theory (MFT) toolkit."""
+"""
+phi.mft — Market Field Theory projection pipeline.
 
-from phi.mft.field import (
-    compute_field_dynamics,
-    field_energy,
-    field_gradient,
-    field_laplacian,
-    field_potential,
-)
-from phi.mft.signals import mft_energy_signal, mft_signal
-from phi.mft.utils import build_kernel
+Moved from ``src/phinence`` (formerly ``phinence.*``).
 
-__all__ = [
-    "build_kernel",
-    "field_potential",
-    "field_gradient",
-    "field_laplacian",
-    "field_energy",
-    "compute_field_dynamics",
-    "mft_signal",
-    "mft_energy_signal",
-]
+Sub-packages
+------------
+  engines/     — regime, liquidity, hedge, sentiment field engines
+  composer/    — MFM → ProjectionPacket (direction, drift, vol-cones)
+  contracts/   — AssignedPacket, ProjectionPacket (data contracts only)
+  mfm/         — MarketFieldMap merger
+  store/       — ParquetBarStore / InMemoryBarStore / bar_store_protocol
+  assignment/  — AssignmentEngine
+  validation/  — walk-forward + paper trading + backtest runner
+
+Hard boundary (per .cursor/rules/projection-only.mdc):
+  No strategy selection, order routing, or sizing here.
+
+Backward compat: ``from phinence.*`` still works via the shims in src/phinence/.
+"""

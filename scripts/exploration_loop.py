@@ -42,7 +42,7 @@ def load_universe(config_path: str = DEFAULT_UNIVERSE_PATH) -> list[str]:
 
 
 def get_strategy_class(strategy_name: str):
-    """Resolve a strategy class dynamically from strategies.options_regime."""
+    """Resolve a strategy class dynamically from lumibot_strategies.options_regime."""
     module = importlib.import_module("strategies.options_regime")
     try:
         return getattr(module, strategy_name)

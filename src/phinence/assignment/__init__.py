@@ -1,5 +1,2 @@
-"""AssignmentEngine: strict router; derives 5m from 1m; outputs AssignedPacket."""
-
-from phinence.assignment.engine import AssignmentEngine
-
-__all__ = ["AssignmentEngine"]
+"""Backward-compat shim -> phi.mft.assignment.__init__"""
+from phi.mft.assignment.__init__ import *  # noqa: F401,F403

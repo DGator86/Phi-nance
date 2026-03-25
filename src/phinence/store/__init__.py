@@ -1,6 +1,2 @@
-"""Parquet store + Arrow schemas for bars and chain snapshots."""
-
-from phinence.store.schemas import BAR_1M_SCHEMA, BAR_5M_SCHEMA
-from phinence.store.parquet_store import ParquetBarStore
-
-__all__ = ["BAR_1M_SCHEMA", "BAR_5M_SCHEMA", "ParquetBarStore"]
+"""Backward-compat shim -> phi.mft.store.__init__"""
+from phi.mft.store.__init__ import *  # noqa: F401,F403

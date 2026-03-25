@@ -3,8 +3,8 @@ requires      = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["phi*", "phinance*", "regime_engine*", "components*"]
+where = [".", "src"]
+include = ["phi*", "phinance*", "phinence*", "regime_engine*", "components*", "lumibot_strategies*"]
 
 [project]
 name        = "phinance"
@@ -114,7 +114,7 @@ Issues     = "https://github.com/DGator86/Phi-nance/issues"
 
 [tool.pytest.ini_options]
 testpaths  = ["tests"]
-addopts    = "-v --tb=short --ignore=tests/integration --ignore=tests/performance --ignore=tests/unit --ignore=tests/test_backtest.py --ignore=tests/test_gex_math.py --ignore=tests/test_projection_packet.py --ignore=tests/test_phi_backtest_engines.py --ignore=tests/test_phi_blending_refactor.py"
+addopts    = "-v --tb=short --ignore=tests/performance --ignore=tests/test_backtest.py --ignore=tests/test_gex_math.py --ignore=tests/test_projection_packet.py --ignore=tests/test_phi_backtest_engines.py --ignore=tests/test_phi_blending_refactor.py"
 filterwarnings = ["ignore::DeprecationWarning", "ignore::FutureWarning"]
 
 [tool.ruff]
