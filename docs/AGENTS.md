@@ -57,3 +57,4 @@ python scripts/engine_health.py
 - **`.env`**: Copy `.env.example` to `.env` for vendor keys (Unusual Whales, Alpaca, etc.).
 - **Ecosystem OHLCV**: `phi.data` unified fetch — [ecosystem_integration.md](ecosystem_integration.md).
 - **Options playbook**: JSON via `PHINANCE_OPTIONS_PLAYBOOK`; see [options_regime_playbook.md](options_regime_playbook.md).
+- **Duplicate-looking strategy trees**: Prefer `phinance.strategies` for vectorized research; top-level `strategies/` is the Lumibot-oriented legacy bundle. Discrete regime → playbook: `phi.regime.strategy_mapping` (also on `phi.options`). Continuous tensor → force-field ranking: `phi.force_field`.

@@ -21,7 +21,7 @@ from .regime_playbook import (
     quick_detailed_regime_from_ohlcv,
     resolve_playbook_regime_key,
 )
-from .regime_strategy_map import (
+from phi.regime.strategy_mapping import (
     APPROVED_STRATEGIES,
     REGIME_STRATEGY_MAP,
     is_approved_strategy,
