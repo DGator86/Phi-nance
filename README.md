@@ -99,7 +99,7 @@ Phi-nance/
 └── start.sh               # Linux/macOS: venv + Streamlit
 ```
 
-Deeper map: [`docs/architecture_layout.md`](docs/architecture_layout.md).
+Deeper map: [`docs/architecture_layout.md`](docs/architecture_layout.md). Stakeholder intro (SWOT, Start–Stop–Continue): [`docs/stakeholder_overview.md`](docs/stakeholder_overview.md).
 
 ## Configuration
 
