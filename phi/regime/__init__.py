@@ -24,6 +24,7 @@ from phi.regime.regime_definitions import (
 from phi.regime.strategy_mapping import (
     APPROVED_STRATEGIES,
     REGIME_STRATEGY_MAP,
+    force_field_ranking_to_legacy,
     map_regime_probabilities_to_strategies,
     strategies_for_regime,
 )
@@ -145,6 +146,7 @@ __all__ = [
     "REGIME_STRATEGY_MAP",
     "strategies_for_regime",
     "map_regime_probabilities_to_strategies",
+    "force_field_ranking_to_legacy",
 ]
 
 

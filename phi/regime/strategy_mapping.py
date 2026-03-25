@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from phi.force_field.schemas import StrategyScoreResult
+from phi.force_field.strategy_aliases import to_legacy_strategy_name
 from phi.regime.regime_definitions import BASE_REGIMES, VOLATILITY_REGIMES
 
 APPROVED_STRATEGIES: tuple[str, ...] = (
@@ -78,3 +80,15 @@ def map_regime_probabilities_to_strategies(regime_probs: dict[str, float]) -> li
 def is_approved_strategy(strategy_name: str, approved: Iterable[str] = APPROVED_STRATEGIES) -> bool:
     """Check whether a strategy is in the curated defined-risk list."""
     return strategy_name in set(approved)
+
+
+def force_field_ranking_to_legacy(
+    results: list[StrategyScoreResult],
+) -> list[tuple[str, float, list[str]]]:
+    """Translate ``phi.force_field`` ranks to legacy strategy labels (fallback: engine key)."""
+    rows: list[tuple[str, float, list[str]]] = []
+    for r in results:
+        legacy = to_legacy_strategy_name(r.strategy_name)
+        label = legacy if legacy is not None else r.strategy_name
+        rows.append((label, float(r.score), list(r.reject_reasons)))
+    return sorted(rows, key=lambda item: item[1], reverse=True)
