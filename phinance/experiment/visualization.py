@@ -6,7 +6,16 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import pandas as pd
-import plotly.express as px
+
+
+def _plotly_express():
+    try:
+        import plotly.express as px
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError(
+            "plotly is required for interactive experiment plots. Install with: pip install plotly"
+        ) from exc
+    return px
 
 
 def _get_mlflow_client() -> Any:
@@ -67,6 +76,7 @@ def plot_learning_curve(
     df = pd.DataFrame(rows).sort_values(["run_id", "step"])
 
     if interactive:
+        px = _plotly_express()
         fig = px.line(df, x="step", y="value", color="run_id", title=title or f"{metric} learning curve")
         return fig
 
@@ -127,6 +137,7 @@ def plot_trial_comparison(
         df = df.head(top_k)
 
     if interactive:
+        px = _plotly_express()
         return px.bar(df, x="run_id", y="metric", title=f"Sweep {sweep_id}: {metric} by run")
 
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -170,6 +181,7 @@ def parallel_coordinates(
         else:
             working[col] = working[col].astype("category").cat.codes
 
+    px = _plotly_express()
     return px.parallel_coordinates(working, color="metric", dimensions=param_columns, title=f"Sweep {sweep_id}")
 
 

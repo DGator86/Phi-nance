@@ -39,7 +39,7 @@ if str(_ROOT) not in sys.path:
 _LEARNED_DIR = settings.DATA_CACHE_DIR / "learned_params"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Strategy catalogue — mirrors INDICATOR_CATALOG in live_workbench.py
+# Strategy catalogue — aligned with phi indicator / blending registry
 # Each entry has defaults + up to two cheap variants
 # ─────────────────────────────────────────────────────────────────────────────
 _CATALOG: Dict[str, Dict] = {

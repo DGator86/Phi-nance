@@ -10,7 +10,7 @@ echo "📦 Installing system dependencies..."
 sudo apt update
 sudo apt install -y python3.12 python3.12-venv python3-pip libomp-dev git screen ufw
 sudo ufw allow ssh
-sudo ufw allow 8501/tcp
+sudo ufw allow 8080/tcp
 sudo ufw --force enable
 
 # 2. Create virtual environment
@@ -30,10 +30,10 @@ echo "✅ Setup complete!"
 echo ""
 echo "Next steps:"
 echo "1. Create your .env file: 'nano .env'"
-echo "2. Launch the dashboard in a screen session:"
+echo "2. Launch the export API in a screen session:"
 echo "   screen -S phi-nance"
 echo "   source venv/bin/activate"
-echo "   streamlit run app_streamlit/main.py"
+echo "   ./start.sh"
 echo ""
 echo "Press Ctrl+A then D to detach from the screen session."
 echo ""
@@ -41,7 +41,7 @@ echo "🔍 Troubleshooting Debug Info:"
 echo "---------------------------"
 echo "Public IP: \$(curl -s https://api.ipify.org)"
 echo "Internal Port Status:"
-ss -tulnp | grep 8501
+ss -tulnp | grep 8080
 echo "Firewall Status:"
 sudo ufw status | grep 8501
 echo "---------------------------"

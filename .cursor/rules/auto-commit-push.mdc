@@ -31,7 +31,6 @@ Or one-liner: `cd ~/Phi-nance && git pull origin MAIN && ./start.sh`
 ```powershell
 cd "c:\Users\Darrin Vogeli\OneDrive - Penetron\Desktop\Phi-nance"
 git pull origin MAIN
-python -m streamlit run app_streamlit/live_workbench.py --server.port 8501 --server.address 0.0.0.0
+.\run_local.ps1
+# or: .\venv\Scripts\python.exe -m uvicorn phi.api.qc_export:app --host 127.0.0.1 --port 8080
 ```
-
-If `0.0.0.0` causes socket error on VPS, the config already sets it; try: `python -m streamlit run app_streamlit/live_workbench.py --server.port 8501`

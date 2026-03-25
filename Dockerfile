@@ -1,93 +1,45 @@
-# ── Phi-nance Platform — Main Dockerfile ─────────────────────────────────────
-# Multi-stage build:
-#   builder  — installs all Python dependencies into /install
-#   runtime  — slim final image that copies only the installed packages
+# Phi-nance — headless research + QuantConnect export API (no Streamlit).
 #
-# Usage (single container — Streamlit only):
-#   docker build -t phinance:latest .
-#   docker run -p 8501:8501 --env-file .env phinance:latest
+#   docker build -t phinance-qc:latest .
+#   docker run -p 8080:8080 -e PHINANCE_QC_EXPORT_DIR=/exports -v qc_exports:/exports --env-file .env phinance-qc:latest
 #
-# Usage (full stack via Compose):
-#   docker compose up --build
-# ─────────────────────────────────────────────────────────────────────────────
+# Default command: FastAPI bundle exporter. Override to run scripts, pytest, etc.
 
-# ── Stage 1: dependency builder ───────────────────────────────────────────────
 FROM python:3.12-slim AS builder
 
-# System build deps (needed for scipy, lightgbm wheel builds if no binary)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        gcc \
-        libgomp1 \
+        build-essential gcc libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
+COPY pyproject.toml requirements.txt ./
 
-# Copy only dependency files first (layer-cache friendly)
-COPY pyproject.toml ./
-COPY requirements.txt ./
-
-# Install into an isolated prefix so we can copy just this tree to the runtime
 RUN pip install --upgrade pip setuptools wheel && \
-    pip install --prefix=/install --no-cache-dir \
-        "pandas>=2.0" \
-        "numpy>=1.24" \
-        "pyarrow>=14.0" \
-        "requests>=2.28" \
-        "python-dotenv>=1.0" \
-        "yfinance>=0.2.40" \
-        "streamlit>=1.30.0" \
-        "plotly>=5.18" \
-        "pyyaml>=6.0" \
-        "scipy>=1.11" \
-        "scikit-learn>=1.3.0" \
-        "lightgbm>=4.0.0" \
-        "joblib>=1.3.0" \
-        "optuna>=3.5.0" \
-        "alpaca-py>=0.20.0"
+    pip install --prefix=/install --no-cache-dir -r requirements.txt
 
-# ── Stage 2: slim runtime ─────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
 
-LABEL org.opencontainers.image.title="Phi-nance" \
-      org.opencontainers.image.description="Open-source quant research platform" \
-      org.opencontainers.image.source="https://github.com/DGator86/Phi-nance" \
-      org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.title="Phi-nance (QuantConnect-oriented)" \
+      org.opencontainers.image.description="Headless quant library + QC export API" \
+      org.opencontainers.image.source="https://github.com/DGator86/Phi-nance"
 
-# Runtime-only system libs
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libgomp1 \
-        curl \
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Python packages from builder stage
 COPY --from=builder /install /usr/local
 
-# Create non-root user for security
 RUN groupadd -r phinance && useradd -r -g phinance -d /app -s /sbin/nologin phinance
 
 WORKDIR /app
-
-# Copy application source
 COPY --chown=phinance:phinance . .
-
-# Streamlit config directory
-RUN mkdir -p /app/.streamlit && chown -R phinance:phinance /app/.streamlit
-
-# Install the project itself in editable mode (no extra deps)
 RUN pip install --no-deps -e . 2>/dev/null || true
 
 USER phinance
+ENV PHINANCE_QC_EXPORT_DIR=/exports
+RUN mkdir -p /exports && chown phinance:phinance /exports
 
-# Health check — Streamlit responds on /healthz
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8501/healthz || exit 1
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8080/health || exit 1
 
-EXPOSE 8501
-
-# Default: run the Streamlit UI (can override with ENTRYPOINT args)
-ENTRYPOINT ["streamlit", "run", "frontend/streamlit/app.py", \
-            "--server.port=8501", \
-            "--server.address=0.0.0.0", \
-            "--server.headless=true", \
-            "--browser.gatherUsageStats=false"]
+CMD ["uvicorn", "phi.api.qc_export:app", "--host", "0.0.0.0", "--port", "8080"]

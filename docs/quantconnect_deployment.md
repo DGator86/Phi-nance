@@ -13,7 +13,7 @@ python scripts/export_quantconnect_bundle.py \
   --timeframe 1D \
   --out-dir ./exports/qc_SPY_1D
 
-# Optional: attach options signal card JSON (same generator as Trading Desk)
+# Optional: attach options signal card JSON (phi.options signal generator)
 python scripts/export_quantconnect_bundle.py \
   --symbol SPY --start 2020-01-01 --end 2024-12-31 \
   --out-dir ./exports/qc_SPY_with_card \
@@ -28,29 +28,29 @@ Output:
 | `manifest.json` | Symbol, range, vendor used, schema version, QC doc links |
 | `signal_card.json` | Optional; regime / playbook / MTF summary for research or manual rules |
 
-Zip the folder and upload to the QC project **Data** tree or **Object Store**, then point a custom data class at that path (see Lean template in `deployments/quantconnect/`).
+Zip the folder and upload to the QC project **Data** tree or **Object Store**, then point a custom data class at that path (see Lean template in `quantconnect/main.py`).
 
-## 2. Headless HTTP service (Docker)
+## 2. Headless HTTP service (Docker / local)
 
-Install extras locally: `pip install -e ".[quantconnect]"`.
+FastAPI and uvicorn are **default dependencies** (`pip install -r requirements.txt` or `pip install -e .`).
 
 ```bash
 export PHINANCE_QC_EXPORT_DIR=/tmp/qc_exports
 uvicorn phi.api.qc_export:app --host 0.0.0.0 --port 8080
 ```
 
-Or Compose (profile):
+Or Docker Compose (service `api`):
 
 ```bash
-docker compose --profile quantconnect up -d qc-export
-# POST http://localhost:8088/export/bundle?symbol=SPY&start=2022-01-01&end=2024-12-31
+docker compose up --build -d
+# POST http://localhost:8080/export/bundle?symbol=SPY&start=2022-01-01&end=2024-12-31
 ```
 
 Set `PHINANCE_LOG_JSON=1` for one JSON object per log line (useful behind Docker log drivers).
 
 ## 3. Lean algorithm (in QuantConnect cloud)
 
-Copy `deployments/quantconnect/main.py` into a new Python project in the QC web IDE. Adjust:
+Copy `quantconnect/main.py` into a new Python project in the QC web IDE. Adjust:
 
 - `SubscriptionDataSource` path to match where you placed `ohlcv.csv`.
 - Symbol / resolution to match your bundle (`Resolution.Daily` for `1D` exports).
@@ -63,7 +63,7 @@ Full custom data patterns: [Custom securities](https://www.quantconnect.com/docs
 |---------|-----------|--------------|
 | Vendor OHLCV + cache | Yes | Use QC data or your CSV |
 | Regime / options signal card | Yes (export JSON) | Reimplement or read JSON in research |
-| Order execution / portfolio | Alpaca paper, etc. | QC brokerage models / live |
+| Order execution / portfolio | Scripts / Alpaca where configured | QC brokerage models / live |
 
 ## 5. Tests
 

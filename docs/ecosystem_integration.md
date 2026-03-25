@@ -4,7 +4,7 @@ Phi-nance is the **research + data spine** in a four-repo workflow. This documen
 
 | Repo | Role | Link |
 |------|------|------|
-| **Phi-nance** | Regime/signals, optimization, cached multi-vendor OHLCV, Streamlit workbench | this repo |
+| **Phi-nance** | Regime/signals, optimization, cached multi-vendor OHLCV, QuantConnect export | this repo |
 | **Lumibot** | Unified strategy API, broker backtests, rich data routing | [DGator86/lumibot](https://github.com/DGator86/lumibot) |
 | **TensorTrade** | RL environments, Ray RLlib training | [DGator86/tensortrade](https://github.com/DGator86/tensortrade) |
 | **agent-cli** | Hyperliquid live stack (APEX, Guard, REFLECT, MCP) | [DGator86/agent-cli](https://github.com/DGator86/agent-cli) |
@@ -102,8 +102,8 @@ Export OHLCV + manifest (and optional options **signal card** JSON) for custom d
 
 - **Guide:** [quantconnect_deployment.md](quantconnect_deployment.md)
 - **CLI:** `scripts/export_quantconnect_bundle.py`
-- **HTTP (optional):** `phi.api.qc_export` with `pip install -e ".[quantconnect]"` or Docker `Dockerfile.qc-export` / Compose profile `quantconnect`
-- **Lean starter:** `deployments/quantconnect/main.py` (copy into the QC web IDE)
+- **HTTP:** `phi.api.qc_export` (uvicorn; default `Dockerfile` / `docker compose` service `api`)
+- **Lean starter:** `quantconnect/main.py` (copy into the QC web IDE)
 
 ---
 

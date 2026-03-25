@@ -1,6 +1,6 @@
-# Phi-nance - Streamlit on localhost (Windows-friendly; avoids 0.0.0.0 browser issues)
+# Phi-nance — headless QC export API on localhost (Windows).
 param(
-    [int]$Port = 8501
+    [int]$Port = 8080
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,51 +11,9 @@ if (-not (Test-Path ".\venv\Scripts\python.exe")) {
     exit 1
 }
 
-function Test-PortInUse([int]$p) {
-    try {
-        $rows = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue
-        return $null -ne $rows
-    } catch {
-        return $false
-    }
-}
+$exportDir = if ($env:PHINANCE_QC_EXPORT_DIR) { $env:PHINANCE_QC_EXPORT_DIR } else { Join-Path $PSScriptRoot "exports\qc_bundles" }
+New-Item -ItemType Directory -Force -Path $exportDir | Out-Null
+$env:PHINANCE_QC_EXPORT_DIR = $exportDir
 
-function Show-PortOwner([int]$p) {
-    try {
-        Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty OwningProcess -Unique |
-            ForEach-Object {
-                $proc = Get-Process -Id $_ -ErrorAction SilentlyContinue
-                if ($proc) { Write-Host "  PID $($proc.Id): $($proc.ProcessName)" }
-            }
-    } catch {
-        # ignore
-    }
-}
-
-$chosen = $Port
-$maxPort = $Port + 20
-while (Test-PortInUse $chosen) {
-    if ($chosen -eq $Port) {
-        Write-Host "Port $chosen is already in use (often a leftover Streamlit)."
-        Show-PortOwner $chosen
-    }
-    $chosen++
-    if ($chosen -gt $maxPort) {
-        Write-Host "No free port between $Port and $maxPort. Close the other app or pick a port: .\run_local.ps1 -Port 8600"
-        exit 1
-    }
-}
-
-if ($chosen -ne $Port) {
-    Write-Host "Using first free port: $chosen"
-}
-
-# Env overrides beat .streamlit/config.toml (fixes wrong URL when we bump port e.g. 8502).
-$env:STREAMLIT_SERVER_PORT = "$chosen"
-$env:STREAMLIT_SERVER_ADDRESS = "127.0.0.1"
-$env:STREAMLIT_BROWSER_SERVER_PORT = "$chosen"
-
-Write-Host "Starting Streamlit - keep this window open. Open: http://localhost:$chosen"
-Write-Host "(Use repo venv only - not AppData Python - so Streamlit/protobuf match this project.)"
-& .\venv\Scripts\python.exe -m streamlit run app_streamlit/live_workbench.py --server.port $chosen --server.address 127.0.0.1
+Write-Host "QC export API: http://127.0.0.1:$Port/health  (PHINANCE_QC_EXPORT_DIR=$exportDir)"
+& .\venv\Scripts\python.exe -m uvicorn phi.api.qc_export:app --host 127.0.0.1 --port $Port

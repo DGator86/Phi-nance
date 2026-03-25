@@ -9,7 +9,7 @@ pytest
 For coverage-oriented runs:
 
 ```bash
-pytest --cov=phi --cov=phinance --cov=app_streamlit --cov-report=term-missing
+pytest --cov=phi --cov=phinance --cov-report=term-missing
 ```
 
 ## What to test for new code

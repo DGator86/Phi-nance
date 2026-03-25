@@ -19,7 +19,7 @@ def main() -> int:
     modules = [
         "phi.backtest.direct",
         "phi.blending.blender",
-        "app_streamlit.main",
+        "phi.api.qc_export",
         "regime_engine",
         "phinance",
     ]

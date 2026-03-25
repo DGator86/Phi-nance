@@ -16,8 +16,8 @@ High-level introduction for stakeholders and new team members. Deeper technical 
 | **Signal blending** | Weighted sum, voting, or regime-weighted combination (`phi/blending/`). |
 | **PhiAI optimization** | Automated parameter tuning (e.g. Optuna) with walk-forward validation (`phi/phiai/`). |
 | **Backtesting** | Direct backtest paths (`phi/backtest/`); ecosystem notes for Lumibot / TensorTrade / agent-cli in [ecosystem_integration.md](ecosystem_integration.md). |
-| **Options playbook & signals** | Regime-tagged playbook, Trading desk UI, structured **options signal card** (entry / target / stop, MTF, UW chain when keyed). |
-| **Streamlit workbench** | Easy mode + expert workbench (`app_streamlit/`). |
+| **Options playbook & signals** | Regime-tagged playbook, structured **options signal card** (entry / target / stop, MTF, UW chain when keyed); export JSON for QuantConnect research. |
+| **QuantConnect bridge** | `quantconnect/` Lean template, `scripts/export_quantconnect_bundle.py`, headless `phi.api.qc_export` on port 8080. |
 | **CLI & scripts** | Data spine, backtests, engine health, Alpaca paper health + MTF confirm, etc. (`scripts/`). |
 
 Configuration uses environment variables (`.env`), local data cache, and structured run directories.
@@ -28,7 +28,7 @@ Configuration uses environment variables (`.env`), local data cache, and structu
 
 | **Strengths** | **Weaknesses** |
 |---------------|----------------|
-| Modular layout — `phi/`, `phinance/`, `regime_engine/`, `app_streamlit/` separated. | Many workflows are easiest through Streamlit; headless automation is not first-class yet. |
+| Modular layout — `phi/`, `phinance/`, `regime_engine/`, `quantconnect/` separated. | Lean cloud is the primary execution surface; local stack is research + export. |
 | Extensible data spine — new vendors plug into cache fetchers. | No first-party REST API; external automation relies on scripts or embedding Python. |
 | Caching — reduces repeat vendor calls. | Streaming / low-latency data is not a core focus; live paths are broker- and script-shaped. |
 | Regime-aware blending and playbooks. | Onboarding: multiple optional `requirements-*.txt` files and env vars. |
@@ -57,10 +57,10 @@ Configuration uses environment variables (`.env`), local data cache, and structu
 
 ### Stop doing
 
-- **Leaking UI into core** — Keep `phi/` and `phinance/` free of Streamlit; today they contain **no** `streamlit` imports; preserve that boundary (UI stays under `app_streamlit/`).
+- **Leaking presentation into core** — Keep `phi/` and `phinance/` free of web-framework imports; core stays importable for scripts, notebooks, and QC-side ports.
 - **Opaque global script state** — Prefer explicit parameters and small CLIs for automation.
 - **One-off manual setup only** — Improve single-path bootstrap docs / optional `make` or `uv` recipes over time.
-- **Blocking the UI on long jobs** — Where needed, use background jobs or a service queue (future).
+- **Blocking HTTP on long jobs** — Use async jobs or a worker queue for heavy backtests (future).
 
 ### Continue doing
 

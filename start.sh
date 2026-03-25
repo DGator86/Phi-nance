@@ -1,5 +1,5 @@
 #!/bin/bash
-# Phi-nance: activate venv and start Streamlit
+# Phi-nance: activate venv and start the QuantConnect export API (headless).
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -12,8 +12,8 @@ else
     exit 1
 fi
 
-echo "Starting Phi-nance on port 8501..."
-python -m streamlit run app_streamlit/live_workbench.py \
-    --server.port 8501 \
-    --server.address 0.0.0.0 \
-    --server.headless true
+export PHINANCE_QC_EXPORT_DIR="${PHINANCE_QC_EXPORT_DIR:-./exports/qc_bundles}"
+mkdir -p "$PHINANCE_QC_EXPORT_DIR"
+
+echo "Starting QC export API on http://0.0.0.0:8080 (export dir: $PHINANCE_QC_EXPORT_DIR)"
+exec uvicorn phi.api.qc_export:app --host 0.0.0.0 --port 8080

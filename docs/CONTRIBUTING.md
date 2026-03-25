@@ -38,7 +38,7 @@ mypy phinance phi
 Recommended coverage run:
 
 ```bash
-pytest --cov=phi --cov=phinance --cov=app_streamlit --cov-report=term-missing
+pytest --cov=phi --cov=phinance --cov-report=term-missing
 ```
 
 For refactors, add or update tests that cover:

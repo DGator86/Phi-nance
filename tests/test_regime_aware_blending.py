@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from datetime import date
-
 import pandas as pd
 import pytest
 
-from app_streamlit import ui_handlers
-from phi.backtest.direct import run_direct_backtest
+from phi.backtest import build_regime_boosts_from_payload, run_direct_backtest
 from phi.exceptions import BacktestError
 
 
@@ -84,72 +81,7 @@ def test_build_regime_boosts_from_payload_maps_friendly_labels() -> None:
         },
     }
 
-    boosts = ui_handlers.build_regime_boosts_from_payload(payload)
+    boosts = build_regime_boosts_from_payload(payload)
 
     assert boosts["Bull"]["RSI"] == 1.2
     assert boosts["Bear"]["MACD"] == 1.1
-
-
-def test_handle_run_backtest_regime_aware_passes_boosts(monkeypatch) -> None:
-    class FakeSt:
-        session_state = {}
-
-    monkeypatch.setattr(ui_handlers, "st", FakeSt)
-
-    sink: dict[str, object] = {}
-    monkeypatch.setattr(ui_handlers, "set_form_errors", lambda errors: sink.setdefault("form_errors", errors))
-    monkeypatch.setattr(ui_handlers, "set_config", lambda config: sink.setdefault("config", config))
-    monkeypatch.setattr(ui_handlers, "transition_to", lambda *args, **kwargs: None)
-    monkeypatch.setattr(ui_handlers, "set_results", lambda results: sink.setdefault("results", results))
-    monkeypatch.setattr(ui_handlers, "set_error", lambda message, debug=None: sink.setdefault("error", (message, debug)))
-
-    class FakeHistory:
-        def create_run(self, _config):
-            return "run_aware_1"
-
-        def save_results(self, _run_id, _results):
-            return None
-
-    monkeypatch.setattr(ui_handlers, "RunHistory", lambda: FakeHistory())
-
-    class FakeDetector:
-        def predict(self, data):
-            return pd.Series(["state_0"] * len(data), index=data.index)
-
-    monkeypatch.setattr(ui_handlers, "load_detector_from_payload", lambda _payload: FakeDetector())
-
-    observed: dict[str, object] = {}
-
-    def fake_equity(**kwargs):
-        observed["regime_boosts"] = kwargs.get("regime_boosts")
-        observed["regime_label_map"] = kwargs.get("regime_label_map")
-        return {"total_return": 0.1}, None
-
-    payload = {
-        "symbol": "SPY",
-        "start_date": date(2023, 1, 1),
-        "end_date": date(2023, 12, 31),
-        "timeframe": "1D",
-        "vendor": "alphavantage",
-        "initial_capital": 100000.0,
-        "trading_mode": "equities",
-        "indicators": {"RSI": {"enabled": True, "params": {"rsi_period": 14}}},
-        "blend_method": "regime_weighted",
-        "blend_weights": {"RSI": 1.0},
-        "regime_enabled": True,
-        "regime_detect_on_the_fly": True,
-        "regime_use_precomputed": False,
-        "regime_selected_model_path": "runs/regime_models/fake.pkl",
-        "regime_label_map": {"state_0": "Bull"},
-        "regime_boost_matrix": {"state_0": {"RSI": 1.2}},
-    }
-
-    result = ui_handlers.handle_run_backtest(
-        payload,
-        load_data_fn=lambda *_a, **_k: _sample_ohlcv(),
-        run_equity_fn=fake_equity,
-    )
-
-    assert result is not None
-    assert observed["regime_label_map"] == {"state_0": "Bull"}
-    assert observed["regime_boosts"] == {"Bull": {"RSI": 1.2}}
