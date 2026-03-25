@@ -33,6 +33,17 @@ jupyter lab
 
 Use `notebooks/00_getting_started.ipynb` and `notebook_setup.py` as before.
 
+### Regime training (YAML + optional MLflow)
+
+```bash
+cp configs/ml/regime_train.example.yaml configs/ml/regime_train.yaml
+# edit dates/symbol, then:
+phi-regime-train --config configs/ml/regime_train.yaml
+# or: export PHINANCE_REGIME_TRAIN_CONFIG=... && phi-regime-train
+```
+
+See [ml_components.md](ml_components.md).
+
 ### Validating the engine
 
 ```bash

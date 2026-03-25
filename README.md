@@ -74,6 +74,7 @@ Environment-driven (`.env.example`, `docs/configuration.md`). Common vars: `DATA
 
 ## Documentation
 
+- **ML regime / MLflow / QC inference:** [docs/ml_components.md](docs/ml_components.md), [docs/quantconnect_ml_inference.md](docs/quantconnect_ml_inference.md)
 - **QuantConnect:** [docs/quantconnect_deployment.md](docs/quantconnect_deployment.md)
 - Layout / workflow: [docs/architecture_layout.md](docs/architecture_layout.md), [docs/DEV_WORKFLOW.md](docs/DEV_WORKFLOW.md)
 - Options playbook: [docs/options_regime_playbook.md](docs/options_regime_playbook.md)

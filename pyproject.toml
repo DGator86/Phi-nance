@@ -103,6 +103,7 @@ all = [
 phinance-backtest  = "scripts.run_backtest:main"
 phinance-fetch     = "scripts.fetch_data:main"
 phinance-runs      = "scripts.list_runs:main"
+phi-regime-train   = "phi.regime.cli_train:main"
 
 [project.urls]
 Homepage   = "https://github.com/DGator86/Phi-nance"

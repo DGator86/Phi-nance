@@ -26,6 +26,7 @@ def train_regime_detector(
     n_regimes: int = 3,
     window: int = 20,
     save: bool = True,
+    save_path: str | Path | None = None,
     **kwargs: Any,
 ) -> tuple[RegimeDetector, Path | None]:
     """Train a regime detector.
@@ -36,6 +37,8 @@ def train_regime_detector(
         n_regimes: Number of hidden states/clusters.
         window: Rolling feature window.
         save: Whether to persist the fitted model.
+        save_path: Optional full path for the ``.pkl`` (parent dirs created). When ``None``,
+            uses ``REGIME_MODELS_DIR`` and the default filename pattern.
         **kwargs: Extra fit parameters.
 
     Returns:
@@ -60,6 +63,11 @@ def train_regime_detector(
     if not save:
         return detector, None
 
-    path = settings.REGIME_MODELS_DIR / filename
+    if save_path is not None:
+        path = Path(save_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        path = settings.REGIME_MODELS_DIR / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
     detector.save(path)
     return detector, path

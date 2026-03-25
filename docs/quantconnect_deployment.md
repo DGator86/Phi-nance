@@ -70,3 +70,7 @@ Full custom data patterns: [Custom securities](https://www.quantconnect.com/docs
 ```bash
 pytest tests/test_quantconnect_export.py -q
 ```
+
+## 6. ML / regime labels on QC
+
+For trained Phi-nance regime models, prefer exporting **per-bar regime CSV** for Lean custom data — see [quantconnect_ml_inference.md](quantconnect_ml_inference.md) and [ml_components.md](ml_components.md).

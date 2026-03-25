@@ -1,0 +1,35 @@
+# Copy to e.g. configs/ml/regime_train.yaml and run:
+#   phi-regime-train --config configs/ml/regime_train.yaml
+# Cron / retrain:
+#   export PHINANCE_REGIME_TRAIN_CONFIG=$PWD/configs/ml/regime_train.yaml && phi-regime-train
+
+schema_version: 1
+
+data:
+  symbol: SPY
+  start: "2020-01-01"
+  end: "2024-12-31"
+  timeframe: "1D"
+  vendor: yfinance
+
+model:
+  method: hmm
+  n_regimes: 3
+  window: 20
+  fit_params:
+    n_iter: 200
+
+# Optional: full path for the .pkl (directory must exist or will be created)
+output:
+  save_path: null
+
+# Optional MLflow (pip install mlflow)
+mlflow:
+  enabled: false
+  tracking_uri: ./mlruns
+  experiment_name: phi_regime
+  run_name: null
+
+# Optional: run SHAP surrogate (needs shap + scikit-learn)
+explain:
+  shap_surrogate: false

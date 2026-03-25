@@ -1,9 +1,8 @@
 """
 Canonical OHLCV access for ecosystem adapters (Lumibot, TensorTrade, notebooks).
 
-All paths resolve through the same parquet cache and vendor routing as the
-Streamlit workbench — use this module when another repo should not reimplement
-fetch logic.
+All paths resolve through the same parquet cache and vendor routing as the rest
+of Phi-nance — use this module when another repo should not reimplement fetch logic.
 
 See ``docs/ecosystem_integration.md`` for Lumibot / TensorTrade / agent-cli wiring.
 """
