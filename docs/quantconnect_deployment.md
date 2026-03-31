@@ -74,3 +74,41 @@ pytest tests/test_quantconnect_export.py -q
 ## 6. ML / regime labels on QC
 
 For trained Phi-nance regime models, prefer exporting **per-bar regime CSV** for Lean custom data — see [quantconnect_ml_inference.md](quantconnect_ml_inference.md) and [ml_components.md](ml_components.md).
+
+
+## 7. Troubleshooting local `lean backtest` (Windows + Docker)
+
+If you run Lean CLI locally (instead of the QC cloud IDE), two common errors are:
+
+- `No module named 'pkg_resources'`
+- `No module named 'phi'`
+
+### A) `pkg_resources` missing
+
+`pkg_resources` is provided by `setuptools`. Lean CLI still expects it.
+
+```powershell
+# inside the venv you pass to --python-venv
+python -m pip install --upgrade "setuptools<70"
+python -c "import pkg_resources; print(pkg_resources.__file__)"
+```
+
+### B) Venv path not found inside Lean container
+
+When Dockerized Lean starts, it runs in Linux. A Windows path like
+`C:\Users\...\venv` is not valid in-container and can show up as `/C:\Users\...\venv`.
+
+Use a path visible *inside* the Lean container:
+
+- WSL example: `/mnt/c/Users/<you>/Phi-nance/venv`
+- Or place your algorithm + dependencies directly in the Lean project folder and avoid external host paths.
+
+### C) `No module named 'phi'`
+
+Lean only imports modules available to the runtime used by the backtest.
+
+- If your algorithm imports `phi.*`, install Phi-nance into the same interpreter Lean uses.
+- Or keep Lean algorithms self-contained (recommended for QC deployment) and only ingest exported artifacts (`ohlcv.csv`, `signal_card.json`).
+
+In practice, the most reliable deployment path for this repo is still: export bundle in Phi-nance → run strategy in QuantConnect using `quantconnect/main.py` pattern.
+
