@@ -47,14 +47,13 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
         self.SetCash(100000)
         self._phi_bar_count = 0
         self._desired_mode = None  # "long" | "flat" — from PHI; applied on schedule
-        self._last_phi_close = 0.0
-        self._warned_no_px = False
+        self._warned_no_spy_bars = False
 
         self.spy = self.AddEquity("SPY", Resolution.Daily).Symbol
         self.phi = self.AddData(PhiNanceOHLCV, "PHI_SPY", Resolution.Daily).Symbol
 
         # OnEndOfDay(symbol) is easy to mis-wire in Python (symbol != self.spy by identity).
-        # Schedule is explicit and matches QC docs for EOD rebalance.
+        # Schedule is explicit. Orders still require Lean equity zip for SPY (not only PHI CSV).
         self.Schedule.On(
             self.DateRules.EveryDay(self.spy),
             self.TimeRules.BeforeMarketClose(self.spy, 1),
@@ -85,7 +84,6 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
 
         custom = data[self.phi]
         self._phi_bar_count += 1
-        self._last_phi_close = float(custom.Close)
 
         if self._use_signal_card:
             regime = str(self.regime_card.get("composite_regime", "") or "")
@@ -110,33 +108,22 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
             self.Debug(f"PHI_SPY {ds} close={custom.Close:.2f} mode={rc}")
 
     def _apply_target_position(self):
-        """Run before SPY close; use SPY price when local equity data exists, else PHI close."""
+        """Before SPY close. ``AddEquity`` needs TradeBars under data/equity/usa/daily/spy.zip."""
         if self._desired_mode is None:
             return
         spy_sec = self.Securities[self.spy]
+        has_bars = bool(getattr(spy_sec, "HasData", False))
         spy_px = float(spy_sec.Price)
-        phi_px = float(self._last_phi_close)
-        if spy_px <= 0 and phi_px <= 0:
-            if not self._warned_no_px:
+        if not has_bars or spy_px <= 0:
+            if not self._warned_no_spy_bars:
                 self.Debug(
-                    "PhiNance: no SPY price and no PHI close; "
-                    "install SPY daily under workspace data/ or sync ohlcv.csv."
+                    "PhiNance: SPY has no equity bars (PHI custom CSV does not satisfy AddEquity). "
+                    "Run sync_lean_phi_nance_export.ps1 or: python scripts/lean_spy_daily_zip_from_ohlcv.py "
+                    "--ohlcv <export>/ohlcv.csv --out-zip <LeanWorkspace>/data/equity/usa/daily/spy.zip"
                 )
-                self._warned_no_px = True
+                self._warned_no_spy_bars = True
             return
-        if spy_px > 0:
-            if self._desired_mode == "long":
-                self.SetHoldings(self.spy, 1.0)
-            else:
-                self.Liquidate(self.spy)
-            return
-        cur = int(self.Portfolio[self.spy].Quantity)
-        cash = float(self.Portfolio.Cash)
-        approx_value = cash + float(cur) * phi_px
         if self._desired_mode == "long":
-            want = int((approx_value * 0.998) / phi_px)
-            delta = want - cur
-            if delta != 0:
-                self.MarketOrder(self.spy, delta)
-        elif cur != 0:
+            self.SetHoldings(self.spy, 1.0)
+        else:
             self.Liquidate(self.spy)

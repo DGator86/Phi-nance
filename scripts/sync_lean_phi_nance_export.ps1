@@ -54,10 +54,24 @@ $workspaceData = Join-Path $workspaceRoot "data"
 New-Item -ItemType Directory -Path $workspaceData -Force | Out-Null
 Copy-Item $csv (Join-Path $workspaceData "ohlcv.csv") -Force
 
+# AddEquity("SPY") needs Lean-format equity daily zip (custom PHI CSV alone is not enough).
+$equityDaily = Join-Path $workspaceData "equity\usa\daily"
+New-Item -ItemType Directory -Path $equityDaily -Force | Out-Null
+$converter = Join-Path $PSScriptRoot "lean_spy_daily_zip_from_ohlcv.py"
+$spyZip = Join-Path $equityDaily "spy.zip"
+$py = if ($env:PYTHON_EXE) { $env:PYTHON_EXE } else { "python" }
+& $py $converter --ohlcv $csv --out-zip $spyZip
+if ($LASTEXITCODE -ne 0) {
+    throw "lean_spy_daily_zip_from_ohlcv.py failed (exit $LASTEXITCODE). Ensure Python 3 is on PATH."
+}
+
 # Optional mirror under project (documentation only; engine uses workspace path).
 $projectData = Join-Path $LeanProject "data"
 New-Item -ItemType Directory -Path $projectData -Force | Out-Null
 Copy-Item $csv (Join-Path $projectData "ohlcv.csv") -Force
+$projectEquity = Join-Path $projectData "equity\usa\daily"
+New-Item -ItemType Directory -Path $projectEquity -Force | Out-Null
+Copy-Item $spyZip (Join-Path $projectEquity "spy.zip") -Force
 
 $card = Join-Path $ExportDir "signal_card.json"
 if (Test-Path $card) {
@@ -65,7 +79,9 @@ if (Test-Path $card) {
 }
 
 Write-Host "Synced ohlcv.csv -> $workspaceData\ohlcv.csv (workspace data for Lean CLI)"
+Write-Host "Wrote Lean equity daily -> $spyZip (required for AddEquity SPY orders)"
 Write-Host "Mirrored ohlcv.csv -> $projectData\ohlcv.csv"
+Write-Host "Mirrored spy.zip -> $projectEquity\spy.zip"
 if (Test-Path $card) {
     Write-Host "Synced signal_card.json -> $LeanProject\signal_card.json"
 }

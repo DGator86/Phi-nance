@@ -158,21 +158,30 @@ Lean only imports modules available to the interpreter used by the backtest.
 - Keep Lean algorithms self-contained and only ingest exported artifacts (`ohlcv.csv`,
   `signal_card.json`) — recommended for QC cloud deployment.
 
-### E) **PHI logs fine but Total Orders 0** (local Lean)
+### E) **PHI logs fine but Total Orders 0** / “security does not have an accurate price” (local Lean)
 
-Common causes:
+`AddEquity("SPY")` needs **Lean US equity daily** files: `data/equity/usa/daily/spy.zip`
+(see QuantConnect Lean `Data/equity/readme.md`). Your **custom** `ohlcv.csv` (PHI) does
+**not** populate that security; without `spy.zip`, `HasData` stays false and
+`SetHoldings` / `MarketOrder` are rejected.
 
-1. **`OnEndOfDay(self, symbol)` in Python:** `symbol != self.spy` can be **true even for
-   SPY** because Python.NET compares object identity, not ticker equality — so the
-   handler returns immediately and **never** trades. The template uses
-   **`Schedule.On(..., BeforeMarketClose(self.spy, 1), _apply_target_position)`**
-   instead.
+**Fix:** run `scripts/sync_lean_phi_nance_export.ps1` after pulling **MAIN** — it now
+builds `spy.zip` from the same export CSV. Or manually:
 
-2. **No local SPY daily equity files:** `Securities[self.spy].Price` stays **0** even
-   when PHI custom data loads. Then `SetHoldings` never runs. Either add SPY under
-   your workspace `data/` tree (e.g. `lean data download` / QC data) **or** rely on the
-   template’s fallback: size orders from **`_last_phi_close`** when SPY price is
-   missing (PHI tracks the same underlying series).
+```powershell
+python scripts/lean_spy_daily_zip_from_ohlcv.py `
+  --ohlcv "C:\path\to\export\ohlcv.csv" `
+  --out-zip "C:\path\to\LeanWorkspace\data\equity\usa\daily\spy.zip"
+```
+
+The template uses **`Schedule.BeforeMarketClose`** (not `OnEndOfDay(symbol)`, which is
+fragile in Python.NET) and checks **`HasData`** before trading.
+
+### E2) `OnEndOfDay` / `symbol != self.spy` (older notes)
+
+`OnData` may omit SPY from the `Slice`; that alone is fine if equity zip exists. Avoid
+relying on `OnEndOfDay(self, symbol)` with `symbol == self.spy` in Python — identity
+comparison often fails; use `Schedule` or compare `symbol.Value`.
 
 ### F) `⚠️ Could not load signal_card` / `signal_card.json`
 
@@ -237,4 +246,5 @@ behind `MAIN` — run `git pull origin MAIN` there first.
 If the backtest log still shows `Dates: Start: 01/01/2022`, your Lean copy is stale.
 
 The template algorithm is `PhiNanceBridgeAlgorithm` in `quantconnect/main.py` (optional
-`signal_card.json` next to `main.py`; **`ohlcv.csv` in `<LeanWorkspace>/data/`** for CLI).
+`signal_card.json` next to `main.py`; **`ohlcv.csv`** and **`equity/usa/daily/spy.zip`** under
+`<LeanWorkspace>/data/` for CLI — the sync script writes both).
