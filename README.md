@@ -1,6 +1,7 @@
 # Phi-nance (QuantConnect-oriented)
 
-[![Tests](https://github.com/DGator86/Phi-nance/actions/workflows/test.yml/badge.svg)](https://github.com/DGator86/Phi-nance/actions/workflows/test.yml)
+[![CI](https://github.com/DGator86/Phi-nance/actions/workflows/ci.yml/badge.svg)](https://github.com/DGator86/Phi-nance/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/DGator86/Phi-nance/graph/badge.svg)](https://codecov.io/gh/DGator86/Phi-nance)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Python **research library** for regime-aware signals, options analytics, and backtests, plus a **QuantConnect / Lean** bridge. There is **no web UI** in this repository—run research via scripts, notebooks, or the optional headless HTTP exporter; run **live and paper trading on QuantConnect** (or consume exported bundles there).
