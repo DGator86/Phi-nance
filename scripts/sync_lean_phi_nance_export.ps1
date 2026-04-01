@@ -1,29 +1,45 @@
 <#
 .SYNOPSIS
-  Copy Phi-nance QuantConnect bundle into a Lean CLI project (data/ohlcv.csv + signal_card.json).
+  Copy Phi-nance QuantConnect bundle into a Lean CLI project (workspace data/ + signal_card.json).
 
 .NOTES
-  This file lives under the Phi-nance repo (scripts/). It is not in LeanWorkspace.
-  Call it with a full path, or cd to the Phi-nance repo root first.
+  This file lives under the Phi-nance repo (scripts/). Running from LeanWorkspace:
+  & "C:\path\to\Phi-nance\scripts\sync_lean_phi_nance_export.ps1" -PhiNanceRoot "..." -LeanProject "..."
 
 .EXAMPLE
-  # From Phi-nance repo root:
-  .\scripts\sync_lean_phi_nance_export.ps1 `
-    -ExportDir ".\exports\qc_SPY_daily_uw" `
-    -LeanProject "C:\Users\you\LeanWorkspace\PhiNanceExported"
+  # Explicit export folder:
+  .\scripts\sync_lean_phi_nance_export.ps1 -ExportDir ".\exports\qc_SPY_daily_uw" -LeanProject "C:\Users\you\LeanWorkspace\PhiNanceExported"
 
 .EXAMPLE
-  # From LeanWorkspace (use full path to the script):
+  # Auto-pick newest ohlcv.csv under <repo>\exports (solves “OneDrive has no export”):
   & "C:\Users\you\Phi-nance\scripts\sync_lean_phi_nance_export.ps1" `
-    -ExportDir "C:\Users\you\Phi-nance\exports\qc_SPY_daily_uw" `
+    -PhiNanceRoot "C:\Users\you\Phi-nance" `
     -LeanProject "C:\Users\you\LeanWorkspace\PhiNanceExported"
 #>
 param(
-    [Parameter(Mandatory = $true)]
     [string] $ExportDir,
+    [string] $PhiNanceRoot,
     [Parameter(Mandatory = $true)]
     [string] $LeanProject
 )
+
+if (-not $ExportDir) {
+    if (-not $PhiNanceRoot) {
+        throw "Provide -ExportDir or -PhiNanceRoot (to search under exports\ for ohlcv.csv)."
+    }
+    $exportsRoot = Join-Path $PhiNanceRoot "exports"
+    if (-not (Test-Path $exportsRoot)) {
+        throw "No exports folder at: $exportsRoot. Run scripts/export_quantconnect_bundle.py first."
+    }
+    $found = Get-ChildItem -Path $exportsRoot -Recurse -Filter "ohlcv.csv" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if (-not $found) {
+        throw "No ohlcv.csv under $exportsRoot. Run: python scripts/export_quantconnect_bundle.py --symbol SPY --start 2022-01-01 --end 2024-12-31 --timeframe 1D --out-dir ./exports/qc_SPY_1D"
+    }
+    $ExportDir = $found.Directory.FullName
+    Write-Host "Using export folder: $ExportDir"
+}
 
 $ErrorActionPreference = "Stop"
 $csv = Join-Path $ExportDir "ohlcv.csv"

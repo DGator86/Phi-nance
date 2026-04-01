@@ -174,7 +174,21 @@ Phi-nance → run the strategy in QuantConnect using the `quantconnect/main.py` 
 ## 8. Local Lean CLI — sync script (Windows)
 
 The sync helper lives in **this repo** (`scripts/sync_lean_phi_nance_export.ps1`), not in
-`LeanWorkspace`. From your Lean folder, call it with a **full path**:
+`LeanWorkspace`. From your Lean folder, call it with a **full path** to the script.
+
+**Auto-find the newest export** (if you are unsure which folder under `exports/` has CSV):
+
+```powershell
+& "C:\Users\<you>\Phi-nance\scripts\sync_lean_phi_nance_export.ps1" `
+  -PhiNanceRoot "C:\Users\<you>\Phi-nance" `
+  -LeanProject "C:\Users\<you>\LeanWorkspace\PhiNanceExported"
+```
+
+Use **OneDrive** `PhiNanceRoot` if that is where you run the export CLI. If OneDrive has
+no `exports\...\ohlcv.csv` yet, either export there or point `-PhiNanceRoot` at the clone
+that already has `exports\` (for example `C:\Users\<you>\Phi-nance`).
+
+**Explicit folder:**
 
 ```powershell
 & "C:\Users\<you>\Phi-nance\scripts\sync_lean_phi_nance_export.ps1" `
@@ -190,6 +204,13 @@ Then:
 cd C:\Users\<you>\LeanWorkspace
 lean backtest PhiNanceExported
 ```
+
+Do **not** pass `--python-venv` with a `C:\...` path when Docker runs the engine (see §7).
+
+**After `git pull`,** refresh the algorithm file: copy `quantconnect/main.py` over
+`LeanWorkspace\PhiNanceExported\main.py`. If the backtest log still shows
+`Dates: Start: 01/01/2022`, your Lean copy is stale (current template starts 2023-01-03
+and uses `Globals.DataFolder` for CSV).
 
 The template algorithm is `PhiNanceBridgeAlgorithm` in `quantconnect/main.py` (optional
 `signal_card.json` next to `main.py`; **`ohlcv.csv` in `<LeanWorkspace>/data/`** for CLI).
