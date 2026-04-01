@@ -75,15 +75,11 @@ pytest tests/test_quantconnect_export.py -q
 
 For trained Phi-nance regime models, prefer exporting **per-bar regime CSV** for Lean custom data — see [quantconnect_ml_inference.md](quantconnect_ml_inference.md) and [ml_components.md](ml_components.md).
 
-
 ## 7. Troubleshooting local `lean backtest` (Windows + Docker)
 
-If you run Lean CLI locally (instead of the QC cloud IDE), two common errors are:
+If you run Lean CLI locally (instead of the QC cloud IDE), common issues:
 
-- `No module named 'pkg_resources'`
-- `No module named 'phi'`
-
-### A) `pkg_resources` missing
+### A) `No module named 'pkg_resources'`
 
 `pkg_resources` is provided by `setuptools`. Lean CLI still expects it.
 
@@ -95,55 +91,75 @@ python -c "import pkg_resources; print(pkg_resources.__file__)"
 
 ### B) Venv path not found inside Lean container
 
-When Dockerized Lean starts, it runs in Linux. A Windows path like
-`C:\Users\...\venv` is not valid in-container and can show up as `/C:\Users\...\venv`.
+`lean backtest` runs the engine in a **Linux container**. A Windows path like
+`C:\Users\...\venv` is forwarded incorrectly and may appear as `/C:\Users\...\venv`
+and **does not exist** in the container.
 
-Use a path visible *inside* the Lean container:
+**Algorithms that only use the standard library plus `AlgorithmImports`** do not need
+`--python-venv` — run:
 
-- WSL example: `/mnt/c/Users/<you>/Phi-nance/venv`
-- Or place your algorithm + dependencies directly in the Lean project folder and avoid external host paths.
+```powershell
+lean backtest PhiNanceExported
+```
 
-Recommended Windows fix (PowerShell):
+If you need `phi` (editable install) or other pip packages inside Lean, use a path
+visible inside the container, not a bare `C:\...` host path:
+
+- WSL-style path where the Lean workspace is mounted, e.g. `/mnt/c/Users/<you>/...`
+- Or a **project-local** venv next to your Lean project (see below).
+
+Recommended Windows pattern when the algorithm imports `phi`:
 
 ```powershell
 # from your Lean project folder (same folder you pass to `lean backtest`)
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -U pip "setuptools<70"
-.\.venv\Scripts\python -m pip install -e "C:\Users\<you>\Phi-nance"
+.\.venv\Scripts\python -m pip install -e "C:\Users\<you>\OneDrive - Penetron\Desktop\Phi-nance"
 lean backtest PhiNanceExported --python-venv ".\.venv"
 ```
 
-Using a project-local venv avoids cross-folder mount issues (for example, passing
-`C:\Users\...\Phi-nance\venv` while running Lean from `C:\Users\...\LeanWorkspace`).
+Using a project-local `.venv` avoids pointing Lean at a **different** host tree than
+the one mounts into Docker (for example `Phi-nance` under `OneDrive\Desktop` vs
+`C:\Users\<you>\Phi-nance`).
 
-### C) `No module named 'phi'`
+### C) Custom `LocalFile` CSV “missing” — file in the wrong folder
 
-Lean only imports modules available to the runtime used by the backtest.
+`SubscriptionDataSource("ohlcv.csv", LocalFile)` is resolved relative to the Lean project
+**`data/`** directory, **not** next to `main.py` and not the repo export folder on disk.
 
-- If your algorithm imports `phi.*`, install Phi-nance into the same interpreter Lean uses.
-- Or keep Lean algorithms self-contained (recommended for QC deployment) and only ingest exported artifacts (`ohlcv.csv`, `signal_card.json`).
+Copy the export to:
 
-In practice, the most reliable deployment path for this repo is still: export bundle in Phi-nance → run strategy in QuantConnect using `quantconnect/main.py` pattern.
-
-If your backtest finishes with `Total Orders 0` and only a handful of data points,
-verify `quantconnect/main.py` custom-data `GetSource()` path matches your uploaded
-`ohlcv.csv` location exactly.
-
-### D) `⚠️ Could not load signal_card — using basic mode`
-
-This log line is informational for exported algorithms that optionally read
-`signal_card.json`. Lean will continue in fallback/basic mode when that file is
-missing or malformed.
-
-- If you **want** signal-card-driven behavior, re-export with:
-
-```bash
-python scripts/export_quantconnect_bundle.py \
-  --symbol SPY --start 2020-01-01 --end 2024-12-31 \
-  --out-dir ./exports/qc_SPY_with_card \
-  --include-signal-card
+```text
+<LeanProject>/data/ohlcv.csv
 ```
 
-- Then upload **both** `ohlcv.csv` and `signal_card.json` to the same project
-  location expected by your Lean script.
-- If your strategy is intentionally OHLCV-only, you can ignore this warning.
+If `GetSource` uses a nested path (e.g. `phi_nance/spy/ohlcv.csv`), mirror that under
+`data/`:
+
+```text
+<LeanProject>/data/phi_nance/spy/ohlcv.csv
+```
+
+Placing `ohlcv.csv` only at the project root yields almost no custom bars, **`Total Orders
+0`**, and failed data requests in the monitor.
+
+### D) `No module named 'phi'`
+
+Lean only imports modules available to the interpreter used by the backtest.
+
+- Install Phi-nance into that environment (see B), **or**
+- Keep Lean algorithms self-contained and only ingest exported artifacts (`ohlcv.csv`,
+  `signal_card.json`) — recommended for QC cloud deployment.
+
+### E) `⚠️ Could not load signal_card` / `signal_card.json`
+
+Informational when optional JSON is missing or unreadable; Lean continues in basic mode.
+
+- Re-export with `--include-signal-card`, then place `signal_card.json` where your
+  algorithm expects it (often the Lean project root). Resolve paths from
+  `Path(__file__).resolve().parent` so loading works when the project is mounted as
+  `/LeanCLI` in the container.
+- For OHLCV-only strategies, you can ignore the warning.
+
+In practice, the most reliable path for this repo remains: export the bundle in
+Phi-nance → run the strategy in QuantConnect using the `quantconnect/main.py` pattern.

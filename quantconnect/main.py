@@ -6,12 +6,12 @@ from AlgorithmImports import *
 class PhiNanceOHLCV(PythonData):
     """Custom bar type for CSV exported by Phi-nance (time,open,high,low,close,volume).
 
-    Upload ``ohlcv.csv`` under your QC project Data folder (path below), or use Object Store.
+    **Local Lean CLI / QC:** ``LocalFile`` paths are relative to the project ``data/``
+    folder. Copy the bundle CSV to ``<lean-project>/data/ohlcv.csv`` (create ``data/`` if
+    needed). For Object Store or HTTP, switch to ``RemoteFile`` and adjust this method.
     """
 
     def GetSource(self, config, date, isLiveMode):
-        # Keep this path relative to your QC project Data folder.
-        # If you uploaded ohlcv.csv at project root, "ohlcv.csv" is correct.
         return SubscriptionDataSource(
             "ohlcv.csv",
             SubscriptionTransportMedium.LocalFile,
