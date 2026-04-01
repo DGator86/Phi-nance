@@ -10,9 +10,10 @@ class PhiNanceOHLCV(PythonData):
     """
 
     def GetSource(self, config, date, isLiveMode):
-        # TODO: replace with your Object Store URL or Data/ relative path
+        # Keep this path relative to your QC project Data folder.
+        # If you uploaded ohlcv.csv at project root, "ohlcv.csv" is correct.
         return SubscriptionDataSource(
-            "phi_nance/spy/ohlcv.csv",
+            "ohlcv.csv",
             SubscriptionTransportMedium.LocalFile,
         )
 
@@ -39,11 +40,18 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
         self.SetStartDate(2022, 1, 1)
         self.SetEndDate(2024, 12, 31)
         self.SetCash(100000)
+        self._logged_missing_phi = False
         self.spy = self.AddEquity("SPY", Resolution.Daily).Symbol
         self.phi = self.AddData(PhiNanceOHLCV, "PHI_SPY", Resolution.Daily).Symbol
 
     def OnData(self, data):
         if not data.ContainsKey(self.phi):
+            if not self._logged_missing_phi:
+                self.Debug(
+                    "No PHI_SPY custom data received. Verify ohlcv.csv upload path "
+                    "matches PhiNanceOHLCV.GetSource()."
+                )
+                self._logged_missing_phi = True
             return
         custom = data[self.phi]
         # Placeholder rule — replace with logic derived from signal_card.json or Lean indicators
