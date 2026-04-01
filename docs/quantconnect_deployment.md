@@ -158,11 +158,12 @@ Lean only imports modules available to the interpreter used by the backtest.
 - Keep Lean algorithms self-contained and only ingest exported artifacts (`ohlcv.csv`,
   `signal_card.json`) — recommended for QC cloud deployment.
 
-### E) `SPY: The security does not have an accurate price` / **503 points but 0 orders**
+### E) **PHI logs fine but Total Orders 0** (local Lean)
 
-Custom data and SPY bars may arrive in **different** `Slice`s in local Lean. The template
-stores `_desired_mode` from PHI bars and runs `SetHoldings` / `Liquidate` whenever
-`data.ContainsKey(self.spy)` so trades still execute (see `quantconnect/main.py`).
+`OnData` may **never** include SPY in the `Slice` even though the data monitor shows
+succeeded requests. The template updates `_desired_mode` from PHI in `OnData` and
+runs `SetHoldings` / `Liquidate` in **`OnEndOfDay(self, symbol)`** when
+`symbol == self.spy`.
 
 ### F) `⚠️ Could not load signal_card` / `signal_card.json`
 

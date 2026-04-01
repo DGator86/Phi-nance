@@ -46,7 +46,7 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
         self.SetEndDate(2024, 12, 31)
         self.SetCash(100000)
         self._phi_bar_count = 0
-        self._desired_mode = None  # "long" | "flat" — set from PHI, apply when SPY bar exists
+        self._desired_mode = None  # "long" | "flat" — from PHI; applied in OnEndOfDay
 
         self.spy = self.AddEquity("SPY", Resolution.Daily).Symbol
         self.phi = self.AddData(PhiNanceOHLCV, "PHI_SPY", Resolution.Daily).Symbol
@@ -70,39 +70,42 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
             return {}
 
     def OnData(self, data):
-        if data.ContainsKey(self.phi):
-            custom = data[self.phi]
-            self._phi_bar_count += 1
+        if not data.ContainsKey(self.phi):
+            return
 
-            if self._use_signal_card:
-                regime = str(self.regime_card.get("composite_regime", "") or "")
-                playbook = str(self.regime_card.get("playbook_regime_key", "") or "")
-                label = (regime or playbook).upper()
-                if label.startswith("BULL"):
-                    self._desired_mode = "long"
-                elif label.startswith("BEAR"):
-                    self._desired_mode = "flat"
-                else:
-                    self._desired_mode = "flat"
+        custom = data[self.phi]
+        self._phi_bar_count += 1
+
+        if self._use_signal_card:
+            regime = str(self.regime_card.get("composite_regime", "") or "")
+            playbook = str(self.regime_card.get("playbook_regime_key", "") or "")
+            label = (regime or playbook).upper()
+            if label.startswith("BULL"):
+                self._desired_mode = "long"
+            elif label.startswith("BEAR"):
+                self._desired_mode = "flat"
             else:
-                self._desired_mode = (
-                    "long" if custom.Close > custom.Open else "flat"
-                )
+                self._desired_mode = "flat"
+        else:
+            self._desired_mode = "long" if custom.Close > custom.Open else "flat"
 
-            if self._phi_bar_count <= 3 or self._phi_bar_count % 60 == 0:
-                ds = str(custom.Time.date())
-                rc = (
-                    (self.regime_card.get("composite_regime") or "n/a")
-                    if self._use_signal_card
-                    else "bar-rule"
-                )
-                self.Debug(f"PHI_SPY {ds} close={custom.Close:.2f} mode={rc}")
+        if self._phi_bar_count <= 3 or self._phi_bar_count % 60 == 0:
+            ds = str(custom.Time.date())
+            rc = (
+                (self.regime_card.get("composite_regime") or "n/a")
+                if self._use_signal_card
+                else "bar-rule"
+            )
+            self.Debug(f"PHI_SPY {ds} close={custom.Close:.2f} mode={rc}")
 
-        if not data.ContainsKey(self.spy):
+    def OnEndOfDay(self, symbol):
+        """Local Lean often omits SPY from OnData Slices; EOD has a usable SPY price."""
+        if symbol != self.spy:
             return
         if self._desired_mode is None:
             return
-
+        if self.Securities[self.spy].Price <= 0:
+            return
         if self._desired_mode == "long":
             self.SetHoldings(self.spy, 1.0)
         else:
