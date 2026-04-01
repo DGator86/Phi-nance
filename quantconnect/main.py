@@ -45,8 +45,8 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
         self.SetStartDate(2023, 1, 3)
         self.SetEndDate(2024, 12, 31)
         self.SetCash(100000)
-        self._logged_missing_phi = False
         self._phi_bar_count = 0
+        self._desired_mode = None  # "long" | "flat" — set from PHI, apply when SPY bar exists
 
         self.spy = self.AddEquity("SPY", Resolution.Daily).Symbol
         self.phi = self.AddData(PhiNanceOHLCV, "PHI_SPY", Resolution.Daily).Symbol
@@ -70,40 +70,40 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
             return {}
 
     def OnData(self, data):
-        if not data.ContainsKey(self.phi):
-            if not self._logged_missing_phi:
-                self.Debug(
-                    "No PHI_SPY custom data. Place ohlcv.csv in the workspace data/ "
-                    "folder (Globals.DataFolder), e.g. LeanWorkspace/data/ohlcv.csv."
+        if data.ContainsKey(self.phi):
+            custom = data[self.phi]
+            self._phi_bar_count += 1
+
+            if self._use_signal_card:
+                regime = str(self.regime_card.get("composite_regime", "") or "")
+                playbook = str(self.regime_card.get("playbook_regime_key", "") or "")
+                label = (regime or playbook).upper()
+                if label.startswith("BULL"):
+                    self._desired_mode = "long"
+                elif label.startswith("BEAR"):
+                    self._desired_mode = "flat"
+                else:
+                    self._desired_mode = "flat"
+            else:
+                self._desired_mode = (
+                    "long" if custom.Close > custom.Open else "flat"
                 )
-                self._logged_missing_phi = True
-            return
 
-        custom = data[self.phi]
-        self._phi_bar_count += 1
+            if self._phi_bar_count <= 3 or self._phi_bar_count % 60 == 0:
+                ds = str(custom.Time.date())
+                rc = (
+                    (self.regime_card.get("composite_regime") or "n/a")
+                    if self._use_signal_card
+                    else "bar-rule"
+                )
+                self.Debug(f"PHI_SPY {ds} close={custom.Close:.2f} mode={rc}")
 
-        # Custom series can arrive before equity bars in the same Slice; never
-        # SetHoldings until SPY has a price for this time step.
         if not data.ContainsKey(self.spy):
             return
+        if self._desired_mode is None:
+            return
 
-        if self._use_signal_card:
-            regime = str(self.regime_card.get("composite_regime", "") or "")
-            playbook = str(self.regime_card.get("playbook_regime_key", "") or "")
-            label = (regime or playbook).upper()
-            if label.startswith("BULL"):
-                self.SetHoldings(self.spy, 1.0)
-            elif label.startswith("BEAR"):
-                self.Liquidate(self.spy)
-            else:
-                self.Liquidate(self.spy)
+        if self._desired_mode == "long":
+            self.SetHoldings(self.spy, 1.0)
         else:
-            if custom.Close > custom.Open:
-                self.SetHoldings(self.spy, 1.0)
-            else:
-                self.Liquidate(self.spy)
-
-        if self._phi_bar_count <= 3 or self._phi_bar_count % 60 == 0:
-            ds = str(custom.Time.date())
-            rc = (self.regime_card.get("composite_regime") or "n/a") if self._use_signal_card else "bar-rule"
-            self.Debug(f"PHI_SPY {ds} close={custom.Close:.2f} mode={rc}")
+            self.Liquidate(self.spy)

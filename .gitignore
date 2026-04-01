@@ -21,3 +21,5 @@ backtest_output*.txt
 # Jupyter / accidental artifacts
 .ipynb_checkpoints/
 %temp%/
+
+.cursor/
