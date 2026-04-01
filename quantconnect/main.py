@@ -1,22 +1,25 @@
 # region imports
 from AlgorithmImports import *
 import json
+import os
 from pathlib import Path
+
+from QuantConnect import Globals
 # endregion
 
 
 class PhiNanceOHLCV(PythonData):
     """Phi-nance export CSV: time,open,high,low,close,volume.
 
-    Place ``ohlcv.csv`` under the Lean project ``data/`` (or QC Data tree) so
-    ``LocalFile`` resolves it.
+    **Lean CLI:** copy ``ohlcv.csv`` into the **organization workspace** ``data/``
+    folder (sibling of your project dirs; see ``lean.json`` → ``data-folder``), not
+    only under ``<project>/data/``. ``GetSource`` joins ``Globals.DataFolder`` per
+    QuantConnect local custom-data docs.
     """
 
     def GetSource(self, config, date, isLiveMode):
-        return SubscriptionDataSource(
-            "ohlcv.csv",
-            SubscriptionTransportMedium.LocalFile,
-        )
+        path = os.path.join(str(Globals.DataFolder), "ohlcv.csv").replace("\\", "/")
+        return SubscriptionDataSource(path, SubscriptionTransportMedium.LocalFile)
 
     def Reader(self, config, line, date, isLiveMode):
         if not (line and line[0].isdigit()):
@@ -38,7 +41,8 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
     """Custom OHLCV + optional ``signal_card.json`` (single snapshot from Phi-nance export)."""
 
     def Initialize(self):
-        self.SetStartDate(2022, 1, 1)
+        # Align with typical Phi-nance daily export (first row often first trading day).
+        self.SetStartDate(2023, 1, 3)
         self.SetEndDate(2024, 12, 31)
         self.SetCash(100000)
         self._logged_missing_phi = False
@@ -69,8 +73,8 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
         if not data.ContainsKey(self.phi):
             if not self._logged_missing_phi:
                 self.Debug(
-                    "No PHI_SPY custom data. Put ohlcv.csv in project data/ "
-                    "to match PhiNanceOHLCV.GetSource()."
+                    "No PHI_SPY custom data. Place ohlcv.csv in the workspace data/ "
+                    "folder (Globals.DataFolder), e.g. LeanWorkspace/data/ohlcv.csv."
                 )
                 self._logged_missing_phi = True
             return

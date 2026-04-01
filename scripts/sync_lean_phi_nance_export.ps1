@@ -31,16 +31,25 @@ if (-not (Test-Path $csv)) {
     throw "Missing ohlcv.csv under: $ExportDir"
 }
 
-$dataDir = Join-Path $LeanProject "data"
-New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
-Copy-Item $csv (Join-Path $dataDir "ohlcv.csv") -Force
+# Lean CLI resolves LocalFile custom data via Globals.DataFolder = workspace /data
+# (lean.json "data-folder"), NOT only <project>/data/.
+$workspaceRoot = Split-Path -Parent $LeanProject
+$workspaceData = Join-Path $workspaceRoot "data"
+New-Item -ItemType Directory -Path $workspaceData -Force | Out-Null
+Copy-Item $csv (Join-Path $workspaceData "ohlcv.csv") -Force
+
+# Optional mirror under project (documentation only; engine uses workspace path).
+$projectData = Join-Path $LeanProject "data"
+New-Item -ItemType Directory -Path $projectData -Force | Out-Null
+Copy-Item $csv (Join-Path $projectData "ohlcv.csv") -Force
 
 $card = Join-Path $ExportDir "signal_card.json"
 if (Test-Path $card) {
     Copy-Item $card (Join-Path $LeanProject "signal_card.json") -Force
 }
 
-Write-Host "Synced ohlcv.csv -> $dataDir\ohlcv.csv"
+Write-Host "Synced ohlcv.csv -> $workspaceData\ohlcv.csv (workspace data for Lean CLI)"
+Write-Host "Mirrored ohlcv.csv -> $projectData\ohlcv.csv"
 if (Test-Path $card) {
     Write-Host "Synced signal_card.json -> $LeanProject\signal_card.json"
 }

@@ -124,24 +124,31 @@ the one mounts into Docker (for example `Phi-nance` under `OneDrive\Desktop` vs
 
 ### C) Custom `LocalFile` CSV “missing” — file in the wrong folder
 
-`SubscriptionDataSource("ohlcv.csv", LocalFile)` is resolved relative to the Lean project
-**`data/`** directory, **not** next to `main.py` and not the repo export folder on disk.
+For **Lean CLI** backtests, QuantConnect’s local custom-data pattern joins
+**`Globals.DataFolder`** with your filename. That folder is the **organization
+workspace** `data/` directory (see root `lean.json` → `"data-folder": "data"`), i.e.
+next to your project folders — **not** necessarily `<project>/data/`.
+
+The template in `quantconnect/main.py` uses:
+
+`os.path.join(str(Globals.DataFolder), "ohlcv.csv")`
 
 Copy the export to:
 
 ```text
-<LeanProject>/data/ohlcv.csv
+<LeanWorkspace>/data/ohlcv.csv
 ```
 
-If `GetSource` uses a nested path (e.g. `phi_nance/spy/ohlcv.csv`), mirror that under
-`data/`:
+Example: `C:\Users\you\LeanWorkspace\data\ohlcv.csv` when the project is
+`...\LeanWorkspace\PhiNanceExported`.
 
-```text
-<LeanProject>/data/phi_nance/spy/ohlcv.csv
-```
+Use `scripts/sync_lean_phi_nance_export.ps1`, which writes to workspace `data/` (and
+mirrors under `<project>/data/` for convenience). Putting CSV only at the project root
+or only under `<project>/data/` without the workspace copy yields almost no custom
+bars, **`Total Orders 0`**, and failed data requests in the monitor.
 
-Placing `ohlcv.csv` only at the project root yields almost no custom bars, **`Total Orders
-0`**, and failed data requests in the monitor.
+**QC cloud:** upload under the project Data tree per cloud docs; `Globals.DataFolder`
+there matches the cloud data root.
 
 ### D) `No module named 'phi'`
 
@@ -185,4 +192,4 @@ lean backtest PhiNanceExported
 ```
 
 The template algorithm is `PhiNanceBridgeAlgorithm` in `quantconnect/main.py` (optional
-`signal_card.json` next to `main.py`, CSV under `data/ohlcv.csv`).
+`signal_card.json` next to `main.py`; **`ohlcv.csv` in `<LeanWorkspace>/data/`** for CLI).
