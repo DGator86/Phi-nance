@@ -158,7 +158,13 @@ Lean only imports modules available to the interpreter used by the backtest.
 - Keep Lean algorithms self-contained and only ingest exported artifacts (`ohlcv.csv`,
   `signal_card.json`) — recommended for QC cloud deployment.
 
-### E) `⚠️ Could not load signal_card` / `signal_card.json`
+### E) `SPY: The security does not have an accurate price`
+
+Custom data can appear in a `Slice` before the equity subscription has a bar for that
+step. Only call `SetHoldings` / `Liquidate` after `data.ContainsKey(self.spy)` (see
+`quantconnect/main.py`).
+
+### F) `⚠️ Could not load signal_card` / `signal_card.json`
 
 Informational when optional JSON is missing or unreadable; Lean continues in basic mode.
 
@@ -207,10 +213,18 @@ lean backtest PhiNanceExported
 
 Do **not** pass `--python-venv` with a `C:\...` path when Docker runs the engine (see §7).
 
-**After `git pull`,** refresh the algorithm file: copy `quantconnect/main.py` over
-`LeanWorkspace\PhiNanceExported\main.py`. If the backtest log still shows
-`Dates: Start: 01/01/2022`, your Lean copy is stale (current template starts 2023-01-03
-and uses `Globals.DataFolder` for CSV).
+**After `git pull`,** refresh the algorithm file. In **PowerShell** use `Copy-Item` (not
+`copy /Y`, which is `cmd` syntax):
+
+```powershell
+Copy-Item -Force "C:\Users\<you>\OneDrive - Penetron\Desktop\Phi-nance\quantconnect\main.py" `
+  "C:\Users\<you>\LeanWorkspace\PhiNanceExported\main.py"
+```
+
+If `-PhiNanceRoot` is missing on `sync_lean_phi_nance_export.ps1`, your OneDrive repo is
+behind `MAIN` — run `git pull origin MAIN` there first.
+
+If the backtest log still shows `Dates: Start: 01/01/2022`, your Lean copy is stale.
 
 The template algorithm is `PhiNanceBridgeAlgorithm` in `quantconnect/main.py` (optional
 `signal_card.json` next to `main.py`; **`ohlcv.csv` in `<LeanWorkspace>/data/`** for CLI).

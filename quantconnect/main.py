@@ -82,6 +82,11 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
         custom = data[self.phi]
         self._phi_bar_count += 1
 
+        # Custom series can arrive before equity bars in the same Slice; never
+        # SetHoldings until SPY has a price for this time step.
+        if not data.ContainsKey(self.spy):
+            return
+
         if self._use_signal_card:
             regime = str(self.regime_card.get("composite_regime", "") or "")
             playbook = str(self.regime_card.get("playbook_regime_key", "") or "")
