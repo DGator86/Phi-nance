@@ -46,10 +46,20 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
         self.SetEndDate(2024, 12, 31)
         self.SetCash(100000)
         self._phi_bar_count = 0
-        self._desired_mode = None  # "long" | "flat" — from PHI; applied in OnEndOfDay
+        self._desired_mode = None  # "long" | "flat" — from PHI; applied on schedule
+        self._last_phi_close = 0.0
+        self._warned_no_px = False
 
         self.spy = self.AddEquity("SPY", Resolution.Daily).Symbol
         self.phi = self.AddData(PhiNanceOHLCV, "PHI_SPY", Resolution.Daily).Symbol
+
+        # OnEndOfDay(symbol) is easy to mis-wire in Python (symbol != self.spy by identity).
+        # Schedule is explicit and matches QC docs for EOD rebalance.
+        self.Schedule.On(
+            self.DateRules.EveryDay(self.spy),
+            self.TimeRules.BeforeMarketClose(self.spy, 1),
+            self._apply_target_position,
+        )
 
         self.regime_card = self._load_signal_card()
         self._use_signal_card = bool(
@@ -75,6 +85,7 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
 
         custom = data[self.phi]
         self._phi_bar_count += 1
+        self._last_phi_close = float(custom.Close)
 
         if self._use_signal_card:
             regime = str(self.regime_card.get("composite_regime", "") or "")
@@ -98,15 +109,34 @@ class PhiNanceBridgeAlgorithm(QCAlgorithm):
             )
             self.Debug(f"PHI_SPY {ds} close={custom.Close:.2f} mode={rc}")
 
-    def OnEndOfDay(self, symbol):
-        """Local Lean often omits SPY from OnData Slices; EOD has a usable SPY price."""
-        if symbol != self.spy:
-            return
+    def _apply_target_position(self):
+        """Run before SPY close; use SPY price when local equity data exists, else PHI close."""
         if self._desired_mode is None:
             return
-        if self.Securities[self.spy].Price <= 0:
+        spy_sec = self.Securities[self.spy]
+        spy_px = float(spy_sec.Price)
+        phi_px = float(self._last_phi_close)
+        if spy_px <= 0 and phi_px <= 0:
+            if not self._warned_no_px:
+                self.Debug(
+                    "PhiNance: no SPY price and no PHI close; "
+                    "install SPY daily under workspace data/ or sync ohlcv.csv."
+                )
+                self._warned_no_px = True
             return
+        if spy_px > 0:
+            if self._desired_mode == "long":
+                self.SetHoldings(self.spy, 1.0)
+            else:
+                self.Liquidate(self.spy)
+            return
+        cur = int(self.Portfolio[self.spy].Quantity)
+        cash = float(self.Portfolio.Cash)
+        approx_value = cash + float(cur) * phi_px
         if self._desired_mode == "long":
-            self.SetHoldings(self.spy, 1.0)
-        else:
+            want = int((approx_value * 0.998) / phi_px)
+            delta = want - cur
+            if delta != 0:
+                self.MarketOrder(self.spy, delta)
+        elif cur != 0:
             self.Liquidate(self.spy)

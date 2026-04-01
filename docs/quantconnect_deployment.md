@@ -160,10 +160,19 @@ Lean only imports modules available to the interpreter used by the backtest.
 
 ### E) **PHI logs fine but Total Orders 0** (local Lean)
 
-`OnData` may **never** include SPY in the `Slice` even though the data monitor shows
-succeeded requests. The template updates `_desired_mode` from PHI in `OnData` and
-runs `SetHoldings` / `Liquidate` in **`OnEndOfDay(self, symbol)`** when
-`symbol == self.spy`.
+Common causes:
+
+1. **`OnEndOfDay(self, symbol)` in Python:** `symbol != self.spy` can be **true even for
+   SPY** because Python.NET compares object identity, not ticker equality — so the
+   handler returns immediately and **never** trades. The template uses
+   **`Schedule.On(..., BeforeMarketClose(self.spy, 1), _apply_target_position)`**
+   instead.
+
+2. **No local SPY daily equity files:** `Securities[self.spy].Price` stays **0** even
+   when PHI custom data loads. Then `SetHoldings` never runs. Either add SPY under
+   your workspace `data/` tree (e.g. `lean data download` / QC data) **or** rely on the
+   template’s fallback: size orders from **`_last_phi_close`** when SPY price is
+   missing (PHI tracks the same underlying series).
 
 ### F) `⚠️ Could not load signal_card` / `signal_card.json`
 
