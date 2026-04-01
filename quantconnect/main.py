@@ -1,14 +1,15 @@
 # region imports
 from AlgorithmImports import *
+import json
+from pathlib import Path
 # endregion
 
 
 class PhiNanceOHLCV(PythonData):
-    """Custom bar type for CSV exported by Phi-nance (time,open,high,low,close,volume).
+    """Phi-nance export CSV: time,open,high,low,close,volume.
 
-    **Local Lean CLI / QC:** ``LocalFile`` paths are relative to the project ``data/``
-    folder. Copy the bundle CSV to ``<lean-project>/data/ohlcv.csv`` (create ``data/`` if
-    needed). For Object Store or HTTP, switch to ``RemoteFile`` and adjust this method.
+    Place ``ohlcv.csv`` under the Lean project ``data/`` (or QC Data tree) so
+    ``LocalFile`` resolves it.
     """
 
     def GetSource(self, config, date, isLiveMode):
@@ -34,28 +35,66 @@ class PhiNanceOHLCV(PythonData):
 
 
 class PhiNanceBridgeAlgorithm(QCAlgorithm):
-    """Example: ingest Phi-nance CSV as custom data; trade liquid equity ``SPY``."""
+    """Custom OHLCV + optional ``signal_card.json`` (single snapshot from Phi-nance export)."""
 
     def Initialize(self):
         self.SetStartDate(2022, 1, 1)
         self.SetEndDate(2024, 12, 31)
         self.SetCash(100000)
         self._logged_missing_phi = False
+        self._phi_bar_count = 0
+
         self.spy = self.AddEquity("SPY", Resolution.Daily).Symbol
         self.phi = self.AddData(PhiNanceOHLCV, "PHI_SPY", Resolution.Daily).Symbol
+
+        self.regime_card = self._load_signal_card()
+        self._use_signal_card = bool(
+            self.regime_card.get("composite_regime")
+            or self.regime_card.get("playbook_regime_key")
+        )
+
+    def _load_signal_card(self):
+        card_path = Path(__file__).resolve().parent / "signal_card.json"
+        try:
+            return json.loads(card_path.read_text(encoding="utf-8"))
+        except Exception:
+            self.Debug(
+                "Could not load signal_card.json from "
+                + str(card_path)
+                + " — using basic bar rule (close vs open)"
+            )
+            return {}
 
     def OnData(self, data):
         if not data.ContainsKey(self.phi):
             if not self._logged_missing_phi:
                 self.Debug(
-                    "No PHI_SPY custom data received. Verify ohlcv.csv upload path "
-                    "matches PhiNanceOHLCV.GetSource()."
+                    "No PHI_SPY custom data. Put ohlcv.csv in project data/ "
+                    "to match PhiNanceOHLCV.GetSource()."
                 )
                 self._logged_missing_phi = True
             return
+
         custom = data[self.phi]
-        # Placeholder rule — replace with logic derived from signal_card.json or Lean indicators
-        if custom.Close > custom.Open:
-            self.SetHoldings(self.spy, 1.0)
+        self._phi_bar_count += 1
+
+        if self._use_signal_card:
+            regime = str(self.regime_card.get("composite_regime", "") or "")
+            playbook = str(self.regime_card.get("playbook_regime_key", "") or "")
+            label = (regime or playbook).upper()
+            if label.startswith("BULL"):
+                self.SetHoldings(self.spy, 1.0)
+            elif label.startswith("BEAR"):
+                self.Liquidate(self.spy)
+            else:
+                self.Liquidate(self.spy)
         else:
-            self.Liquidate(self.spy)
+            if custom.Close > custom.Open:
+                self.SetHoldings(self.spy, 1.0)
+            else:
+                self.Liquidate(self.spy)
+
+        if self._phi_bar_count <= 3 or self._phi_bar_count % 60 == 0:
+            ds = str(custom.Time.date())
+            rc = (self.regime_card.get("composite_regime") or "n/a") if self._use_signal_card else "bar-rule"
+            self.Debug(f"PHI_SPY {ds} close={custom.Close:.2f} mode={rc}")

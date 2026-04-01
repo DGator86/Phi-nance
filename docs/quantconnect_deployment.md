@@ -163,3 +163,26 @@ Informational when optional JSON is missing or unreadable; Lean continues in bas
 
 In practice, the most reliable path for this repo remains: export the bundle in
 Phi-nance → run the strategy in QuantConnect using the `quantconnect/main.py` pattern.
+
+## 8. Local Lean CLI — sync script (Windows)
+
+The sync helper lives in **this repo** (`scripts/sync_lean_phi_nance_export.ps1`), not in
+`LeanWorkspace`. From your Lean folder, call it with a **full path**:
+
+```powershell
+& "C:\Users\<you>\Phi-nance\scripts\sync_lean_phi_nance_export.ps1" `
+  -ExportDir "C:\Users\<you>\Phi-nance\exports\qc_SPY_daily_uw" `
+  -LeanProject "C:\Users\<you>\LeanWorkspace\PhiNanceExported"
+```
+
+Or `cd` to the Phi-nance repo root and use `.\scripts\sync_lean_phi_nance_export.ps1 ...`.
+
+Then:
+
+```powershell
+cd C:\Users\<you>\LeanWorkspace
+lean backtest PhiNanceExported
+```
+
+The template algorithm is `PhiNanceBridgeAlgorithm` in `quantconnect/main.py` (optional
+`signal_card.json` next to `main.py`, CSV under `data/ohlcv.csv`).
