@@ -128,3 +128,22 @@ In practice, the most reliable deployment path for this repo is still: export bu
 If your backtest finishes with `Total Orders 0` and only a handful of data points,
 verify `quantconnect/main.py` custom-data `GetSource()` path matches your uploaded
 `ohlcv.csv` location exactly.
+
+### D) `⚠️ Could not load signal_card — using basic mode`
+
+This log line is informational for exported algorithms that optionally read
+`signal_card.json`. Lean will continue in fallback/basic mode when that file is
+missing or malformed.
+
+- If you **want** signal-card-driven behavior, re-export with:
+
+```bash
+python scripts/export_quantconnect_bundle.py \
+  --symbol SPY --start 2020-01-01 --end 2024-12-31 \
+  --out-dir ./exports/qc_SPY_with_card \
+  --include-signal-card
+```
+
+- Then upload **both** `ohlcv.csv` and `signal_card.json` to the same project
+  location expected by your Lean script.
+- If your strategy is intentionally OHLCV-only, you can ignore this warning.
