@@ -103,6 +103,19 @@ Use a path visible *inside* the Lean container:
 - WSL example: `/mnt/c/Users/<you>/Phi-nance/venv`
 - Or place your algorithm + dependencies directly in the Lean project folder and avoid external host paths.
 
+Recommended Windows fix (PowerShell):
+
+```powershell
+# from your Lean project folder (same folder you pass to `lean backtest`)
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -U pip "setuptools<70"
+.\.venv\Scripts\python -m pip install -e "C:\Users\<you>\Phi-nance"
+lean backtest PhiNanceExported --python-venv ".\.venv"
+```
+
+Using a project-local venv avoids cross-folder mount issues (for example, passing
+`C:\Users\...\Phi-nance\venv` while running Lean from `C:\Users\...\LeanWorkspace`).
+
 ### C) `No module named 'phi'`
 
 Lean only imports modules available to the runtime used by the backtest.
@@ -112,3 +125,6 @@ Lean only imports modules available to the runtime used by the backtest.
 
 In practice, the most reliable deployment path for this repo is still: export bundle in Phi-nance → run strategy in QuantConnect using `quantconnect/main.py` pattern.
 
+If your backtest finishes with `Total Orders 0` and only a handful of data points,
+verify `quantconnect/main.py` custom-data `GetSource()` path matches your uploaded
+`ohlcv.csv` location exactly.
